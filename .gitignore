@@ -1,0 +1,31 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+*.sln.docstates
+
+# IDE
+.vs/
+.idea/
+.vscode/
+*.swp
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# AgentSharp sessions/config
+.agentsharp/
+
+# Book build output
+build/
+combined*.md
+
+# Playwright MCP
+.playwright-mcp/
+
+# Python
+**/__pycache__/
