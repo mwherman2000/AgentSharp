@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AgentSharp.Llm;
+using Spectre.Console;
 
 namespace AgentSharp;
 
@@ -21,7 +22,7 @@ public class Configuration
 
     private static string GetDefaultModel(string provider) => provider.ToLowerInvariant() switch
     {
-        "anthropic" => "claude-sonnet-4-20250514",
+        "anthropic" => "claude-sonnet-5",
         "openai" => "gpt-4o",
         "grok" or "xai" => "grok-3",
         "gemini" or "google" => "gemini-2.5-pro",
@@ -61,6 +62,7 @@ public class Configuration
         if (envModel is not null)
             config.Model = envModel;
         config.BaseUrl = Environment.GetEnvironmentVariable("AGENT_BASE_URL") ?? config.BaseUrl;
+        AnsiConsole.MarkupLine($"[dim]Base Url: {config.BaseUrl}[/]");
 
         // CLI argument overrides (must run before provider-specific key lookup
         // so that --provider is known before we pick which env var to read)

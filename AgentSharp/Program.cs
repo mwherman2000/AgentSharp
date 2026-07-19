@@ -101,6 +101,7 @@ catch (Exception ex)
     AnsiConsole.MarkupLine($"[dim]{Markup.Escape(ex.StackTrace ?? "")}[/]");
     Environment.ExitCode = 1;
 }
+Console.ReadLine();
 
 static string? GetPromptArgument(string[] args)
 {
