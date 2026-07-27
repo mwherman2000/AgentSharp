@@ -41,10 +41,26 @@ public class AnthropicClient : ILlmClient
             httpRequest.Headers.TryAddWithoutValidation(header.Key, header.Value);
 
         var response = await _http.SendAsync(httpRequest, ct);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessAsync(response, ct);
 
         var json = await response.Content.ReadAsStringAsync(ct);
         return ParseResponse(json);
+    }
+
+    /// <summary>
+    /// Throws with the API's actual error body on failure. EnsureSuccessStatusCode()
+    /// alone discards the response content, so callers only ever see
+    /// "400 (Bad Request)" with no indication of what was actually wrong.
+    /// </summary>
+    private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        if (response.IsSuccessStatusCode) return;
+
+        var body = await response.Content.ReadAsStringAsync(ct);
+        throw new HttpRequestException(
+            $"Anthropic API error {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+            null,
+            response.StatusCode);
     }
 
     public async IAsyncEnumerable<StreamEvent> StreamAsync(
@@ -59,7 +75,7 @@ public class AnthropicClient : ILlmClient
             httpRequest.Headers.TryAddWithoutValidation(header.Key, header.Value);
 
         using var response = await _http.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessAsync(response, ct);
 
         using var stream = await response.Content.ReadAsStreamAsync(ct);
         using var reader = new StreamReader(stream);
@@ -221,8 +237,8 @@ public class AnthropicClient : ILlmClient
                 if (json.TryGetProperty("usage", out var usage))
                 {
                     yield return new UsageInfo(
-                        usage.TryGetProperty("input_tokens", out var it) ? it.GetInt32() : 0,
-                        usage.GetProperty("output_tokens").GetInt32());
+                        usage.TryGetProperty("input_tokens", out var it) ? GetIntFlexible(it) : 0,
+                        GetIntFlexible(usage.GetProperty("output_tokens")));
                 }
                 break;
 
@@ -231,11 +247,30 @@ public class AnthropicClient : ILlmClient
                     msg.TryGetProperty("usage", out var startUsage))
                 {
                     yield return new UsageInfo(
-                        startUsage.GetProperty("input_tokens").GetInt32(),
-                        startUsage.TryGetProperty("output_tokens", out var ot) ? ot.GetInt32() : 0);
+                        GetIntFlexible(startUsage.GetProperty("input_tokens")),
+                        startUsage.TryGetProperty("output_tokens", out var ot) ? GetIntFlexible(ot) : 0);
                 }
                 break;
         }
+    }
+
+    /// <summary>
+    /// Reads a JSON numeric element as an int, tolerating providers/proxies that
+    /// emit whole numbers with a decimal point (e.g. 12.0). JsonElement.GetInt32()
+    /// uses a strict digit-only fast path and throws a FormatException
+    /// ("Expected an ASCII digit") on such values, so we fall back to a
+    /// double-based parse and truncate to int.
+    /// </summary>
+    private static int GetIntFlexible(JsonElement element)
+    {
+        if (element.TryGetInt32(out var i))
+            return i;
+
+        if (element.TryGetDouble(out var d))
+            return (int)d;
+
+        var raw = element.GetRawText().Trim('"');
+        return (int)double.Parse(raw, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static LlmResponse ParseResponse(string json)
@@ -272,8 +307,8 @@ public class AnthropicClient : ILlmClient
                 Content = contentBlocks
             },
             StopReason = stopReason,
-            InputTokens = usage.GetProperty("input_tokens").GetInt32(),
-            OutputTokens = usage.GetProperty("output_tokens").GetInt32()
+            InputTokens = GetIntFlexible(usage.GetProperty("input_tokens")),
+            OutputTokens = GetIntFlexible(usage.GetProperty("output_tokens"))
         };
     }
 }

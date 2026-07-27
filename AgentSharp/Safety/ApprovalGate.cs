@@ -67,16 +67,20 @@ public class ApprovalGate
         AnsiConsole.MarkupLine($"[yellow]Action:[/] {Markup.Escape(inputSummary)}");
         AnsiConsole.WriteLine();
 
-        var choice = AnsiConsole.Prompt(
-            new SelectionPrompt<string>()
-                .Title("[yellow]Allow this tool execution?[/]")
-                .AddChoices("Allow", "Deny", "Always Allow (this session)"));
+        AnsiConsole.MarkupLine("[yellow]Allow this tool execution?[/] (a = allow, d = deny, s = always allow this session)");
 
-        switch (choice)
+        ConsoleKey key;
+        do
         {
-            case "Allow":
+            key = Console.ReadKey(intercept: true).Key;
+        } while (key != ConsoleKey.A && key != ConsoleKey.D && key != ConsoleKey.S);
+
+        switch (key)
+        {
+            case ConsoleKey.A:
+                AnsiConsole.MarkupLine("[green]  Allowed.[/]");
                 return Task.FromResult(true);
-            case "Always Allow (this session)":
+            case ConsoleKey.S:
                 _alwaysAllowed.Add(tool.Name);
                 AnsiConsole.MarkupLine($"[green]  {Markup.Escape(tool.Name)} will be auto-approved for this session.[/]");
                 return Task.FromResult(true);

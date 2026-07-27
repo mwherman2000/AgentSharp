@@ -16,6 +16,9 @@ public enum CommandType
     Model,
     Status,
     Memory,
+    History,
+    Tools,
+    Request,
     Unknown
 }
 
@@ -43,6 +46,8 @@ public static class CommandParser
             "model" => new ParsedCommand(CommandType.Model, argument),
             "status" => new ParsedCommand(CommandType.Status),
             "memory" or "mem" => new ParsedCommand(CommandType.Memory, argument),
+            "history" => new ParsedCommand(CommandType.History, argument),
+            "tools" => new ParsedCommand(CommandType.Tools, argument),
             _ => new ParsedCommand(CommandType.Unknown, command)
         };
     }

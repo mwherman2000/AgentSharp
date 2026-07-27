@@ -26,6 +26,7 @@ public class Configuration
         "openai" => "gpt-4o",
         "grok" or "xai" => "grok-3",
         "gemini" or "google" => "gemini-2.5-pro",
+        "ollama" => "qwen2.5:1.5b",
         _ => "gpt-4o" // sensible fallback for custom OpenAI-compatible providers
     };
 
@@ -62,7 +63,6 @@ public class Configuration
         if (envModel is not null)
             config.Model = envModel;
         config.BaseUrl = Environment.GetEnvironmentVariable("AGENT_BASE_URL") ?? config.BaseUrl;
-        AnsiConsole.MarkupLine($"[dim]Base Url: {config.BaseUrl}[/]");
 
         // CLI argument overrides (must run before provider-specific key lookup
         // so that --provider is known before we pick which env var to read)
@@ -104,12 +104,18 @@ public class Configuration
     /// </summary>
     public ILlmClient CreateLlmClient()
     {
+        var model = EffectiveModel;
+        var providerKey = Provider.ToLowerInvariant();
+
+        // Ollama runs locally and does not require an API key.
+        if (providerKey == "ollama")
+            return OpenAiCompatibleClient.ForOllama(model, BaseUrl ?? "http://localhost:11434/v1");
+
         if (string.IsNullOrEmpty(ApiKey))
             throw new InvalidOperationException(
                 $"No API key configured. Set {GetApiKeyEnvVar()} or use --api-key.");
 
-        var model = EffectiveModel;
-        return Provider.ToLowerInvariant() switch
+        return providerKey switch
         {
             "anthropic" => new AnthropicClient(ApiKey, model),
             "openai" => BaseUrl is not null

@@ -54,8 +54,21 @@ public abstract class ToolBase : ITool
     protected static int GetOptionalInt(JsonElement input, string name, int defaultValue)
     {
         if (input.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.Number)
-            return prop.GetInt32();
+            return GetIntFlexible(prop);
         return defaultValue;
+    }
+
+    /// <summary>
+    /// Reads a JSON numeric element as an int, tolerating models that emit
+    /// whole numbers with a decimal point (e.g. "offset": 5.0). GetInt32() uses
+    /// a strict digit-only fast path and throws ("Expected an ASCII digit") on
+    /// such values, so we fall back to a double-based parse and truncate.
+    /// </summary>
+    private static int GetIntFlexible(JsonElement element)
+    {
+        if (element.TryGetInt32(out var i))
+            return i;
+        return (int)element.GetDouble();
     }
 
     /// <summary>
