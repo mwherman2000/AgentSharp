@@ -1,9 +1,12 @@
-using System.Text;
-using System.Text.Json;
 using AgentSharp.Llm;
 using AgentSharp.Safety;
 using AgentSharp.Tools;
 using Spectre.Console;
+using System;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Xml.Linq;
 
 namespace AgentSharp.Agent;
 
@@ -60,6 +63,7 @@ public class AgentLoop
     public async Task<string> RunTurnAsync(string userMessage, CancellationToken ct = default)
     {
         _history.AddUserMessage(userMessage);
+        Console.WriteLine($"\n>>>userMessage: {userMessage}");
 
         var fullResponseText = new StringBuilder();
         int iterations = 0;
@@ -79,6 +83,9 @@ public class AgentLoop
                 Tools = _tools.GetDefinitions(),
                 MaxTokens = 4096
             };
+            if (Program.RequestTrace) Console.WriteLine($"\n>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
+            if (Program.ToolsTrace)   Console.WriteLine($"\n >>request.Tools: {System.Text.Json.JsonSerializer.Serialize(request.Tools)}");
+            if (Program.HistoryTrace) Console.WriteLine($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(request.Messages)}");
 
             // Accumulate the streamed response
             var contentBlocks = new List<ContentBlock>();
@@ -97,7 +104,12 @@ public class AgentLoop
                     {
                         case TextDelta td:
                             currentText.Append(td.Text);
-                            AnsiConsole.Write(td.Text); // Live streaming to terminal
+                            // AnsiConsole.Write(string) forwards to the composite-format overload,
+                            // which treats td.Text as a format string and throws FormatException
+                            // the moment streamed content contains a brace (e.g. code deltas).
+                            // Text() writes the content literally instead.
+                            AnsiConsole.Write(new Text(td.Text)); // Live streaming to terminal
+                            Console.WriteLine($"\n <<TextDelta: {td.Text}");
                             break;
 
                         case ToolUseStart tus:
@@ -111,10 +123,12 @@ public class AgentLoop
                             currentToolId = tus.Id;
                             currentToolName = tus.Name;
                             currentToolInput.Clear();
+                            Console.WriteLine($"\n <<ToolUseStart: {tus.Id} {tus.Name}");
                             break;
 
                         case ToolInputDelta tid:
                             currentToolInput.Append(tid.PartialJson);
+                            Console.WriteLine($"\n <<ToolInputDelta: {tid.PartialJson}");
                             break;
 
                         case ToolUseEnd:
@@ -126,6 +140,7 @@ public class AgentLoop
                                     inputJson = currentToolInput.Length > 0
                                         ? JsonDocument.Parse(currentToolInput.ToString()).RootElement.Clone()
                                         : JsonDocument.Parse("{}").RootElement;
+                                    Console.WriteLine($"\n <<ToolUseEnd.inputJson: {inputJson.ToString()}");
                                 }
                                 catch (JsonException ex)
                                 {
@@ -151,6 +166,7 @@ public class AgentLoop
                                     Name = currentToolName,
                                     Input = inputJson
                                 });
+                                Console.WriteLine($"\n<<<TextUseEnd: {currentToolId} {currentToolName} {inputJson.ToString()}");
                             }
                             currentToolId = null;
                             currentToolName = null;
@@ -159,6 +175,7 @@ public class AgentLoop
 
                         case StreamDone sd:
                             stopReason = sd.StopReason;
+                            Console.WriteLine($"\n<<<StreamDone: {stopReason}");
                             break;
                     }
                 }
@@ -179,7 +196,8 @@ public class AgentLoop
                 // Transient API or streaming error — retry with exponential backoff
                 consecutiveStreamErrors++;
                 streamError = true;
-                AnsiConsole.MarkupLine($"\n[red]Error:[/] [dim]{Markup.Escape(ex.Message)}[/]");
+                AnsiConsole.MarkupLine($"\n[red]Error:[/] [dim]{Markup.Escape(ex.GetType().FullName ?? ex.GetType().Name)}: {Markup.Escape(ex.Message)}[/]");
+                AnsiConsole.MarkupLine($"[dim]{Markup.Escape(ex.StackTrace ?? "")}[/]");
 
                 if (consecutiveStreamErrors >= maxStreamRetries)
                 {
@@ -215,6 +233,7 @@ public class AgentLoop
             {
                 contentBlocks.Add(new TextBlock { Text = currentText.ToString() });
                 fullResponseText.Append(currentText);
+                Console.WriteLine($"\n<<<fullResponseText: {fullResponseText}");
             }
 
             // --- DECIDE: Append assistant message to history ---
@@ -225,6 +244,7 @@ public class AgentLoop
             if (stopReason == "end_turn" || toolUses.Count == 0)
             {
                 AnsiConsole.WriteLine();
+                Console.WriteLine($"\n<<<stopReason: {stopReason} Count 0");
                 break;
             }
 
@@ -251,6 +271,7 @@ public class AgentLoop
 
                 var tool = _tools.Get(toolUse.Name);
                 var inputSummary = SummarizeInput(toolUse.Name, toolUse.Input);
+                Console.WriteLine($"\n<<<toolUse: {toolUse.Id} {toolUse.Name} {toolUse.Input}\ninputSummary: {inputSummary}");
 
                 OnToolStart?.Invoke(toolUse.Name, inputSummary);
 
@@ -281,6 +302,7 @@ public class AgentLoop
                     Content = result.Output,
                     IsError = result.IsError
                 });
+                Console.WriteLine($"\n<<<toolResults: {toolUse.Id} {toolUse.Name} {result.IsError}\nresult.Output:{result.Output}");
 
                 OnToolEnd?.Invoke(toolUse.Name, result);
             }
