@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace AgentSharp.Tools.Implementations;
 
@@ -8,7 +9,7 @@ namespace AgentSharp.Tools.Implementations;
 /// Always classified as Destructive -- requires user approval.
 /// Supports timeout to prevent runaway processes.
 /// </summary>
-public class RunShellTool : ToolBase
+public partial class RunShellTool : ToolBase
 {
     public override string Name => "run_shell";
     public override string Description =>
@@ -108,27 +109,51 @@ public class RunShellTool : ToolBase
     /// </summary>
     internal static (string shell, string args) GetShellCommand(string command)
     {
-        var escaped = command.Replace("\"", "\\\"");
-
         if (OperatingSystem.IsWindows())
         {
             var bashPath = FindBashOnWindows();
             if (bashPath is not null)
+            {
+                var escaped = NormalizeNullDevice(command, usesPosixShell: true).Replace("\"", "\\\"");
                 return (bashPath, $"-c \"{escaped}\"");
-            return ("cmd.exe", $"/c {command}");
+            }
+            return ("cmd.exe", $"/c {NormalizeNullDevice(command, usesPosixShell: false)}");
         }
+
+        // macOS/Linux shells only understand /dev/null; cmd.exe's "nul" would
+        // otherwise be created as a literal file if the model emits Windows syntax.
+        var posixCommand = NormalizeNullDevice(command, usesPosixShell: true).Replace("\"", "\\\"");
 
         if (OperatingSystem.IsMacOS())
         {
             // macOS default shell is zsh since Catalina (10.15)
             if (File.Exists("/bin/zsh"))
-                return ("/bin/zsh", $"-c \"{escaped}\"");
-            return ("/bin/bash", $"-c \"{escaped}\"");
+                return ("/bin/zsh", $"-c \"{posixCommand}\"");
+            return ("/bin/bash", $"-c \"{posixCommand}\"");
         }
 
         // Linux and others
-        return ("/bin/bash", $"-c \"{escaped}\"");
+        return ("/bin/bash", $"-c \"{posixCommand}\"");
     }
+
+    /// <summary>
+    /// Rewrites the null-device target of a redirection (e.g. "&gt; nul" or "&gt; /dev/null")
+    /// to match the device name understood by the shell that will actually run the command.
+    /// Only touches redirection targets (preceded by '&gt;' or '&amp;'), so a literal file
+    /// named "nul" referenced elsewhere in the command (e.g. "rm nul") is left alone.
+    /// </summary>
+    internal static string NormalizeNullDevice(string command, bool usesPosixShell)
+    {
+        return usesPosixShell
+            ? NullDeviceRedirectToNul().Replace(command, "$1/dev/null")
+            : NullDeviceRedirectToDevNull().Replace(command, "$1nul");
+    }
+
+    [GeneratedRegex(@"([>&]\s*)nul\b", RegexOptions.IgnoreCase)]
+    private static partial Regex NullDeviceRedirectToNul();
+
+    [GeneratedRegex(@"([>&]\s*)/dev/null\b", RegexOptions.IgnoreCase)]
+    private static partial Regex NullDeviceRedirectToDevNull();
 
     private static string? FindBashOnWindows()
     {

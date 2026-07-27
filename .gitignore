@@ -29,3 +29,12 @@ combined*.md
 
 # Python
 **/__pycache__/
+
+# Local launch profiles may contain API keys - never commit
+**/Properties/launchSettings.json
+
+# Debug dump of the last outgoing LLM request body
+last_request_body.json
+
+# Stray file created when a `> nul` redirect runs under Git Bash instead of cmd.exe
+nul
