@@ -120,7 +120,15 @@ public class AgentLoop
                             // which treats td.Text as a format string and throws FormatException
                             // the moment streamed content contains a brace (e.g. code deltas).
                             // Text() writes the content literally instead.
-                            AnsiConsole.Write(new Text(td.Text)); // Live streaming to terminal
+                            // Embedding a raw '\n' inside a single Text segment doesn't reliably
+                            // move the cursor to column 0 under VT processing, so split on
+                            // newlines and emit each break via AnsiConsole.WriteLine explicitly.
+                            var lines = td.Text.Split('\n');
+                            for (int i = 0; i < lines.Length; i++)
+                            {
+                                if (i > 0) AnsiConsole.WriteLine();
+                                if (lines[i].Length > 0) AnsiConsole.Write(new Text(lines[i]));
+                            }
                             Console.WriteLine($"\n <<TextDelta: {td.Text}");
                             break;
 
