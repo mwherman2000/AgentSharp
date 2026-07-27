@@ -28,8 +28,16 @@ public class AgentLoop
     private readonly ApprovalGate _approval;
     private readonly ConversationHistory _history;
     private readonly string _systemPrompt;
+    private int _totalInputTokens;
+    private int _totalOutputTokens;
 
     public ConversationHistory History => _history;
+
+    /// <summary>Cumulative input tokens billed across every LLM call this AgentLoop has made.</summary>
+    public int TotalInputTokens => _totalInputTokens;
+
+    /// <summary>Cumulative output tokens billed across every LLM call this AgentLoop has made.</summary>
+    public int TotalOutputTokens => _totalOutputTokens;
 
     /// <summary>
     /// Event raised when tool execution starts, for UI rendering.
@@ -95,6 +103,10 @@ public class AgentLoop
             var currentToolInput = new StringBuilder();
             string stopReason = "end_turn";
             bool streamError = false;
+            // Providers report usage as a running snapshot (not a per-event delta),
+            // so we overwrite rather than accumulate as UsageInfo events arrive.
+            int lastInputTokens = 0;
+            int lastOutputTokens = 0;
 
             try
             {
@@ -177,6 +189,12 @@ public class AgentLoop
                             stopReason = sd.StopReason;
                             Console.WriteLine($"\n<<<StreamDone: {stopReason}");
                             break;
+
+                        case UsageInfo ui:
+                            lastInputTokens = ui.InputTokens;
+                            lastOutputTokens = ui.OutputTokens;
+                            Console.WriteLine($"\n <<UsageInfo: input={ui.InputTokens} output={ui.OutputTokens}");
+                            break;
                     }
                 }
             }
@@ -227,6 +245,10 @@ public class AgentLoop
             // Reset error counter on successful stream completion
             if (!streamError)
                 consecutiveStreamErrors = 0;
+
+            _totalInputTokens += lastInputTokens;
+            _totalOutputTokens += lastOutputTokens;
+            Console.WriteLine($"\n<<<TotalUsage: input={_totalInputTokens} output={_totalOutputTokens}");
 
             // Flush any remaining text
             if (currentText.Length > 0)

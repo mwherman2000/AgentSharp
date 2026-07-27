@@ -58,15 +58,39 @@ public class OpenAiCompatibleClient : ILlmClient
     public static OpenAiCompatibleClient ForGemini(string apiKey, string model = "gemini-2.5-pro")
         => new(apiKey, model, "https://generativelanguage.googleapis.com/v1beta/openai", "Gemini");
 
+    /// <summary>
+    /// Create a client for a local Ollama server (OpenAI-compatible endpoint).
+    /// Ollama doesn't require an API key; a placeholder value is sent since
+    /// the underlying HttpClient always attaches an Authorization header.
+    /// </summary>
+    public static OpenAiCompatibleClient ForOllama(string model, string baseUrl = "http://localhost:11434/v1")
+        => new("ollama", model, baseUrl, "Ollama");
+
     public async Task<LlmResponse> SendAsync(LlmRequest request, CancellationToken ct = default)
     {
         var body = BuildRequestBody(request, stream: false);
         var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _http.PostAsync(_apiUrl, content, ct);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessAsync(response, ct);
 
         var json = await response.Content.ReadAsStringAsync(ct);
         return ParseResponse(json);
+    }
+
+    /// <summary>
+    /// Throws with the API's actual error body on failure. EnsureSuccessStatusCode()
+    /// alone discards the response content, so callers only ever see
+    /// "400 (Bad Request)" with no indication of what was actually wrong.
+    /// </summary>
+    private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        if (response.IsSuccessStatusCode) return;
+
+        var body = await response.Content.ReadAsStringAsync(ct);
+        throw new HttpRequestException(
+            $"{response.RequestMessage?.RequestUri} error {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+            null,
+            response.StatusCode);
     }
 
     public async IAsyncEnumerable<StreamEvent> StreamAsync(
@@ -74,6 +98,9 @@ public class OpenAiCompatibleClient : ILlmClient
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var body = BuildRequestBody(request, stream: true);
+        Console.Error.WriteLine($"[TIMING] request body length: {body.Length}");
+        System.IO.File.WriteAllText("C:/SVRN7/repos/AgentSharp/last_request_body.json", body);
+        var __sw2 = System.Diagnostics.Stopwatch.StartNew();
         var httpContent = new StringContent(body, Encoding.UTF8, "application/json");
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _apiUrl) { Content = httpContent };
@@ -81,7 +108,8 @@ public class OpenAiCompatibleClient : ILlmClient
             httpRequest.Headers.TryAddWithoutValidation(header.Key, header.Value);
 
         using var response = await _http.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
-        response.EnsureSuccessStatusCode();
+        Console.Error.WriteLine($"[TIMING] headers received: {__sw2.ElapsedMilliseconds}ms");
+        await EnsureSuccessAsync(response, ct);
 
         using var stream = await response.Content.ReadAsStreamAsync(ct);
         using var reader = new StreamReader(stream);
@@ -108,6 +136,17 @@ public class OpenAiCompatibleClient : ILlmClient
             }
 
             var json = JsonDocument.Parse(data).RootElement;
+
+            // The include_usage final chunk has an empty "choices" array and would
+            // otherwise be skipped by the early-exit below (or never reached, since
+            // the finish_reason chunk that precedes it already breaks the loop).
+            if (json.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+            {
+                yield return new UsageInfo(
+                    usage.TryGetProperty("prompt_tokens", out var pt) ? GetIntFlexible(pt) : 0,
+                    usage.TryGetProperty("completion_tokens", out var cpt) ? GetIntFlexible(cpt) : 0);
+            }
+
             var choices = json.GetProperty("choices");
             if (choices.GetArrayLength() == 0) continue;
 
@@ -148,7 +187,7 @@ public class OpenAiCompatibleClient : ILlmClient
             {
                 foreach (var tc in toolCalls.EnumerateArray())
                 {
-                    var index = tc.GetProperty("index").GetInt32();
+                    var index = GetIntFlexible(tc.GetProperty("index"));
 
                     // New tool call start
                     if (tc.TryGetProperty("id", out var idProp) &&
@@ -174,15 +213,27 @@ public class OpenAiCompatibleClient : ILlmClient
                     }
                 }
             }
-
-            // Usage info
-            if (json.TryGetProperty("usage", out var usage))
-            {
-                yield return new UsageInfo(
-                    usage.TryGetProperty("prompt_tokens", out var pt) ? pt.GetInt32() : 0,
-                    usage.TryGetProperty("completion_tokens", out var cpt) ? cpt.GetInt32() : 0);
-            }
         }
+    }
+
+    /// <summary>
+    /// Reads a JSON numeric element as an int, tolerating providers that emit
+    /// whole numbers with a decimal point (e.g. "index": 0.0). JsonElement.GetInt32()
+    /// uses a strict digit-only fast path and throws a FormatException
+    /// ("Expected an ASCII digit") on such values, so we fall back to a
+    /// double-based parse and truncate to int.
+    /// </summary>
+    private static int GetIntFlexible(JsonElement element)
+    {
+        if (element.TryGetInt32(out var i))
+            return i;
+
+        if (element.TryGetDouble(out var d))
+            return (int)d;
+
+        // Last resort: some providers send numbers as JSON strings
+        var raw = element.GetRawText().Trim('"');
+        return (int)double.Parse(raw, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private string BuildRequestBody(LlmRequest request, bool stream)
@@ -195,6 +246,16 @@ public class OpenAiCompatibleClient : ILlmClient
         writer.WriteNumber("max_tokens", request.MaxTokens);
         writer.WriteBoolean("stream", stream);
         writer.WriteNumber("temperature", request.Temperature);
+
+        // Streamed chunks omit "usage" entirely unless explicitly requested --
+        // without this, UsageInfo is never yielded during StreamAsync.
+        if (stream)
+        {
+            writer.WritePropertyName("stream_options");
+            writer.WriteStartObject();
+            writer.WriteBoolean("include_usage", true);
+            writer.WriteEndObject();
+        }
 
         // Messages (system prompt is the first message with role "system" in OpenAI format)
         writer.WritePropertyName("messages");
@@ -337,8 +398,8 @@ public class OpenAiCompatibleClient : ILlmClient
         int inputTokens = 0, outputTokens = 0;
         if (doc.TryGetProperty("usage", out var usage))
         {
-            inputTokens = usage.TryGetProperty("prompt_tokens", out var pt) ? pt.GetInt32() : 0;
-            outputTokens = usage.TryGetProperty("completion_tokens", out var ct2) ? ct2.GetInt32() : 0;
+            inputTokens = usage.TryGetProperty("prompt_tokens", out var pt) ? GetIntFlexible(pt) : 0;
+            outputTokens = usage.TryGetProperty("completion_tokens", out var ct2) ? GetIntFlexible(ct2) : 0;
         }
 
         return new LlmResponse

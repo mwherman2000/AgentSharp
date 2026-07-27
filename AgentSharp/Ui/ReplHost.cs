@@ -23,6 +23,7 @@ public class ReplHost
     private readonly MemoryManager _memory;
     private AgentLoop _agent;
     private int _turnCount;
+    private readonly List<string> _inputHistory = new();
 
     public ReplHost(
         ILlmClient llm,
@@ -54,10 +55,14 @@ public class ReplHost
         while (!ct.IsCancellationRequested)
         {
             AnsiConsole.WriteLine();
-            var input = ReadMultiLineInput();
+            var input = ReadMultiLineInput(_inputHistory);
 
             if (string.IsNullOrWhiteSpace(input))
                 continue;
+
+            // Record in history (skip consecutive duplicates)
+            if (_inputHistory.Count == 0 || _inputHistory[^1] != input)
+                _inputHistory.Add(input);
 
             // Parse slash commands
             var command = CommandParser.Parse(input);
@@ -106,6 +111,21 @@ public class ReplHost
 
             case CommandType.Exit:
                 return false;
+
+            case CommandType.History:
+                Program.HistoryTrace = !Program.HistoryTrace;
+                Console.WriteLine($"HistoryTrace: {Program.HistoryTrace.ToString()}");
+                break;
+
+            case CommandType.Tools:
+                Program.ToolsTrace = !Program.ToolsTrace;
+                Console.WriteLine($"ToolsTrace: {Program.ToolsTrace.ToString()}");
+                break;
+
+            case CommandType.Request:
+                Program.RequestTrace = !Program.RequestTrace;
+                Console.WriteLine($"RequestTrace: {Program.RequestTrace.ToString()}");
+                break;
 
             case CommandType.Clear:
                 _agent = new AgentLoop(_llm, _tools, _approval,
@@ -162,6 +182,7 @@ public class ReplHost
                 AnsiConsole.MarkupLine($"[bold]Tools:[/] {_tools.All.Count}");
                 AnsiConsole.MarkupLine($"[bold]Turns:[/] {_turnCount}");
                 AnsiConsole.MarkupLine($"[bold]Messages:[/] {_agent.History.Count}");
+                AnsiConsole.MarkupLine($"[bold]Tokens:[/] {_agent.TotalInputTokens} in / {_agent.TotalOutputTokens} out");
                 AnsiConsole.MarkupLine($"[bold]Directory:[/] {_project.WorkingDirectory}");
                 AnsiConsole.MarkupLine($"[bold]Git branch:[/] {_project.GitBranch ?? "N/A"}");
                 break;
@@ -249,7 +270,10 @@ public class ReplHost
             .AddRow("/status", "Show current agent status")
             .AddRow("/model", "Show current model info")
             .AddRow("/memory", "Show persistent memory")
-            .AddRow("/memory clear", "Clear persistent memory");
+            .AddRow("/memory clear", "Clear persistent memory")
+            .AddRow("/request", "Toggle request trace")
+            .AddRow("/history", "Toggle history trace")
+            .AddRow("/tools", "Toggle tools trace");
 
         AnsiConsole.Write(table);
     }
@@ -258,12 +282,19 @@ public class ReplHost
     /// Read user input with multiline support.
     /// Alt+Enter inserts a newline, Enter submits.
     /// Trailing backslash also continues to the next line.
+    /// Up/Down arrows recall previous entries from <paramref name="history"/>
+    /// (only while still on the first line of input, before any continuation).
     /// </summary>
-    private static string ReadMultiLineInput()
+    private static string ReadMultiLineInput(List<string> history)
     {
         var lines = new List<string>();
         var current = new System.Text.StringBuilder();
         AnsiConsole.Markup("[bold blue]>[/] ");
+
+        // historyIndex == history.Count means "not currently navigating history"
+        // (i.e. showing the user's own in-progress draft).
+        var historyIndex = history.Count;
+        var draft = string.Empty;
 
         while (true)
         {
@@ -299,6 +330,26 @@ public class ReplHost
                     }
                 }
             }
+            else if (key.Key == ConsoleKey.UpArrow)
+            {
+                // Only recall history while on the first (only) line so far.
+                if (lines.Count == 0 && history.Count > 0 && historyIndex > 0)
+                {
+                    if (historyIndex == history.Count)
+                        draft = current.ToString();
+
+                    historyIndex--;
+                    ReplaceCurrentLine(current, history[historyIndex]);
+                }
+            }
+            else if (key.Key == ConsoleKey.DownArrow)
+            {
+                if (lines.Count == 0 && historyIndex < history.Count)
+                {
+                    historyIndex++;
+                    ReplaceCurrentLine(current, historyIndex == history.Count ? draft : history[historyIndex]);
+                }
+            }
             else if (key.Key == ConsoleKey.Backspace)
             {
                 if (current.Length > 0)
@@ -313,5 +364,25 @@ public class ReplHost
                 Console.Write(key.KeyChar);
             }
         }
+    }
+
+    /// <summary>
+    /// Erases the currently displayed input line on the console and replaces
+    /// both the buffer and the visible text with <paramref name="newText"/>.
+    /// Used for Up/Down arrow history recall.
+    /// </summary>
+    private static void ReplaceCurrentLine(System.Text.StringBuilder current, string newText)
+    {
+        // Erase existing characters: backspace, overwrite with space, backspace again.
+        if (current.Length > 0)
+        {
+            Console.Write(new string('\b', current.Length));
+            Console.Write(new string(' ', current.Length));
+            Console.Write(new string('\b', current.Length));
+        }
+
+        current.Clear();
+        current.Append(newText);
+        Console.Write(newText);
     }
 }
