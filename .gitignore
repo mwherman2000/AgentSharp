@@ -38,3 +38,6 @@ last_request_body.json
 
 # Stray file created when a `> nul` redirect runs under Git Bash instead of cmd.exe
 nul
+
+# Ad-hoc debug/log output
+*.log
