@@ -226,14 +226,16 @@ public class ReplHost
 
         agent.OnToolEnd += (name, result) =>
         {
+            var output = SanitizeForTerminal(result.Output);
             if (result.IsError)
             {
-                AnsiConsole.MarkupLine($"[red]  Error: {Markup.Escape(TruncateForDisplay(result.Output))}[/]");
+                AnsiConsole.MarkupLine($"[red]  Error: {Markup.Escape(TruncateForDisplay(output))}[/]");
             }
             else
             {
-                var preview = TruncateForDisplay(result.Output, 200);
-                AnsiConsole.MarkupLine($"[green]  Done[/] [dim]({Markup.Escape(preview.Split('\n')[0])})[/]");
+                var preview = TruncateForDisplay(output, 200);
+                var firstLine = preview.Split('\n')[0].TrimEnd('\r');
+                AnsiConsole.MarkupLine($"[green]  Done[/] [dim]({Markup.Escape(firstLine)})[/]");
             }
         };
     }
@@ -241,7 +243,28 @@ public class ReplHost
     private static string TruncateForDisplay(string text, int maxLength = 500)
     {
         if (text.Length <= maxLength) return text;
+        // Avoid splitting a surrogate pair (e.g. an emoji) in half at the cut point.
+        if (char.IsHighSurrogate(text[maxLength - 1]))
+            maxLength--;
         return text[..maxLength] + "...";
+    }
+
+    /// <summary>
+    /// Strips raw control characters (e.g. ESC-prefixed ANSI/VT sequences) from
+    /// untrusted tool output (web_fetch, run_shell, etc.) before it reaches the
+    /// terminal. Markup.Escape only neutralizes '['/']' for Spectre's own markup
+    /// parser -- it does nothing to stop injected terminal control sequences.
+    /// </summary>
+    private static string SanitizeForTerminal(string text)
+    {
+        Span<char> buffer = text.Length <= 1024 ? stackalloc char[text.Length] : new char[text.Length];
+        var written = 0;
+        foreach (var c in text)
+        {
+            if (c == '\n' || c == '\r' || c == '\t' || !char.IsControl(c))
+                buffer[written++] = c;
+        }
+        return new string(buffer[..written]);
     }
 
     private void PrintWelcome()
