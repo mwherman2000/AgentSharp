@@ -9,7 +9,7 @@ public record LlmRequest
     public required string SystemPrompt { get; init; }
     public required IReadOnlyList<ChatMessage> Messages { get; init; }
     public IReadOnlyList<ToolDefinition>? Tools { get; init; }
-    public int MaxTokens { get; init; } = 4096;
+    public int MaxTokens { get; init; } = 8192;
     public double Temperature { get; init; } = 0.7;
 }
 

@@ -89,7 +89,7 @@ public class AgentLoop
                 SystemPrompt = _systemPrompt,
                 Messages = _history.Messages.ToList(),
                 Tools = _tools.GetDefinitions(),
-                MaxTokens = 4096
+                MaxTokens = 8192
             };
             if (Program.RequestTrace) Console.WriteLine($"\n>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
             if (Program.ToolsTrace)   Console.WriteLine($"\n >>request.Tools: {System.Text.Json.JsonSerializer.Serialize(request.Tools)}");
@@ -278,6 +278,20 @@ public class AgentLoop
             {
                 AnsiConsole.WriteLine();
                 Console.WriteLine($"\n<<<stopReason: {stopReason} Count 0");
+
+                if (stopReason == "max_tokens")
+                {
+                    // The response (or a tool call the model was mid-way through
+                    // starting, e.g. a ToolUseStart with no matching ToolUseEnd) got
+                    // cut off by the output token limit before any tool_use block
+                    // could be completed, so there's nothing here to execute or
+                    // report a tool_result for. Nudge the model to pick up where it
+                    // left off instead of silently ending the turn.
+                    AnsiConsole.MarkupLine("[yellow]Response was cut off by the output token limit. Asking the model to continue...[/]");
+                    _history.AddUserMessage("Your previous response was cut off because it reached the output token limit. Please continue where you left off.");
+                    continue;
+                }
+
                 break;
             }
 
