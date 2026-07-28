@@ -233,7 +233,7 @@ public class ReplHost
             else
             {
                 var preview = TruncateForDisplay(result.Output, 200);
-                AnsiConsole.MarkupLine($"[green]  Done[/] [dim]({preview.Split('\n')[0]})[/]");
+                AnsiConsole.MarkupLine($"[green]  Done[/] [dim]({Markup.Escape(preview.Split('\n')[0])})[/]");
             }
         };
     }

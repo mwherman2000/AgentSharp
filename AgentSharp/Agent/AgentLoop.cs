@@ -269,9 +269,12 @@ public class AgentLoop
             // --- DECIDE: Append assistant message to history ---
             _history.AddAssistantMessage(contentBlocks);
 
-            // If no tool calls, we're done (model said "end_turn")
+            // If no tool calls, we're done. Every tool_use block requires a matching
+            // tool_result in the next message per the Anthropic API contract, so we must
+            // execute pending tool calls even if stopReason claims "end_turn" (providers
+            // can report stop_reason inconsistently when a tool_use block is present).
             var toolUses = contentBlocks.OfType<ToolUseBlock>().ToList();
-            if (stopReason == "end_turn" || toolUses.Count == 0)
+            if (toolUses.Count == 0)
             {
                 AnsiConsole.WriteLine();
                 Console.WriteLine($"\n<<<stopReason: {stopReason} Count 0");
