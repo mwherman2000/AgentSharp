@@ -58,6 +58,17 @@ public class AgentOrchestrator
     /// </summary>
     public async Task<string> RunSingleAsync(string name, string task, CancellationToken ct = default)
     {
+        var (result, _) = await RunSingleInternalAsync(name, task, ct);
+        return result;
+    }
+
+    /// <summary>
+    /// Spawns and runs a single sub-agent, returning the SubAgent reference alongside
+    /// its result so callers that need the agent's final Id/Status (e.g.
+    /// RunSequentialAsync) don't have to guess which agent just ran.
+    /// </summary>
+    private async Task<(string result, SubAgent agent)> RunSingleInternalAsync(string name, string task, CancellationToken ct)
+    {
         var agent = Spawn(name, task);
 
         AnsiConsole.MarkupLine($"[cyan]Spawning sub-agent:[/] [bold]{Markup.Escape(name)}[/]");
@@ -69,7 +80,7 @@ public class AgentOrchestrator
             ? $"[green]Sub-agent '{Markup.Escape(name)}' completed.[/]"
             : $"[red]Sub-agent '{Markup.Escape(name)}' {agent.Status}.[/]");
 
-        return result;
+        return (result, agent);
     }
 
     /// <summary>
@@ -121,9 +132,8 @@ public class AgentOrchestrator
                 ? $"{task}\n\nContext from previous step:\n{previousResult}"
                 : task;
 
-            var result = await RunSingleAsync(name, fullTask, ct);
-            results.Add(new SubAgentResult(name, _agents.Values.Last().Id, result,
-                _agents.Values.Last().Status));
+            var (result, agent) = await RunSingleInternalAsync(name, fullTask, ct);
+            results.Add(new SubAgentResult(name, agent.Id, result, agent.Status));
             previousResult = result;
         }
 
