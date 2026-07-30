@@ -99,7 +99,6 @@ public class OpenAiCompatibleClient : ILlmClient
     {
         var body = BuildRequestBody(request, stream: true);
         Console.Error.WriteLine($"[TIMING] request body length: {body.Length}");
-        System.IO.File.WriteAllText("C:/SVRN7/repos/AgentSharp/last_request_body.json", body);
         var __sw2 = System.Diagnostics.Stopwatch.StartNew();
         var httpContent = new StringContent(body, Encoding.UTF8, "application/json");
 

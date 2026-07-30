@@ -38,7 +38,12 @@ public class SessionManager
 
         var path = GetSessionPath(sessionId);
         var json = JsonSerializer.Serialize(session, JsonOptions);
-        await File.WriteAllTextAsync(path, json);
+
+        // Write to a unique temp file and rename into place so a concurrent Load,
+        // or a crash mid-write, never sees a partially-written session file.
+        var tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
+        await File.WriteAllTextAsync(tempPath, json);
+        File.Move(tempPath, path, overwrite: true);
 
         return sessionId;
     }
@@ -52,8 +57,18 @@ public class SessionManager
         if (!File.Exists(path))
             return null;
 
-        var json = await File.ReadAllTextAsync(path);
-        var session = JsonSerializer.Deserialize<SessionData>(json, JsonOptions);
+        SessionData? session;
+        try
+        {
+            var json = await File.ReadAllTextAsync(path);
+            session = JsonSerializer.Deserialize<SessionData>(json, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            // Corrupt or partially-written session file -- treat like "not found"
+            // rather than crashing the REPL.
+            return null;
+        }
         if (session is null) return null;
 
         var history = new ConversationHistory();

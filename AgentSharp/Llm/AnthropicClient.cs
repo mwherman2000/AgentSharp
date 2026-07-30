@@ -114,8 +114,17 @@ public class AnthropicClient : ILlmClient
         writer.WriteNumber("max_tokens", request.MaxTokens);
         writer.WriteBoolean("stream", stream);
 
-        // System prompt
-        writer.WriteString("system", request.SystemPrompt);
+        // System prompt -- written as a single cached text block. The system prompt
+        // (project instructions, file tree, tool summaries) is large and stable across
+        // a session, so this is the highest-value cache breakpoint.
+        writer.WritePropertyName("system");
+        writer.WriteStartArray();
+        writer.WriteStartObject();
+        writer.WriteString("type", "text");
+        writer.WriteString("text", request.SystemPrompt);
+        WriteCacheControl(writer);
+        writer.WriteEndObject();
+        writer.WriteEndArray();
 
         // Messages
         writer.WritePropertyName("messages");
@@ -137,15 +146,17 @@ public class AnthropicClient : ILlmClient
     private static void WriteMessages(Utf8JsonWriter writer, IReadOnlyList<ChatMessage> messages)
     {
         writer.WriteStartArray();
-        foreach (var msg in messages)
+        for (var mi = 0; mi < messages.Count; mi++)
         {
+            var msg = messages[mi];
             writer.WriteStartObject();
             writer.WriteString("role", msg.Role);
 
             writer.WritePropertyName("content");
             writer.WriteStartArray();
-            foreach (var block in msg.Content)
+            for (var bi = 0; bi < msg.Content.Count; bi++)
             {
+                var block = msg.Content[bi];
                 writer.WriteStartObject();
                 switch (block)
                 {
@@ -170,6 +181,14 @@ public class AnthropicClient : ILlmClient
                             writer.WriteBoolean("is_error", true);
                         break;
                 }
+
+                // Cache breakpoint at the tail of the conversation so far. History is
+                // append-only (see ConversationHistory), so everything before this
+                // point is byte-identical to the previous request and Anthropic can
+                // serve it from cache; only the newly appended turn needs reprocessing.
+                if (mi == messages.Count - 1 && bi == msg.Content.Count - 1)
+                    WriteCacheControl(writer);
+
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -179,16 +198,31 @@ public class AnthropicClient : ILlmClient
         writer.WriteEndArray();
     }
 
+    private static void WriteCacheControl(Utf8JsonWriter writer)
+    {
+        writer.WritePropertyName("cache_control");
+        writer.WriteStartObject();
+        writer.WriteString("type", "ephemeral");
+        writer.WriteEndObject();
+    }
+
     private static void WriteTools(Utf8JsonWriter writer, IReadOnlyList<ToolDefinition> tools)
     {
         writer.WriteStartArray();
-        foreach (var tool in tools)
+        for (var i = 0; i < tools.Count; i++)
         {
+            var tool = tools[i];
             writer.WriteStartObject();
             writer.WriteString("name", tool.Name);
             writer.WriteString("description", tool.Description);
             writer.WritePropertyName("input_schema");
             tool.InputSchema.WriteTo(writer);
+
+            // Tool definitions are identical on every request, so cache them too --
+            // this is the most stable (and cheapest to keep cached) part of the prompt.
+            if (i == tools.Count - 1)
+                WriteCacheControl(writer);
+
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
