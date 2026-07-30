@@ -1,4 +1,5 @@
 using System.Text;
+using AgentSharp.Memory;
 
 namespace AgentSharp.Context;
 
@@ -14,10 +15,12 @@ namespace AgentSharp.Context;
 public class SystemPromptBuilder
 {
     private readonly ProjectContext _project;
+    private readonly MemoryManager? _memory;
 
-    public SystemPromptBuilder(ProjectContext project)
+    public SystemPromptBuilder(ProjectContext project, MemoryManager? memory = null)
     {
         _project = project;
+        _memory = memory;
     }
 
     public string Build()
@@ -50,6 +53,14 @@ public class SystemPromptBuilder
         {
             sb.AppendLine("\n# Project Instructions");
             sb.AppendLine(_project.ProjectInstructions);
+        }
+
+        // Persistent memory (written via the "remember" tool, read back here)
+        var memoryContent = _memory?.GetForSystemPrompt();
+        if (memoryContent is not null)
+        {
+            sb.AppendLine("\n# Memory");
+            sb.AppendLine(memoryContent);
         }
 
         return sb.ToString();

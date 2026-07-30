@@ -65,12 +65,17 @@ internal class Program
             // --- Safety ---
             var approval = new ApprovalGate();
 
+            // --- Memory & Sessions ---
+            var sessions = new SessionManager();
+            var memory = new MemoryManager();
+
             // --- Multi-Agent Orchestrator ---
-            // Create orchestrator and register the sub_agent tool
-            // (must be done after tool discovery since SubAgentTool requires constructor args)
-            var promptBuilder = new SystemPromptBuilder(new ProjectContext());
+            // Create orchestrator and register the sub_agent and remember tools
+            // (must be done after tool discovery since both require constructor args)
+            var promptBuilder = new SystemPromptBuilder(new ProjectContext(), memory);
             var orchestrator = new AgentOrchestrator(llm, tools, approval, promptBuilder.Build());
             tools.Register(new SubAgentTool(orchestrator));
+            tools.Register(new MemoryTool(memory));
 
             // --- Project Context ---
             var project = new ProjectContext();
@@ -82,16 +87,12 @@ internal class Program
                 });
             __Mark("project scan done");
 
-            // --- Memory ---
-            var sessions = new SessionManager();
-            var memory = new MemoryManager();
-
             // --- Check for one-shot mode (prompt passed as argument) ---
             var promptArg = GetPromptArgument(args);
             if (promptArg is not null)
             {
                 // One-shot mode: run a single turn and exit
-                var oneShotPromptBuilder = new SystemPromptBuilder(project);
+                var oneShotPromptBuilder = new SystemPromptBuilder(project, memory);
                 var agentLoop = new AgentSharp.Agent.AgentLoop(llm, tools, approval, oneShotPromptBuilder.Build());
                 __Mark("about to call RunTurnAsync");
                 if (SyncMode)

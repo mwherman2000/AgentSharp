@@ -40,7 +40,7 @@ public class ReplHost
         _sessions = sessions;
         _memory = memory;
 
-        var promptBuilder = new SystemPromptBuilder(_project);
+        var promptBuilder = new SystemPromptBuilder(_project, _memory);
         _agent = new AgentLoop(_llm, _tools, _approval, promptBuilder.Build());
         WireEvents(_agent);
     }
@@ -139,7 +139,7 @@ public class ReplHost
 
             case CommandType.Clear:
                 _agent = new AgentLoop(_llm, _tools, _approval,
-                    new SystemPromptBuilder(_project).Build());
+                    new SystemPromptBuilder(_project, _memory).Build());
                 WireEvents(_agent);
                 _turnCount = 0;
                 AnsiConsole.Clear();
@@ -165,7 +165,7 @@ public class ReplHost
                     break;
                 }
                 _agent = new AgentLoop(_llm, _tools, _approval,
-                    new SystemPromptBuilder(_project).Build(), history);
+                    new SystemPromptBuilder(_project, _memory).Build(), history);
                 WireEvents(_agent);
                 AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages)");
                 break;
