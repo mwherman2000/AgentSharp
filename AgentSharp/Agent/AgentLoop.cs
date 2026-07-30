@@ -3,10 +3,8 @@ using AgentSharp.Safety;
 using AgentSharp.Tools;
 using Spectre.Console;
 using System;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Xml.Linq;
 
 namespace AgentSharp.Agent;
 
@@ -528,7 +526,7 @@ public class AgentLoop
             // Safety gate: check approval
             if (tool is not null)
             {
-                var approved = await _approval.CheckApprovalAsync(tool, inputSummary);
+                var approved = await _approval.CheckApprovalAsync(tool, inputSummary, toolUse.Input);
                 if (!approved)
                 {
                     var deniedResult = ToolResult.Error("User denied this tool execution.");
