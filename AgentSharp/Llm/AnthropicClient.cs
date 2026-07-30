@@ -20,9 +20,18 @@ public class AnthropicClient : ILlmClient
     public string ModelId => _model;
 
     public AnthropicClient(string apiKey, string model = "claude-sonnet-4-20250514")
+        : this(new HttpClient(), apiKey, model)
+    {
+    }
+
+    /// <summary>
+    /// Test seam: allows injecting an HttpClient wrapping a fake HttpMessageHandler
+    /// so tests can verify request/response handling without calling the real API.
+    /// </summary>
+    internal AnthropicClient(HttpClient httpClient, string apiKey, string model = "claude-sonnet-4-20250514")
     {
         _model = model;
-        _http = new HttpClient();
+        _http = httpClient;
         _http.DefaultRequestHeaders.Add("x-api-key", apiKey);
         _http.DefaultRequestHeaders.Add("anthropic-version", ApiVersion);
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));

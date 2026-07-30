@@ -32,11 +32,25 @@ public class OpenAiCompatibleClient : ILlmClient
         string model,
         string baseUrl = "https://api.openai.com/v1",
         string providerName = "OpenAI")
+        : this(new HttpClient(), apiKey, model, baseUrl, providerName)
+    {
+    }
+
+    /// <summary>
+    /// Test seam: allows injecting an HttpClient wrapping a fake HttpMessageHandler
+    /// so tests can verify request/response handling without calling the real API.
+    /// </summary>
+    internal OpenAiCompatibleClient(
+        HttpClient httpClient,
+        string apiKey,
+        string model,
+        string baseUrl = "https://api.openai.com/v1",
+        string providerName = "OpenAI")
     {
         _model = model;
         _apiUrl = $"{baseUrl.TrimEnd('/')}/chat/completions";
         _providerName = providerName;
-        _http = new HttpClient();
+        _http = httpClient;
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
     }
 
