@@ -112,7 +112,7 @@ public class GrepTool : ToolBase
 
             var summary = $"Found {totalMatches} matches in {filesMatched} files (searched {filesSearched} files):";
             if (totalMatches >= maxResults)
-                summary += " [truncated at 200 results]";
+                summary += $" [truncated at {maxResults} results]";
 
             return Task.FromResult(ToolResult.Success(summary + "\n" + string.Join("\n", results)));
         }

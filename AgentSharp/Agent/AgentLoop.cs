@@ -76,10 +76,14 @@ public class AgentLoop
     /// as many LLM calls and tool executions as needed until the model
     /// produces a final text response (stop_reason: "end_turn").
     /// </summary>
+    static private int nTurns = 0;
+    static private int nToolsExecutions = 0;
     public async Task<string> RunTurnAsync(string userMessage, CancellationToken ct = default)
     {
+        nTurns++;
+        nToolsExecutions = 0;
         _history.AddUserMessage(userMessage);
-        Console.WriteLine($"\n>>>userMessage: {userMessage}");
+        Console.WriteLine($"\n{nTurns}>>>userMessage: {userMessage}");
 
         var fullResponseText = new StringBuilder();
         int iterations = 0;
@@ -99,7 +103,7 @@ public class AgentLoop
                 Tools = _tools.GetDefinitions(),
                 MaxTokens = 8192
             };
-            if (Program.RequestTrace) Console.WriteLine($"\n>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
+            if (Program.RequestTrace) Console.WriteLine($"\n{nTurns}>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
             if (Program.ToolsTrace)   Console.WriteLine($"\n >>request.Tools: {System.Text.Json.JsonSerializer.Serialize(request.Tools)}");
             if (Program.HistoryTrace) Console.WriteLine($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(request.Messages)}");
 
@@ -143,6 +147,7 @@ public class AgentLoop
                             break;
 
                         case ToolUseStart tus:
+                            nToolsExecutions++;
                             // Flush any accumulated text
                             if (currentText.Length > 0)
                             {
@@ -153,7 +158,7 @@ public class AgentLoop
                             currentToolId = tus.Id;
                             currentToolName = tus.Name;
                             currentToolInput.Clear();
-                            Console.WriteLine($"\n <<ToolUseStart: {tus.Id} {tus.Name}");
+                            Console.WriteLine($"\n{nToolsExecutions} <<ToolUseStart: {tus.Id} {tus.Name}");
                             break;
 
                         case ToolInputDelta tid:
@@ -170,7 +175,7 @@ public class AgentLoop
                                     inputJson = currentToolInput.Length > 0
                                         ? JsonDocument.Parse(currentToolInput.ToString()).RootElement.Clone()
                                         : JsonDocument.Parse("{}").RootElement;
-                                    Console.WriteLine($"\n <<ToolUseEnd.inputJson: {inputJson.ToString()}");
+                                    Console.WriteLine($"\n{nToolsExecutions} <<ToolUseEnd.inputJson: {inputJson.ToString()}");
                                 }
                                 catch (JsonException ex)
                                 {
@@ -196,7 +201,7 @@ public class AgentLoop
                                     Name = currentToolName,
                                     Input = inputJson
                                 });
-                                Console.WriteLine($"\n<<<TextUseEnd: {currentToolId} {currentToolName} {inputJson.ToString()}");
+                                Console.WriteLine($"\n{nToolsExecutions}<<<TextUseEnd: {currentToolId} {currentToolName} {inputJson.ToString()}");
                             }
                             currentToolId = null;
                             currentToolName = null;
@@ -205,7 +210,7 @@ public class AgentLoop
 
                         case StreamDone sd:
                             stopReason = sd.StopReason;
-                            Console.WriteLine($"\n<<<StreamDone: {stopReason}");
+                            Console.WriteLine($"\n{nTurns}<<<StreamDone: {stopReason} nToolExecutions {nToolsExecutions}");
                             break;
 
                         case UsageInfo ui:
@@ -291,7 +296,7 @@ public class AgentLoop
             if (toolUses.Count == 0)
             {
                 AnsiConsole.WriteLine();
-                Console.WriteLine($"\n<<<stopReason: {stopReason} Count 0");
+                Console.WriteLine($"\n{nTurns}<<<stopReason: {stopReason} Count 0 nTurns {nTurns} nToolExecutions {nToolsExecutions}");
 
                 if (stopReason == "max_tokens")
                 {

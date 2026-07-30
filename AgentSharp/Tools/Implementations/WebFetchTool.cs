@@ -45,7 +45,7 @@ public class WebFetchTool : ToolBase
             var response = await Http.GetStringAsync(url, ct);
             if (response.Length > maxLength)
                 response = response[..maxLength] +
-                    "\n\n[Truncated]";
+                    "\n\n[Truncated for display]";
             return ToolResult.Success(response);
         }
         catch (HttpRequestException ex)
