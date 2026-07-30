@@ -26,6 +26,10 @@ internal class Program
     public static bool ToolsTrace;
     public static bool RequestTrace;
 
+    /// <summary>When true, use AgentLoop.RunTurnNonStreamingAsync (SendAsync) instead
+    /// of the default RunTurnAsync (StreamAsync). Toggled via the /sync REPL command.</summary>
+    public static bool SyncMode;
+
     private static async Task Main(string[] args)
     {
         // Handle --help and --version
@@ -90,7 +94,10 @@ internal class Program
                 var oneShotPromptBuilder = new SystemPromptBuilder(project);
                 var agentLoop = new AgentSharp.Agent.AgentLoop(llm, tools, approval, oneShotPromptBuilder.Build());
                 __Mark("about to call RunTurnAsync");
-                await agentLoop.RunTurnAsync(promptArg);
+                if (SyncMode)
+                    await agentLoop.RunTurnNonStreamingAsync(promptArg);
+                else
+                    await agentLoop.RunTurnAsync(promptArg);
                 __Mark("RunTurnAsync done");
                 return;
             }
@@ -177,6 +184,7 @@ internal class Program
             AnsiConsole.MarkupLine("  /request    Toggle request trace");
             AnsiConsole.MarkupLine("  /history    Toggle history trace");
             AnsiConsole.MarkupLine("  /tools      Toggle tools trace");
+            AnsiConsole.MarkupLine("  /sync       Toggle SendAsync (non-streaming) vs StreamAsync (default)");
         }
     }
 }

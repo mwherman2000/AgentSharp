@@ -81,7 +81,10 @@ public class ReplHost
                 AnsiConsole.Write(new Rule($"[dim]Turn {_turnCount}[/]").RuleStyle("dim"));
                 AnsiConsole.WriteLine();
 
-                await _agent.RunTurnAsync(input, ct);
+                if (Program.SyncMode)
+                    await _agent.RunTurnNonStreamingAsync(input, ct);
+                else
+                    await _agent.RunTurnAsync(input, ct);
             }
             catch (OperationCanceledException)
             {
@@ -125,6 +128,13 @@ public class ReplHost
             case CommandType.Request:
                 Program.RequestTrace = !Program.RequestTrace;
                 Console.WriteLine($"RequestTrace: {Program.RequestTrace.ToString()}");
+                break;
+
+            case CommandType.Sync:
+                Program.SyncMode = !Program.SyncMode;
+                AnsiConsole.MarkupLine(Program.SyncMode
+                    ? "[bold]SyncMode:[/] on (using SendAsync, non-streaming)"
+                    : "[bold]SyncMode:[/] off (using StreamAsync, default)");
                 break;
 
             case CommandType.Clear:
@@ -305,7 +315,8 @@ public class ReplHost
             .AddRow("/memory clear", "Clear persistent memory")
             .AddRow("/request", "Toggle request trace")
             .AddRow("/history", "Toggle history trace")
-            .AddRow("/tools", "Toggle tools trace");
+            .AddRow("/tools", "Toggle tools trace")
+            .AddRow("/sync", "Toggle SendAsync (non-streaming) vs StreamAsync (default)");
 
         AnsiConsole.Write(table);
     }

@@ -20,6 +20,7 @@ public class CommandParserTests
     [InlineData("/model", CommandType.Model)]
     [InlineData("/memory", CommandType.Memory)]
     [InlineData("/mem", CommandType.Memory)]
+    [InlineData("/sync", CommandType.Sync)]
     public void Parse_RecognizesCommands(string input, CommandType expected)
     {
         var result = CommandParser.Parse(input);

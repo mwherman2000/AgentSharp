@@ -19,6 +19,7 @@ public enum CommandType
     History,
     Tools,
     Request,
+    Sync,
     Unknown
 }
 
@@ -48,6 +49,7 @@ public static class CommandParser
             "memory" or "mem" => new ParsedCommand(CommandType.Memory, argument),
             "history" => new ParsedCommand(CommandType.History, argument),
             "tools" => new ParsedCommand(CommandType.Tools, argument),
+            "sync" => new ParsedCommand(CommandType.Sync),
             _ => new ParsedCommand(CommandType.Unknown, command)
         };
     }
