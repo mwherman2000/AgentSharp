@@ -49,6 +49,7 @@ public static class CommandParser
             "memory" or "mem" => new ParsedCommand(CommandType.Memory, argument),
             "history" => new ParsedCommand(CommandType.History, argument),
             "tools" => new ParsedCommand(CommandType.Tools, argument),
+            "request" => new ParsedCommand(CommandType.Request),
             "sync" => new ParsedCommand(CommandType.Sync),
             _ => new ParsedCommand(CommandType.Unknown, command)
         };
