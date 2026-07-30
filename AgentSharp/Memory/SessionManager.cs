@@ -77,7 +77,7 @@ public class SessionManager
             var chatMsg = DeserializeMessage(msg);
             if (chatMsg.Role == MessageRole.Assistant)
                 history.AddAssistantMessage(chatMsg);
-            else if (chatMsg.HasToolUse || chatMsg.Content.Any(b => b is ToolResultBlock))
+            else if (chatMsg.Content.Any(b => b is ToolResultBlock))
                 history.AddToolResults(chatMsg.Content.OfType<ToolResultBlock>());
             else
                 history.AddUserMessage(chatMsg.GetText());
