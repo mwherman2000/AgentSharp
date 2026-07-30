@@ -143,7 +143,8 @@ public class OpenAiCompatibleClient : ILlmClient
             {
                 yield return new UsageInfo(
                     usage.TryGetProperty("prompt_tokens", out var pt) ? GetIntFlexible(pt) : 0,
-                    usage.TryGetProperty("completion_tokens", out var cpt) ? GetIntFlexible(cpt) : 0);
+                    usage.TryGetProperty("completion_tokens", out var cpt) ? GetIntFlexible(cpt) : 0,
+                    CacheReadInputTokens: GetCachedTokens(usage));
             }
 
             var choices = json.GetProperty("choices");
@@ -394,11 +395,12 @@ public class OpenAiCompatibleClient : ILlmClient
         var stopReason = finishReason == "tool_calls" ? "tool_use" :
                          finishReason == "stop" ? "end_turn" : finishReason!;
 
-        int inputTokens = 0, outputTokens = 0;
+        int inputTokens = 0, outputTokens = 0, cacheReadTokens = 0;
         if (doc.TryGetProperty("usage", out var usage))
         {
             inputTokens = usage.TryGetProperty("prompt_tokens", out var pt) ? GetIntFlexible(pt) : 0;
             outputTokens = usage.TryGetProperty("completion_tokens", out var ct2) ? GetIntFlexible(ct2) : 0;
+            cacheReadTokens = GetCachedTokens(usage);
         }
 
         return new LlmResponse
@@ -410,7 +412,19 @@ public class OpenAiCompatibleClient : ILlmClient
             },
             StopReason = stopReason,
             InputTokens = inputTokens,
-            OutputTokens = outputTokens
+            OutputTokens = outputTokens,
+            CacheReadInputTokens = cacheReadTokens
         };
     }
+
+    /// <summary>
+    /// OpenAI-compatible providers cache automatically (no cache_control needed) and
+    /// report the hit count as usage.prompt_tokens_details.cached_tokens -- there's no
+    /// separate "cache creation" concept/cost the way Anthropic has.
+    /// </summary>
+    private static int GetCachedTokens(JsonElement usage)
+        => usage.TryGetProperty("prompt_tokens_details", out var details) &&
+           details.TryGetProperty("cached_tokens", out var cached)
+            ? GetIntFlexible(cached)
+            : 0;
 }

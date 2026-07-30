@@ -270,9 +270,7 @@ public class AnthropicClient : ILlmClient
                 }
                 if (json.TryGetProperty("usage", out var usage))
                 {
-                    yield return new UsageInfo(
-                        usage.TryGetProperty("input_tokens", out var it) ? GetIntFlexible(it) : 0,
-                        GetIntFlexible(usage.GetProperty("output_tokens")));
+                    yield return ReadUsage(usage);
                 }
                 break;
 
@@ -280,12 +278,24 @@ public class AnthropicClient : ILlmClient
                 if (json.TryGetProperty("message", out var msg) &&
                     msg.TryGetProperty("usage", out var startUsage))
                 {
-                    yield return new UsageInfo(
-                        GetIntFlexible(startUsage.GetProperty("input_tokens")),
-                        startUsage.TryGetProperty("output_tokens", out var ot) ? GetIntFlexible(ot) : 0);
+                    yield return ReadUsage(startUsage);
                 }
                 break;
         }
+    }
+
+    /// <summary>
+    /// Reads Anthropic's usage object, including the cache_creation_input_tokens
+    /// and cache_read_input_tokens fields that only appear once cache_control
+    /// breakpoints are in the request and the model actually hits the cache.
+    /// </summary>
+    private static UsageInfo ReadUsage(JsonElement usage)
+    {
+        return new UsageInfo(
+            usage.TryGetProperty("input_tokens", out var it) ? GetIntFlexible(it) : 0,
+            usage.TryGetProperty("output_tokens", out var ot) ? GetIntFlexible(ot) : 0,
+            usage.TryGetProperty("cache_creation_input_tokens", out var cc) ? GetIntFlexible(cc) : 0,
+            usage.TryGetProperty("cache_read_input_tokens", out var cr) ? GetIntFlexible(cr) : 0);
     }
 
     /// <summary>
@@ -342,7 +352,9 @@ public class AnthropicClient : ILlmClient
             },
             StopReason = stopReason,
             InputTokens = GetIntFlexible(usage.GetProperty("input_tokens")),
-            OutputTokens = GetIntFlexible(usage.GetProperty("output_tokens"))
+            OutputTokens = GetIntFlexible(usage.GetProperty("output_tokens")),
+            CacheCreationInputTokens = usage.TryGetProperty("cache_creation_input_tokens", out var cc) ? GetIntFlexible(cc) : 0,
+            CacheReadInputTokens = usage.TryGetProperty("cache_read_input_tokens", out var cr) ? GetIntFlexible(cr) : 0
         };
     }
 }

@@ -34,6 +34,12 @@ public record ToolUseEnd : StreamEvent;
 public record StreamDone(string StopReason) : StreamEvent;
 
 /// <summary>
-/// Usage information from the response.
+/// Usage information from the response. CacheCreationInputTokens and
+/// CacheReadInputTokens are 0 when the provider doesn't report them or no
+/// cache_control breakpoints were set.
 /// </summary>
-public record UsageInfo(int InputTokens, int OutputTokens) : StreamEvent;
+public record UsageInfo(
+    int InputTokens,
+    int OutputTokens,
+    int CacheCreationInputTokens = 0,
+    int CacheReadInputTokens = 0) : StreamEvent;

@@ -183,6 +183,7 @@ public class ReplHost
                 AnsiConsole.MarkupLine($"[bold]Turns:[/] {_turnCount}");
                 AnsiConsole.MarkupLine($"[bold]Messages:[/] {_agent.History.Count}");
                 AnsiConsole.MarkupLine($"[bold]Tokens:[/] {_agent.TotalInputTokens} in / {_agent.TotalOutputTokens} out");
+                AnsiConsole.MarkupLine($"[bold]Cache:[/] {_agent.TotalCacheCreationTokens} written / {_agent.TotalCacheReadTokens} read{FormatCacheHitRate()}");
                 AnsiConsole.MarkupLine($"[bold]Directory:[/] {_project.WorkingDirectory}");
                 AnsiConsole.MarkupLine($"[bold]Git branch:[/] {_project.GitBranch ?? "N/A"}");
                 break;
@@ -238,6 +239,14 @@ public class ReplHost
                 AnsiConsole.MarkupLine($"[green]  Done[/] [dim]({Markup.Escape(firstLine)})[/]");
             }
         };
+    }
+
+    private string FormatCacheHitRate()
+    {
+        var effectiveInput = _agent.TotalInputTokens + _agent.TotalCacheCreationTokens + _agent.TotalCacheReadTokens;
+        if (effectiveInput == 0) return "";
+        var hitRate = 100.0 * _agent.TotalCacheReadTokens / effectiveInput;
+        return $" ({hitRate:F0}% hit rate)";
     }
 
     private static string TruncateForDisplay(string text, int maxLength = 500)

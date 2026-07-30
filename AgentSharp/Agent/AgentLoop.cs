@@ -30,6 +30,8 @@ public class AgentLoop
     private readonly string _systemPrompt;
     private int _totalInputTokens;
     private int _totalOutputTokens;
+    private int _totalCacheCreationTokens;
+    private int _totalCacheReadTokens;
 
     public ConversationHistory History => _history;
 
@@ -38,6 +40,12 @@ public class AgentLoop
 
     /// <summary>Cumulative output tokens billed across every LLM call this AgentLoop has made.</summary>
     public int TotalOutputTokens => _totalOutputTokens;
+
+    /// <summary>Cumulative tokens written to the prompt cache (0 if the provider doesn't support it).</summary>
+    public int TotalCacheCreationTokens => _totalCacheCreationTokens;
+
+    /// <summary>Cumulative tokens served from the prompt cache instead of being reprocessed.</summary>
+    public int TotalCacheReadTokens => _totalCacheReadTokens;
 
     /// <summary>
     /// Event raised when tool execution starts, for UI rendering.
@@ -107,6 +115,8 @@ public class AgentLoop
             // so we overwrite rather than accumulate as UsageInfo events arrive.
             int lastInputTokens = 0;
             int lastOutputTokens = 0;
+            int lastCacheCreationTokens = 0;
+            int lastCacheReadTokens = 0;
 
             try
             {
@@ -201,7 +211,9 @@ public class AgentLoop
                         case UsageInfo ui:
                             lastInputTokens = ui.InputTokens;
                             lastOutputTokens = ui.OutputTokens;
-                            Console.WriteLine($"\n <<UsageInfo: input={ui.InputTokens} output={ui.OutputTokens}");
+                            lastCacheCreationTokens = ui.CacheCreationInputTokens;
+                            lastCacheReadTokens = ui.CacheReadInputTokens;
+                            Console.WriteLine($"\n <<UsageInfo: input={ui.InputTokens} output={ui.OutputTokens} cacheCreate={ui.CacheCreationInputTokens} cacheRead={ui.CacheReadInputTokens}");
                             break;
                     }
                 }
@@ -256,7 +268,9 @@ public class AgentLoop
 
             _totalInputTokens += lastInputTokens;
             _totalOutputTokens += lastOutputTokens;
-            Console.WriteLine($"\n<<<TotalUsage: input={_totalInputTokens} output={_totalOutputTokens}");
+            _totalCacheCreationTokens += lastCacheCreationTokens;
+            _totalCacheReadTokens += lastCacheReadTokens;
+            Console.WriteLine($"\n<<<TotalUsage: input={_totalInputTokens} output={_totalOutputTokens} cacheCreate={_totalCacheCreationTokens} cacheRead={_totalCacheReadTokens}");
 
             // Flush any remaining text
             if (currentText.Length > 0)
