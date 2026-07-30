@@ -402,6 +402,7 @@ public class AgentLoop
             {
                 WriteTextToConsole(text);
                 fullResponseText.Append(text);
+                Console.WriteLine($"\n<<<fullResponseText: {fullResponseText}");
             }
 
             // --- DECIDE: Append assistant message to history ---
@@ -411,7 +412,7 @@ public class AgentLoop
             if (toolUses.Count == 0)
             {
                 AnsiConsole.WriteLine();
-                Console.WriteLine($"\n{nTurns}<<<stopReason: {response.StopReason} Count 0 (non-streaming)");
+                Console.WriteLine($"\n{nTurns}<<<stopReason: {response.StopReason} Count 0 nToolExecutions {nToolsExecutions} (non-streaming)");
 
                 if (response.StopReason == "max_tokens")
                 {
