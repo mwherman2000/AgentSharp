@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AgentSharp.Tools;
 using Spectre.Console;
 
@@ -31,7 +32,7 @@ public class ApprovalGate
     /// Check if a tool execution requires approval and, if so, prompt the user.
     /// Returns true if the tool should be executed, false if denied.
     /// </summary>
-    public async Task<bool> CheckApprovalAsync(ITool tool, string inputSummary)
+    public async Task<bool> CheckApprovalAsync(ITool tool, string inputSummary, JsonElement input = default)
     {
         // ReadOnly tools are always auto-approved
         if (tool.RiskLevel == ToolRiskLevel.ReadOnly)
@@ -48,8 +49,17 @@ public class ApprovalGate
             return true;
         }
 
-        // Destructive tools: always prompt
-        return await PromptForApproval(tool, inputSummary);
+        // Destructive tools: always prompt. For shell commands, run the classifier
+        // so the prompt can explain *why* the command is risky instead of just
+        // showing the generic "Destructive" risk level.
+        var dangerReason = tool.Name == "run_shell" &&
+            input.ValueKind == JsonValueKind.Object &&
+            input.TryGetProperty("command", out var cmd) &&
+            cmd.ValueKind == JsonValueKind.String
+                ? _shellClassifier.GetDangerReason(cmd.GetString()!)
+                : null;
+
+        return await PromptForApproval(tool, inputSummary, dangerReason);
     }
 
     /// <summary>
@@ -58,12 +68,14 @@ public class ApprovalGate
     public bool IsShellCommandDangerous(string command) =>
         _shellClassifier.IsDangerous(command);
 
-    private Task<bool> PromptForApproval(ITool tool, string inputSummary)
+    private Task<bool> PromptForApproval(ITool tool, string inputSummary, string? dangerReason)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule($"[yellow]Approval Required[/]").RuleStyle("yellow"));
         AnsiConsole.MarkupLine($"[yellow]Tool:[/] [bold]{Markup.Escape(tool.Name)}[/]");
         AnsiConsole.MarkupLine($"[yellow]Risk:[/] [red]{tool.RiskLevel}[/]");
+        if (dangerReason is not null)
+            AnsiConsole.MarkupLine($"[red]Warning:[/] {Markup.Escape(dangerReason)}");
         AnsiConsole.MarkupLine($"[yellow]Action:[/] {Markup.Escape(inputSummary)}");
         AnsiConsole.WriteLine();
 
