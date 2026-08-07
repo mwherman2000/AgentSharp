@@ -88,7 +88,7 @@ public class ReplHost
             }
             catch (OperationCanceledException)
             {
-                AnsiConsole.MarkupLine("\n[yellow]Cancelled.[/]");
+                AnsiConsole.MarkupLine("\n[yellow]Cancelled. OperationCanceledException[/]");
             }
             catch (HttpRequestException ex)
             {
@@ -289,7 +289,7 @@ public class ReplHost
     private void PrintWelcome()
     {
         AnsiConsole.Write(new FigletText("AgentSharp").Color(Color.Blue));
-        AnsiConsole.MarkupLine("[bold]AI Coding Agent[/] - Built with patterns from Claude Code");
+        AnsiConsole.MarkupLine("[bold]AI Agent[/] - Built with patterns from Claude Code");
         AnsiConsole.MarkupLine($"[dim]Provider: {_llm.ProviderName} | Model: {_llm.ModelId} | Tools: {_tools.All.Count}[/]");
         if (_project.IsGitRepo)
             AnsiConsole.MarkupLine($"[dim]Git: {_project.GitBranch} | Dir: {_project.WorkingDirectory}[/]");

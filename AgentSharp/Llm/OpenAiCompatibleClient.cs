@@ -72,13 +72,27 @@ public class OpenAiCompatibleClient : ILlmClient
     public static OpenAiCompatibleClient ForGemini(string apiKey, string model = "gemini-2.5-pro")
         => new(apiKey, model, "https://generativelanguage.googleapis.com/v1beta/openai", "Gemini");
 
+    /// <summary>Default request timeout for a local Ollama server. Overridable via <see cref="ForOllama"/>'s
+    /// <paramref name="timeout"/> parameter (wired to --timeout on the CLI) since local hardware and model
+    /// size vary widely.</summary>
+    public static readonly TimeSpan DefaultOllamaTimeout = TimeSpan.FromHours(1);
+
     /// <summary>
     /// Create a client for a local Ollama server (OpenAI-compatible endpoint).
     /// Ollama doesn't require an API key; a placeholder value is sent since
     /// the underlying HttpClient always attaches an Authorization header.
+    ///
+    /// Local models can take a long time to respond (cold model load, CPU-only
+    /// inference, reasoning/"thinking" models that burn output tokens before the
+    /// visible answer), so this uses a much longer timeout than HttpClient's 100s
+    /// default -- otherwise long-running requests are silently cancelled mid-flight
+    /// and surface as an unhelpful OperationCanceledException.
     /// </summary>
-    public static OpenAiCompatibleClient ForOllama(string model, string baseUrl = "http://localhost:11434/v1")
-        => new("ollama", model, baseUrl, "Ollama");
+    public static OpenAiCompatibleClient ForOllama(string model, string baseUrl = "http://localhost:11434/v1", TimeSpan? timeout = null)
+    {
+        var httpClient = new HttpClient { Timeout = timeout ?? DefaultOllamaTimeout };
+        return new OpenAiCompatibleClient(httpClient, "ollama", model, baseUrl, "Ollama");
+    }
 
     public async Task<LlmResponse> SendAsync(LlmRequest request, CancellationToken ct = default)
     {

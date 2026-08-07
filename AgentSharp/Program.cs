@@ -146,7 +146,7 @@ internal class Program
             if (index == 0) return false;
             var prev = args[index - 1];
             return prev is "--provider" or "-p" or "--model" or "-m"
-                or "--api-key" or "-k" or "--base-url" or "--prompt";
+                or "--api-key" or "-k" or "--base-url" or "--prompt" or "--timeout";
         }
 
         static void PrintUsage()
@@ -162,6 +162,7 @@ internal class Program
             AnsiConsole.MarkupLine("  -m, --model <name>       Model identifier (e.g., claude-sonnet-4-20250514, gpt-4o)");
             AnsiConsole.MarkupLine("  -k, --api-key <key>      API key (or set via environment variable)");
             AnsiConsole.MarkupLine("      --base-url <url>     Custom API base URL for compatible providers");
+            AnsiConsole.MarkupLine("      --timeout <minutes>  Request timeout, e.g. for slow local Ollama models (default: 60)");
             AnsiConsole.MarkupLine("  -h, --help               Show this help");
             AnsiConsole.MarkupLine("  -v, --version            Show version\n");
             AnsiConsole.MarkupLine("[bold]ENVIRONMENT VARIABLES:[/]");
@@ -172,7 +173,8 @@ internal class Program
             AnsiConsole.MarkupLine("                           (ollama needs no API key; run 'ollama serve' locally)");
             AnsiConsole.MarkupLine("  AGENT_PROVIDER           Default provider");
             AnsiConsole.MarkupLine("  AGENT_MODEL              Default model");
-            AnsiConsole.MarkupLine("  AGENT_API_KEY            Generic API key (any provider)\n");
+            AnsiConsole.MarkupLine("  AGENT_API_KEY            Generic API key (any provider)");
+            AnsiConsole.MarkupLine("  AGENT_TIMEOUT_MINUTES    Request timeout in minutes (default: 60, Ollama only)\n");
             AnsiConsole.MarkupLine("[bold]REPL COMMANDS:[/]");
             AnsiConsole.MarkupLine("  /help       Show commands");
             AnsiConsole.MarkupLine("  /exit       Exit the agent");
