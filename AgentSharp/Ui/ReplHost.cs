@@ -24,6 +24,7 @@ public class ReplHost
     private AgentLoop _agent;
     private int _turnCount;
     private readonly List<string> _inputHistory = new();
+    private CancellationTokenSource? _turnCts;
 
     public ReplHost(
         ILlmClient llm,
@@ -52,6 +53,8 @@ public class ReplHost
     {
         PrintWelcome();
 
+        Console.CancelKeyPress += OnCancelKeyPress;
+
         while (!ct.IsCancellationRequested)
         {
             AnsiConsole.WriteLine();
@@ -75,6 +78,8 @@ public class ReplHost
             }
 
             // Regular message -- send to agent loop
+            _turnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var historyCountBeforeTurn = _agent.History.Count;
             try
             {
                 _turnCount++;
@@ -82,13 +87,18 @@ public class ReplHost
                 AnsiConsole.WriteLine();
 
                 if (Program.SyncMode)
-                    await _agent.RunTurnNonStreamingAsync(input, ct);
+                    await _agent.RunTurnNonStreamingAsync(input, _turnCts.Token);
                 else
-                    await _agent.RunTurnAsync(input, ct);
+                    await _agent.RunTurnAsync(input, _turnCts.Token);
             }
             catch (OperationCanceledException)
             {
-                AnsiConsole.MarkupLine("\n[yellow]Cancelled. OperationCanceledException[/]");
+                // Roll back so the interrupted user message and any partial
+                // assistant/tool-result messages don't linger in history.
+                _agent.History.TruncateTo(historyCountBeforeTurn);
+                AnsiConsole.MarkupLine(_turnCts.IsCancellationRequested && !ct.IsCancellationRequested
+                    ? "\n[yellow]Interrupted (Ctrl+C). Returning to prompt.[/]"
+                    : "\n[yellow]Cancelled. OperationCanceledException[/]");
             }
             catch (HttpRequestException ex)
             {
@@ -99,9 +109,40 @@ public class ReplHost
             {
                 AnsiConsole.MarkupLine($"\n[red]Error:[/] {Markup.Escape(ex.Message)}");
             }
+            finally
+            {
+                var completedCts = _turnCts;
+                _turnCts = null;
+                completedCts.Dispose();
+            }
         }
 
+        Console.CancelKeyPress -= OnCancelKeyPress;
         AnsiConsole.MarkupLine("[dim]Goodbye![/]");
+    }
+
+    /// <summary>
+    /// Intercepts Ctrl+C while a prompt is being processed: cancels the in-flight
+    /// turn and returns control to the input prompt instead of terminating the
+    /// process. Outside of turn processing, Ctrl+C falls through to the default
+    /// behavior (process termination).
+    /// </summary>
+    private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
+    {
+        var cts = _turnCts;
+        if (cts is null)
+            return;
+
+        e.Cancel = true;
+        try
+        {
+            cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Turn finished and disposed its token source between the null-check
+            // above and Cancel() -- nothing left to interrupt.
+        }
     }
 
     private async Task<bool> HandleCommandAsync(ParsedCommand command, CancellationToken ct)
@@ -339,73 +380,94 @@ public class ReplHost
         var historyIndex = history.Count;
         var draft = string.Empty;
 
-        while (true)
+        // While blocked in Console.ReadKey, Ctrl+C is handled inline below rather
+        // than via Console.CancelKeyPress: on Windows, the OS delivers the Ctrl+C
+        // control event on a separate thread that can deadlock against the console
+        // lock held by a pending synchronous ReadKey call. Treating it as ordinary
+        // input sidesteps that. RunAsync's CancelKeyPress handler takes over once
+        // this method returns and the main thread is only awaiting the agent turn.
+        Console.TreatControlCAsInput = true;
+        try
         {
-            var key = Console.ReadKey(intercept: true);
-
-            if (key.Key == ConsoleKey.Enter)
+            while (true)
             {
-                var isPaste = Console.KeyAvailable; // more keys buffered = paste
-                if (key.Modifiers.HasFlag(ConsoleModifiers.Alt) || isPaste)
+                var key = Console.ReadKey(intercept: true);
+
+                if (key.Key == ConsoleKey.C && key.Modifiers.HasFlag(ConsoleModifiers.Control))
                 {
-                    // Alt+Enter or paste: insert newline, continue editing
-                    lines.Add(current.ToString());
-                    current.Clear();
+                    Console.Write("^C");
                     Console.WriteLine();
-                    if (!isPaste)
-                        AnsiConsole.Markup("[bold blue]..[/] ");
+                    return string.Empty;
                 }
-                else
+
+                if (key.Key == ConsoleKey.Enter)
                 {
-                    // Enter: check for backslash continuation
-                    var line = current.ToString();
-                    Console.WriteLine();
-                    if (line.EndsWith('\\'))
+                    var isPaste = Console.KeyAvailable; // more keys buffered = paste
+                    if (key.Modifiers.HasFlag(ConsoleModifiers.Alt) || isPaste)
                     {
-                        lines.Add(line[..^1]);
+                        // Alt+Enter or paste: insert newline, continue editing
+                        lines.Add(current.ToString());
                         current.Clear();
-                        AnsiConsole.Markup("[bold blue]..[/] ");
+                        Console.WriteLine();
+                        if (!isPaste)
+                            AnsiConsole.Markup("[bold blue]..[/] ");
                     }
                     else
                     {
-                        lines.Add(line);
-                        return string.Join('\n', lines);
+                        // Enter: check for backslash continuation
+                        var line = current.ToString();
+                        Console.WriteLine();
+                        if (line.EndsWith('\\'))
+                        {
+                            lines.Add(line[..^1]);
+                            current.Clear();
+                            AnsiConsole.Markup("[bold blue]..[/] ");
+                        }
+                        else
+                        {
+                            lines.Add(line);
+                            return string.Join('\n', lines);
+                        }
                     }
                 }
-            }
-            else if (key.Key == ConsoleKey.UpArrow)
-            {
-                // Only recall history while on the first (only) line so far.
-                if (lines.Count == 0 && history.Count > 0 && historyIndex > 0)
+                else if (key.Key == ConsoleKey.UpArrow)
                 {
-                    if (historyIndex == history.Count)
-                        draft = current.ToString();
+                    // Only recall history while on the first (only) line so far.
+                    if (lines.Count == 0 && history.Count > 0 && historyIndex > 0)
+                    {
+                        if (historyIndex == history.Count)
+                            draft = current.ToString();
 
-                    historyIndex--;
-                    ReplaceCurrentLine(current, history[historyIndex]);
+                        historyIndex--;
+                        ReplaceCurrentLine(current, history[historyIndex]);
+                    }
                 }
-            }
-            else if (key.Key == ConsoleKey.DownArrow)
-            {
-                if (lines.Count == 0 && historyIndex < history.Count)
+                else if (key.Key == ConsoleKey.DownArrow)
                 {
-                    historyIndex++;
-                    ReplaceCurrentLine(current, historyIndex == history.Count ? draft : history[historyIndex]);
+                    if (lines.Count == 0 && historyIndex < history.Count)
+                    {
+                        historyIndex++;
+                        ReplaceCurrentLine(current, historyIndex == history.Count ? draft : history[historyIndex]);
+                    }
                 }
-            }
-            else if (key.Key == ConsoleKey.Backspace)
-            {
-                if (current.Length > 0)
+                else if (key.Key == ConsoleKey.Backspace)
                 {
-                    current.Remove(current.Length - 1, 1);
-                    Console.Write("\b \b");
+                    if (current.Length > 0)
+                    {
+                        current.Remove(current.Length - 1, 1);
+                        Console.Write("\b \b");
+                    }
+                }
+                else if (key.KeyChar >= ' ')
+                {
+                    current.Append(key.KeyChar);
+                    Console.Write(key.KeyChar);
                 }
             }
-            else if (key.KeyChar >= ' ')
-            {
-                current.Append(key.KeyChar);
-                Console.Write(key.KeyChar);
-            }
+        }
+        finally
+        {
+            Console.TreatControlCAsInput = false;
         }
     }
 
