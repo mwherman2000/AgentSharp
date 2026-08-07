@@ -89,7 +89,7 @@ public class ReplHost
                 if (Program.SyncMode)
                     await _agent.RunTurnNonStreamingAsync(input, _turnCts.Token);
                 else
-                    await _agent.RunTurnAsync(input, _turnCts.Token);
+                    await _agent.RunTurnStreamingAsync(input, _turnCts.Token);
             }
             catch (OperationCanceledException)
             {

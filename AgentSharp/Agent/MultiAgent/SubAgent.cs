@@ -75,7 +75,9 @@ public class SubAgent
         try
         {
             Status = SubAgentStatus.Running;
-            Result = await _loop.RunTurnAsync(task, linkedCts.Token);
+            Result = Program.SyncMode
+                ? await _loop.RunTurnNonStreamingAsync(task, linkedCts.Token)
+                : await _loop.RunTurnStreamingAsync(task, linkedCts.Token);
             Status = SubAgentStatus.Completed;
             return Result;
         }

@@ -76,7 +76,7 @@ public class AgentLoop
     /// </summary>
     static private int nTurns = 0;
     static private int nToolsExecutions = 0;
-    public async Task<string> RunTurnAsync(string userMessage, CancellationToken ct = default)
+    public async Task<string> RunTurnStreamingAsync(string userMessage, CancellationToken ct = default)
     {
         nTurns++;
         nToolsExecutions = 0;

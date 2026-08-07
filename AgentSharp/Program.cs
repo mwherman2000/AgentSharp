@@ -98,7 +98,7 @@ internal class Program
                 if (SyncMode)
                     await agentLoop.RunTurnNonStreamingAsync(promptArg);
                 else
-                    await agentLoop.RunTurnAsync(promptArg);
+                    await agentLoop.RunTurnStreamingAsync(promptArg);
                 __Mark("RunTurnAsync done");
                 return;
             }
