@@ -22,6 +22,7 @@ public class CommandParserTests
     [InlineData("/mem", CommandType.Memory)]
     [InlineData("/request", CommandType.Request)]
     [InlineData("/sync", CommandType.Sync)]
+    [InlineData("/transcript", CommandType.Transcript)]
     public void Parse_RecognizesCommands(string input, CommandType expected)
     {
         var result = CommandParser.Parse(input);
@@ -64,5 +65,13 @@ public class CommandParserTests
         var result = CommandParser.Parse("/memory clear");
         Assert.Equal(CommandType.Memory, result.Type);
         Assert.Equal("clear", result.Argument);
+    }
+
+    [Fact]
+    public void Parse_Transcript_ExtractsArgument()
+    {
+        var result = CommandParser.Parse("/transcript session1");
+        Assert.Equal(CommandType.Transcript, result.Type);
+        Assert.Equal("session1", result.Argument);
     }
 }

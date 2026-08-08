@@ -260,6 +260,16 @@ public class ReplHost
                 }
                 break;
 
+            case CommandType.Transcript:
+                if (string.IsNullOrWhiteSpace(command.Argument))
+                {
+                    AnsiConsole.MarkupLine("[yellow]Usage: /transcript <name>[/]");
+                    break;
+                }
+                var transcriptPath = WriteTranscript(command.Argument);
+                AnsiConsole.MarkupLine($"[green]Transcript written:[/] {transcriptPath}");
+                break;
+
             case CommandType.Unknown:
                 AnsiConsole.MarkupLine($"[yellow]Unknown command: /{command.Argument}. Type /help for available commands.[/]");
                 break;
@@ -290,6 +300,71 @@ public class ReplHost
                 AnsiConsole.MarkupLine($"[green]  Done[/] [dim]({Markup.Escape(firstLine)})[/]");
             }
         };
+    }
+
+    /// <summary>
+    /// Writes a clean Q&amp;A transcript of the conversation to <paramref name="name"/>.md
+    /// -- just the user's typed prompts and the assistant's full text replies, with none
+    /// of the tool-call/tool-result/trace noise that fills the live console output.
+    /// A single user turn can span several history entries (assistant text, tool calls,
+    /// tool results, more assistant text), so consecutive assistant text messages are
+    /// merged into one answer until the next real user prompt starts a new pair.
+    /// </summary>
+    private string WriteTranscript(string name)
+    {
+        var fileName = name.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ? name : $"{name}.md";
+        var path = Path.Combine(_project.WorkingDirectory, fileName);
+
+        var qaPairs = new List<(string Question, string Answer)>();
+        string? currentQuestion = null;
+        var answer = new System.Text.StringBuilder();
+
+        foreach (var message in _agent.History.Messages)
+        {
+            if (message.Role == MessageRole.User)
+            {
+                // Tool-result messages are also role "user" but carry no TextBlock --
+                // only messages with actual typed text are real prompts.
+                var text = string.Join("\n\n", message.Content.OfType<TextBlock>().Select(b => b.Text));
+                if (text.Length == 0) continue;
+
+                if (currentQuestion is not null)
+                    qaPairs.Add((currentQuestion, answer.ToString().Trim()));
+
+                currentQuestion = text;
+                answer.Clear();
+            }
+            else if (message.Role == MessageRole.Assistant)
+            {
+                var text = message.GetText();
+                if (text.Length == 0) continue;
+
+                if (answer.Length > 0) answer.Append("\n\n");
+                answer.Append(text);
+            }
+        }
+        if (currentQuestion is not null)
+            qaPairs.Add((currentQuestion, answer.ToString().Trim()));
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"# {name}");
+        sb.AppendLine();
+        sb.AppendLine($"_Transcript generated {DateTime.Now:yyyy-MM-dd HH:mm}_");
+        sb.AppendLine();
+        for (int i = 0; i < qaPairs.Count; i++)
+        {
+            sb.AppendLine($"## Q{i + 1}");
+            sb.AppendLine();
+            sb.AppendLine(qaPairs[i].Question);
+            sb.AppendLine();
+            sb.AppendLine($"## A{i + 1}");
+            sb.AppendLine();
+            sb.AppendLine(qaPairs[i].Answer.Length > 0 ? qaPairs[i].Answer : "_(no response)_");
+            sb.AppendLine();
+        }
+
+        File.WriteAllText(path, sb.ToString());
+        return path;
     }
 
     private string FormatCacheHitRate()
@@ -354,6 +429,7 @@ public class ReplHost
             .AddRow("/model", "Show current model info")
             .AddRow("/memory", "Show persistent memory")
             .AddRow("/memory clear", "Clear persistent memory")
+            .AddRow("/transcript <name>", "Write a Q&A transcript of this conversation to <name>.md")
             .AddRow("/request", "Toggle request trace")
             .AddRow("/history", "Toggle history trace")
             .AddRow("/tools", "Toggle tools trace")

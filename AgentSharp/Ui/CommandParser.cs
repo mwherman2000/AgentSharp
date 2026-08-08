@@ -20,6 +20,7 @@ public enum CommandType
     Tools,
     Request,
     Sync,
+    Transcript,
     Unknown
 }
 
@@ -51,6 +52,7 @@ public static class CommandParser
             "tools" => new ParsedCommand(CommandType.Tools, argument),
             "request" => new ParsedCommand(CommandType.Request),
             "sync" => new ParsedCommand(CommandType.Sync),
+            "transcript" => new ParsedCommand(CommandType.Transcript, argument),
             _ => new ParsedCommand(CommandType.Unknown, command)
         };
     }

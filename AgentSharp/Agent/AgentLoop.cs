@@ -79,7 +79,7 @@ public class AgentLoop
     public async Task<string> RunTurnStreamingAsync(string userMessage, CancellationToken ct = default)
     {
         nTurns++;
-        nToolsExecutions = 0;
+        //nToolsExecutions = 0;
         _history.AddUserMessage(userMessage);
         Console.WriteLine($"\n{nTurns}>>>userMessage: {userMessage}");
 
@@ -132,7 +132,7 @@ public class AgentLoop
                             if (currentText.Length > 0)
                             {
                                 contentBlocks.Add(new TextBlock { Text = currentText.ToString() });
-                                fullResponseText.Append(currentText);
+                                AppendResponseSegment(fullResponseText, currentText.ToString());
                                 currentText.Clear();
                             }
                             currentToolId = tus.Id;
@@ -261,7 +261,7 @@ public class AgentLoop
             if (currentText.Length > 0)
             {
                 contentBlocks.Add(new TextBlock { Text = currentText.ToString() });
-                fullResponseText.Append(currentText);
+                AppendResponseSegment(fullResponseText, currentText.ToString());
                 Console.WriteLine($"\n<<<fullResponseText: {fullResponseText}");
             }
 
@@ -399,7 +399,7 @@ public class AgentLoop
             if (text.Length > 0)
             {
                 WriteTextToConsole(text);
-                fullResponseText.Append(text);
+                AppendResponseSegment(fullResponseText, text);
                 Console.WriteLine($"\n<<<fullResponseText: {fullResponseText}");
             }
 
@@ -468,6 +468,26 @@ public class AgentLoop
     {
         AnsiConsole.MarkupLine("[yellow]Response was cut off by the output token limit. Asking the model to continue...[/]");
         _history.AddUserMessage("Your previous response was cut off because it reached the output token limit. Please continue where you left off.");
+    }
+
+    /// <summary>
+    /// Each flushed text segment (split from the next by an intervening tool call,
+    /// or from a prior LLM iteration) is a fresh piece of model output that assumes
+    /// nothing about what preceded it -- it won't start with a leading space or
+    /// newline even when continuing a sentence-in-progress across a tool call. Plain
+    /// concatenation therefore glues unrelated segments together (e.g. "this one.Alright"),
+    /// so insert a newline at the boundary unless one side already provides whitespace.
+    /// </summary>
+    private static void AppendResponseSegment(StringBuilder fullResponseText, string segment)
+    {
+        if (segment.Length == 0) return;
+        if (fullResponseText.Length > 0 &&
+            !char.IsWhiteSpace(fullResponseText[fullResponseText.Length - 1]) &&
+            !char.IsWhiteSpace(segment[0]))
+        {
+            fullResponseText.Append('\n');
+        }
+        fullResponseText.Append(segment);
     }
 
     /// <summary>
