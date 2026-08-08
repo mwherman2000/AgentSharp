@@ -191,7 +191,10 @@ public class ReplHost
 
             case CommandType.Save:
                 var sessionId = await _sessions.SaveAsync(_agent.History, command.Argument);
-                AnsiConsole.MarkupLine($"[green]Session saved:[/] {sessionId}");
+                if (sessionId is not null)
+                    AnsiConsole.MarkupLine($"[green]Session saved:[/] {sessionId}");
+                else
+                    AnsiConsole.MarkupLine($"[red]Error:[/] Could not save session '{Markup.Escape(command.Argument ?? "")}'.");
                 break;
 
             case CommandType.Load:
@@ -256,7 +259,8 @@ public class ReplHost
                     break;
                 }
                 var transcriptPath = WriteTranscript(command.Argument);
-                AnsiConsole.MarkupLine($"[green]Transcript written:[/] {transcriptPath}");
+                if (transcriptPath is not null)
+                    AnsiConsole.MarkupLine($"[green]Transcript written:[/] {transcriptPath}");
                 break;
 
             case CommandType.Unknown:
@@ -299,9 +303,20 @@ public class ReplHost
     /// tool results, more assistant text), so consecutive assistant text messages are
     /// merged into one answer until the next real user prompt starts a new pair.
     /// </summary>
-    private string WriteTranscript(string name)
+    private string? WriteTranscript(string name)
     {
-        var fileName = name.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ? name : $"{name}.md";
+        // Path.GetFileName strips any directory portion, so a name like "/trump14020"
+        // or "../elsewhere" can't Path.Combine its way outside the working directory
+        // (a leading '/' makes the second Path.Combine argument rooted, which silently
+        // discards the working directory and resolves to the drive root instead).
+        var safeName = Path.GetFileName(name);
+        if (string.IsNullOrEmpty(safeName))
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] '{Markup.Escape(name)}' is not a valid file name.");
+            return null;
+        }
+
+        var fileName = safeName.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ? safeName : $"{safeName}.md";
         var path = Path.Combine(_project.WorkingDirectory, fileName);
 
         var qaPairs = new List<(string Question, string Answer)>();
@@ -352,7 +367,15 @@ public class ReplHost
             sb.AppendLine();
         }
 
-        File.WriteAllText(path, sb.ToString());
+        try
+        {
+            File.WriteAllText(path, sb.ToString());
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AnsiConsole.MarkupLine($"[red]Error writing transcript:[/] {Markup.Escape(ex.Message)}");
+            return null;
+        }
         return path;
     }
 
