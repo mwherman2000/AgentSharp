@@ -33,6 +33,9 @@ public class AgentLoop
 
     public ConversationHistory History => _history;
 
+    /// <summary>The system prompt this AgentLoop was built with.</summary>
+    public string SystemPrompt => _systemPrompt;
+
     /// <summary>Cumulative input tokens billed across every LLM call this AgentLoop has made.</summary>
     public int TotalInputTokens => _totalInputTokens;
 

@@ -353,6 +353,13 @@ public class ReplHost
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"# {name}");
         sb.AppendLine();
+        var systemPromptIntro = GetFirstParagraph(_agent.SystemPrompt);
+        if (systemPromptIntro.Length > 0)
+        {
+            foreach (var line in systemPromptIntro.Split('\n'))
+                sb.AppendLine($"> {line}");
+            sb.AppendLine();
+        }
         sb.AppendLine($"_Transcript generated {DateTime.Now:yyyy-MM-dd HH:mm}_");
         sb.AppendLine();
         for (int i = 0; i < qaPairs.Count; i++)
@@ -395,6 +402,19 @@ public class ReplHost
             return text;
         }
         return text;
+    }
+
+    /// <summary>
+    /// Extracts just the first line of the system prompt, so the transcript records
+    /// which persona/instructions produced the replies without dumping the entire --
+    /// often very long -- prompt.
+    /// </summary>
+    private static string GetFirstParagraph(string text)
+    {
+        var trimmed = text.TrimStart();
+        var newlineIndex = trimmed.IndexOf('\n');
+        var firstLine = newlineIndex >= 0 ? trimmed[..newlineIndex] : trimmed;
+        return firstLine.Trim();
     }
 
     private string FormatCacheHitRate()

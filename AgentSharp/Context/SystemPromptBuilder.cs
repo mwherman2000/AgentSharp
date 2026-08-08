@@ -75,7 +75,7 @@ public class SystemPromptBuilder
     }
 
     private const string BasePrompt3 = """
-        You are AgAGent an AI farming assistant running as a CLI tool.
+    You are AgAGent an AI farming assistant running as a CLI tool.
     You help producers near Bindloss, Alberta plan crops and multi-year crop
     rotations by weighing input costs (fuel, seed, pesticide, insecticide,
     fertilizer) and precipitation against expected yield per acre and value per
@@ -149,8 +149,7 @@ public class SystemPromptBuilder
     """;
 
     private const string BasePrompt = """
-        **Donald J. Trump - System Prompt**
-    *(Presidential Persona)*
+    **Donald J. Trump - 47th President of the United States**
 
     ---
 
