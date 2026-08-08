@@ -52,6 +52,7 @@ public class ReplHost
     public async Task RunAsync(CancellationToken ct = default)
     {
         PrintWelcome();
+        PrintSessions();
 
         Console.CancelKeyPress += OnCancelKeyPress;
 
@@ -212,19 +213,7 @@ public class ReplHost
                 break;
 
             case CommandType.Sessions:
-                var sessions = _sessions.ListSessions();
-                if (sessions.Count == 0)
-                {
-                    AnsiConsole.MarkupLine("[dim]No saved sessions.[/]");
-                    break;
-                }
-                var table = new Table()
-                    .AddColumn("ID")
-                    .AddColumn("Created")
-                    .AddColumn("Messages");
-                foreach (var s in sessions)
-                    table.AddRow(s.Id, s.CreatedAt.ToString("yyyy-MM-dd HH:mm"), s.MessageCount.ToString());
-                AnsiConsole.Write(table);
+                PrintSessions();
                 break;
 
             case CommandType.Status:
@@ -429,6 +418,28 @@ public class ReplHost
             AnsiConsole.MarkupLine($"[dim]Git: {_project.GitBranch} | Dir: {_project.WorkingDirectory}[/]");
         AnsiConsole.MarkupLine("[dim]Type /help for commands, or start chatting.[/]");
         AnsiConsole.Write(new Rule().RuleStyle("dim"));
+    }
+
+    /// <summary>
+    /// Lists saved sessions, same as the /sessions command. Also run once at
+    /// startup, right after the welcome banner, so returning users see what's
+    /// available to /load without having to ask.
+    /// </summary>
+    private void PrintSessions()
+    {
+        var sessions = _sessions.ListSessions();
+        if (sessions.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[dim]No saved sessions.[/]");
+            return;
+        }
+        var table = new Table()
+            .AddColumn("ID")
+            .AddColumn("Created")
+            .AddColumn("Messages");
+        foreach (var s in sessions)
+            table.AddRow(s.Id, s.CreatedAt.ToString("yyyy-MM-dd HH:mm"), s.MessageCount.ToString());
+        AnsiConsole.Write(table);
     }
 
     private static void PrintHelp()
