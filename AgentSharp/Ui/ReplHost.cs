@@ -331,7 +331,7 @@ public class ReplHost
                 if (currentQuestion is not null)
                     qaPairs.Add((currentQuestion, answer.ToString().Trim()));
 
-                currentQuestion = text;
+                currentQuestion = CapitalizeFirstLetter(text);
                 answer.Clear();
             }
             else if (message.Role == MessageRole.Assistant)
@@ -365,6 +365,24 @@ public class ReplHost
 
         File.WriteAllText(path, sb.ToString());
         return path;
+    }
+
+    /// <summary>
+    /// Uppercases the first letter of a prompt for the transcript file -- users
+    /// often type prompts lowercase in the REPL, which reads oddly as the "Q" in
+    /// a Q&amp;A document. Leaves the text untouched if it has no lowercase first letter
+    /// (already capitalized, or starts with punctuation/a digit).
+    /// </summary>
+    private static string CapitalizeFirstLetter(string text)
+    {
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (char.IsWhiteSpace(text[i])) continue;
+            if (char.IsLower(text[i]))
+                return text[..i] + char.ToUpper(text[i]) + text[(i + 1)..];
+            return text;
+        }
+        return text;
     }
 
     private string FormatCacheHitRate()
