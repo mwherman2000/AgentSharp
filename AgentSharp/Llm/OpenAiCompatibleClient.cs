@@ -23,9 +23,19 @@ public class OpenAiCompatibleClient : ILlmClient
     private readonly string _model;
     private readonly string _apiUrl;
     private readonly string _providerName;
+    private readonly TimeSpan _streamingTimeout;
+
+    /// <summary>Non-streaming requests block until the full response body has arrived,
+    /// instead of returning as soon as headers do, so they need a much longer allowance
+    /// than a streaming request for the same prompt -- otherwise long completions
+    /// (large output, extended thinking, slow local inference) time out mid-flight in
+    /// sync mode even though the identical request succeeds when streamed.</summary>
+    private const int NonStreamingTimeoutMultiplier = 10;
 
     public string ProviderName => _providerName;
     public string ModelId => _model;
+    public TimeSpan StreamingTimeout => _streamingTimeout;
+    public TimeSpan NonStreamingTimeout => _streamingTimeout * NonStreamingTimeoutMultiplier;
 
     public OpenAiCompatibleClient(
         string apiKey,
@@ -51,6 +61,16 @@ public class OpenAiCompatibleClient : ILlmClient
         _apiUrl = $"{baseUrl.TrimEnd('/')}/chat/completions";
         _providerName = providerName;
         _http = httpClient;
+
+        // Capture the caller's configured timeout (the 100s HttpClient default, or
+        // DefaultOllamaTimeout/--timeout for Ollama) as the streaming budget, then
+        // disable HttpClient's own single timeout -- streaming and non-streaming calls
+        // enforce their own (different) timeouts per-request via a linked
+        // CancellationTokenSource below, since HttpClient.Timeout is one value shared
+        // by every request made through this client.
+        _streamingTimeout = _http.Timeout;
+        _http.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
+
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
     }
 
@@ -96,6 +116,10 @@ public class OpenAiCompatibleClient : ILlmClient
 
     public async Task<LlmResponse> SendAsync(LlmRequest request, CancellationToken ct = default)
     {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(_streamingTimeout * NonStreamingTimeoutMultiplier);
+        ct = timeoutCts.Token;
+
         var body = BuildRequestBody(request, stream: false);
         var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _http.PostAsync(_apiUrl, content, ct);
@@ -125,6 +149,10 @@ public class OpenAiCompatibleClient : ILlmClient
         LlmRequest request,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(_streamingTimeout);
+        ct = timeoutCts.Token;
+
         var body = BuildRequestBody(request, stream: true);
         Console.Error.WriteLine($"[TIMING] request body length: {body.Length}");
         Console.Error.WriteLine($"[TIMING] request body est. tokens: ~{body.Length / 4}");

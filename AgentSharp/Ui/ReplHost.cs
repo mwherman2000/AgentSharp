@@ -222,6 +222,8 @@ public class ReplHost
             case CommandType.Status:
                 AnsiConsole.MarkupLine($"[bold]Provider:[/] {_llm.ProviderName}");
                 AnsiConsole.MarkupLine($"[bold]Model:[/] {_llm.ModelId}");
+                AnsiConsole.MarkupLine($"[bold]Timeout (streaming):[/] {FormatTimeout(_llm.StreamingTimeout)}");
+                AnsiConsole.MarkupLine($"[bold]Timeout (non-streaming):[/] {FormatTimeout(_llm.NonStreamingTimeout)}");
                 AnsiConsole.MarkupLine($"[bold]Tools:[/] {_tools.All.Count}");
                 AnsiConsole.MarkupLine($"[bold]Turns:[/] {_turnCount}");
                 AnsiConsole.MarkupLine($"[bold]Messages:[/] {_agent.History.Count}");
@@ -423,6 +425,19 @@ public class ReplHost
         if (effectiveInput == 0) return "";
         var hitRate = 100.0 * _agent.TotalCacheReadTokens / effectiveInput;
         return $" ({hitRate:F0}% hit rate)";
+    }
+
+    /// <summary>
+    /// Renders a timeout as a compact human-readable duration (e.g. "1m 40s", "1h",
+    /// "10h") instead of TimeSpan's verbose default ToString().
+    /// </summary>
+    private static string FormatTimeout(TimeSpan timeout)
+    {
+        if (timeout.TotalHours >= 1)
+            return timeout.Minutes == 0 ? $"{timeout.TotalHours:F0}h" : $"{(int)timeout.TotalHours}h {timeout.Minutes}m";
+        if (timeout.TotalMinutes >= 1)
+            return timeout.Seconds == 0 ? $"{timeout.Minutes}m" : $"{timeout.Minutes}m {timeout.Seconds}s";
+        return $"{timeout.TotalSeconds:F0}s";
     }
 
     private static string TruncateForDisplay(string text, int maxLength = 500)
