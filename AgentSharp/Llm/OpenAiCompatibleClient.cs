@@ -127,6 +127,7 @@ public class OpenAiCompatibleClient : ILlmClient
     {
         var body = BuildRequestBody(request, stream: true);
         Console.Error.WriteLine($"[TIMING] request body length: {body.Length}");
+        Console.Error.WriteLine($"[TIMING] request body est. tokens: ~{body.Length / 4}");
         var __sw2 = System.Diagnostics.Stopwatch.StartNew();
         var httpContent = new StringContent(body, Encoding.UTF8, "application/json");
 
