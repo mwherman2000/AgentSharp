@@ -222,6 +222,7 @@ public class ReplHost
             case CommandType.Status:
                 AnsiConsole.MarkupLine($"[bold]Provider:[/] {_llm.ProviderName}");
                 AnsiConsole.MarkupLine($"[bold]Model:[/] {_llm.ModelId}");
+                AnsiConsole.MarkupLine($"[bold]Sync mode:[/] {(Program.SyncMode ? "on (SendAsync, non-streaming)" : "off (StreamAsync, default)")}");
                 AnsiConsole.MarkupLine($"[bold]Timeout (streaming):[/] {FormatTimeout(_llm.StreamingTimeout)}");
                 AnsiConsole.MarkupLine($"[bold]Timeout (non-streaming):[/] {FormatTimeout(_llm.NonStreamingTimeout)}");
                 AnsiConsole.MarkupLine($"[bold]Tools:[/] {_tools.All.Count}");
