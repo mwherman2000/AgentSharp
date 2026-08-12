@@ -70,6 +70,12 @@ public class ToolRegistry
         {
             return await tool.ExecuteAsync(input, ct);
         }
+        catch (OperationCanceledException)
+        {
+            // Let cancellation (e.g. Ctrl+C) propagate so the agent loop stops the
+            // turn, instead of reporting it to the LLM as a failed tool call.
+            throw;
+        }
         catch (Exception ex)
         {
             return ToolResult.Error($"Tool '{name}' failed: {ex.Message}");
