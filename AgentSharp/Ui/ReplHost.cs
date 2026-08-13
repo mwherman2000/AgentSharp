@@ -229,7 +229,8 @@ public class ReplHost
                 AnsiConsole.MarkupLine($"[bold]Timeout (streaming):[/] {FormatTimeout(_llm.StreamingTimeout)}");
                 AnsiConsole.MarkupLine($"[bold]Timeout (non-streaming):[/] {FormatTimeout(_llm.NonStreamingTimeout)}");
                 AnsiConsole.MarkupLine($"[bold]Max tokens:[/] {_maxTokens}");
-                AnsiConsole.MarkupLine($"[bold]Tools:[/] {_tools.All.Count}");
+                var toolNames = string.Join(", ", _tools.All.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal));
+                AnsiConsole.MarkupLine($"[bold]Tools:[/] {_tools.All.Count} [dim]({Markup.Escape(toolNames)})[/]");
                 AnsiConsole.MarkupLine($"[bold]Turns:[/] {_turnCount}");
                 AnsiConsole.MarkupLine($"[bold]Messages:[/] {_agent.History.Count}");
                 AnsiConsole.MarkupLine($"[bold]Tokens:[/] {_agent.TotalInputTokens} in / {_agent.TotalOutputTokens} out");
