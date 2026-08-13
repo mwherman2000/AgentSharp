@@ -54,6 +54,13 @@ internal class Program
             var config = Configuration.Load(args);
             __Mark("config loaded");
 
+            // Set the process CWD before anything else reads it -- every relative path
+            // (tool file I/O, ProjectContext scanning, MemoryManager, session files) falls
+            // back to Directory.GetCurrentDirectory() on its own, so this one call is
+            // enough to redirect all of them; nothing downstream needs to know --dir exists.
+            if (config.WorkingDirectory is not null)
+                Directory.SetCurrentDirectory(config.WorkingDirectory);
+
             // --- LLM Client ---
             var llm = config.CreateLlmClient();
             __Mark("llm client created");
@@ -147,7 +154,7 @@ internal class Program
             if (index == 0) return false;
             var prev = args[index - 1];
             return prev is "--provider" or "-p" or "--model" or "-m"
-                or "--api-key" or "-k" or "--base-url" or "--prompt" or "--timeout" or "--max-tokens";
+                or "--api-key" or "-k" or "--base-url" or "--prompt" or "--timeout" or "--max-tokens" or "--dir";
         }
 
         static void PrintUsage()
@@ -165,6 +172,7 @@ internal class Program
             AnsiConsole.MarkupLine("      --base-url <url>     Custom API base URL for compatible providers");
             AnsiConsole.MarkupLine("      --timeout <minutes>  Request timeout, e.g. for slow local Ollama models (default: 60)");
             AnsiConsole.MarkupLine("      --max-tokens <n>     Max output tokens per request (default: 128000; lower this for small-context local models)");
+            AnsiConsole.MarkupLine("      --dir <path>         Project directory to run in (default: current directory)");
             AnsiConsole.MarkupLine("  -h, --help               Show this help");
             AnsiConsole.MarkupLine("  -v, --version            Show version\n");
             AnsiConsole.MarkupLine("[bold]ENVIRONMENT VARIABLES:[/]");

@@ -24,6 +24,12 @@ public class Configuration
     /// i.e. <see cref="AgentSharp.Agent.AgentLoop.DefaultMaxTokens"/>.</summary>
     public int? MaxTokens { get; set; }
 
+    /// <summary>Directory to treat as the project root: where relative tool paths
+    /// (write_file, read_file, run_shell, ...) resolve, and what ProjectContext scans.
+    /// Null means "use the process's actual current directory" -- the default, and
+    /// what every path resolution already falls back to on its own.</summary>
+    public string? WorkingDirectory { get; set; }
+
     /// <summary>
     /// Returns the effective model, using a provider-specific default if none was explicitly set.
     /// </summary>
@@ -104,6 +110,9 @@ public class Configuration
                 case "--max-tokens" when i + 1 < args.Length && int.TryParse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture, out var maxTokensValue):
                     config.MaxTokens = maxTokensValue;
                     i++;
+                    break;
+                case "--dir" when i + 1 < args.Length:
+                    config.WorkingDirectory = args[++i];
                     break;
             }
         }
