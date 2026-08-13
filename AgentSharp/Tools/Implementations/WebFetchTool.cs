@@ -27,7 +27,7 @@ public class WebFetchTool : ToolBase
                 description = "The URL to fetch" },
             max_length = new { type = "integer",
                 description = "Max response length in characters. " +
-                    "Default: 5000" }
+                    "Default: 20000" }
         },
         required = new[] { "url" }
     });
@@ -36,7 +36,7 @@ public class WebFetchTool : ToolBase
         JsonElement input, CancellationToken ct = default)
     {
         var url = GetRequiredString(input, "url");
-        var maxLength = GetOptionalInt(input, "max_length", 5000);
+        var maxLength = GetOptionalInt(input, "max_length", 20000);
 
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
             uri.Scheme is not ("http" or "https"))

@@ -70,12 +70,17 @@ public class CrawlWebTool : ToolBase
             per_page = new
             {
                 type = "integer",
-                description = "Posts per page for list_posts. Default: 20, max: 100."
+                description = "Posts per page for list_posts. Default: 100 (WordPress's own maximum) -- fewer round trips is better for exhaustive crawling."
             },
             url = new
             {
                 type = "string",
                 description = "Full post URL to fetch. Required for fetch_post."
+            },
+            max_length = new
+            {
+                type = "integer",
+                description = "Max converted-markdown length in characters for fetch_post, matching web_fetch. Default: 20000."
             }
         },
         required = new[] { "action" }
@@ -103,7 +108,9 @@ public class CrawlWebTool : ToolBase
             return ToolResult.Error($"Invalid base_url: '{baseUrl}'. Only http/https URLs are supported.");
 
         var page = GetOptionalInt(input, "page", 1);
-        var perPage = Math.Clamp(GetOptionalInt(input, "per_page", 20), 1, 100);
+        // 100 is WordPress's own hard ceiling for per_page -- requesting more returns a
+        // 400 (rest_post_invalid_per_page), so clamping here just avoids that round trip.
+        var perPage = Math.Clamp(GetOptionalInt(input, "per_page", 100), 1, 100);
 
         var listUrl = $"{baseUri.GetLeftPart(UriPartial.Authority)}/wp-json/wp/v2/posts" +
                       $"?page={page}&per_page={perPage}&_fields=id,link,title,date&orderby=date&order=asc";
@@ -244,8 +251,15 @@ public class CrawlWebTool : ToolBase
         var contentHtml = post.GetProperty("content").GetProperty("rendered").GetString() ?? "";
 
         var (markdown, unresolvedImages) = await ConvertToMarkdownAsync(contentHtml, postUri, ct);
+        var maxLength = GetOptionalInt(input, "max_length", 20000);
 
         var result = $"Title: {title}\nURL: {link}\nDate: {dateOnly}\n\n{markdown}";
+        if (result.Length > maxLength)
+            result = result[..maxLength] + "\n\n[Truncated for display]";
+
+        // Appended after truncation, never counted against max_length -- silently
+        // truncating this away would defeat the "never dropped silently" requirement
+        // on unresolved images right when a long post makes it most likely to fire.
         if (unresolvedImages.Count > 0)
         {
             result += "\n\n[UNRESOLVED IMAGES -- flag these, do not drop them silently]\n" +
