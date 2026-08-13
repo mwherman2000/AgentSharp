@@ -22,6 +22,7 @@ public class ReplHost
     private readonly SessionManager _sessions;
     private readonly MemoryManager _memory;
     private AgentLoop _agent;
+    private readonly int _maxTokens;
     private int _turnCount;
     private readonly List<string> _inputHistory = new();
     private CancellationTokenSource? _turnCts;
@@ -32,7 +33,8 @@ public class ReplHost
         ApprovalGate approval,
         ProjectContext project,
         SessionManager sessions,
-        MemoryManager memory)
+        MemoryManager memory,
+        int maxTokens = AgentLoop.DefaultMaxTokens)
     {
         _llm = llm;
         _tools = tools;
@@ -40,9 +42,10 @@ public class ReplHost
         _project = project;
         _sessions = sessions;
         _memory = memory;
+        _maxTokens = maxTokens;
 
         var promptBuilder = new SystemPromptBuilder(_project, _memory);
-        _agent = new AgentLoop(_llm, _tools, _approval, promptBuilder.Build());
+        _agent = new AgentLoop(_llm, _tools, _approval, promptBuilder.Build(), maxTokens: _maxTokens);
         WireEvents(_agent);
     }
 
@@ -181,7 +184,7 @@ public class ReplHost
 
             case CommandType.Clear:
                 _agent = new AgentLoop(_llm, _tools, _approval,
-                    new SystemPromptBuilder(_project, _memory).Build());
+                    new SystemPromptBuilder(_project, _memory).Build(), maxTokens: _maxTokens);
                 WireEvents(_agent);
                 _turnCount = 0;
                 AnsiConsole.Clear();
@@ -210,7 +213,7 @@ public class ReplHost
                     break;
                 }
                 _agent = new AgentLoop(_llm, _tools, _approval,
-                    new SystemPromptBuilder(_project, _memory).Build(), history);
+                    new SystemPromptBuilder(_project, _memory).Build(), history, _maxTokens);
                 WireEvents(_agent);
                 AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages)");
                 break;

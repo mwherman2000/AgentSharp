@@ -20,6 +20,10 @@ public class Configuration
     /// provider's default", i.e. <see cref="OpenAiCompatibleClient.DefaultOllamaTimeout"/>.</summary>
     public double? TimeoutMinutes { get; set; }
 
+    /// <summary>Max output tokens per LLM request. Null means "use the default",
+    /// i.e. <see cref="AgentSharp.Agent.AgentLoop.DefaultMaxTokens"/>.</summary>
+    public int? MaxTokens { get; set; }
+
     /// <summary>
     /// Returns the effective model, using a provider-specific default if none was explicitly set.
     /// </summary>
@@ -71,6 +75,9 @@ public class Configuration
         var envTimeout = Environment.GetEnvironmentVariable("AGENT_TIMEOUT_MINUTES");
         if (envTimeout is not null && double.TryParse(envTimeout, System.Globalization.CultureInfo.InvariantCulture, out var envTimeoutMinutes))
             config.TimeoutMinutes = envTimeoutMinutes;
+        var envMaxTokens = Environment.GetEnvironmentVariable("AGENT_MAX_TOKENS");
+        if (envMaxTokens is not null && int.TryParse(envMaxTokens, System.Globalization.CultureInfo.InvariantCulture, out var envMaxTokensValue))
+            config.MaxTokens = envMaxTokensValue;
 
         // CLI argument overrides (must run before provider-specific key lookup
         // so that --provider is known before we pick which env var to read)
@@ -92,6 +99,10 @@ public class Configuration
                     break;
                 case "--timeout" when i + 1 < args.Length && double.TryParse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture, out var timeoutMinutes):
                     config.TimeoutMinutes = timeoutMinutes;
+                    i++;
+                    break;
+                case "--max-tokens" when i + 1 < args.Length && int.TryParse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture, out var maxTokensValue):
+                    config.MaxTokens = maxTokensValue;
                     i++;
                     break;
             }

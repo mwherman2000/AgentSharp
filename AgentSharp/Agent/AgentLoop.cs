@@ -26,6 +26,7 @@ public class AgentLoop
     private readonly ApprovalGate _approval;
     private readonly ConversationHistory _history;
     private readonly string _systemPrompt;
+    private readonly int _maxTokens;
     private int _totalInputTokens;
     private int _totalOutputTokens;
     private int _totalCacheCreationTokens;
@@ -58,18 +59,27 @@ public class AgentLoop
     /// </summary>
     public event Action<string, ToolResult>? OnToolEnd; // (toolName, result)
 
+    /// <summary>Default max_tokens for requests built by this loop. Overridable per
+    /// instance via the <c>maxTokens</c> constructor parameter (wired to
+    /// <c>--max-tokens</c>/<c>AGENT_MAX_TOKENS</c> on the CLI). Claude models support up
+    /// to 128K output tokens; large content-generation turns (e.g. drafting a whole book
+    /// chapter in one tool call) need real headroom here, not a small default.</summary>
+    public const int DefaultMaxTokens = 128_000;
+
     public AgentLoop(
         ILlmClient llm,
         ToolRegistry tools,
         ApprovalGate approval,
         string systemPrompt,
-        ConversationHistory? history = null)
+        ConversationHistory? history = null,
+        int maxTokens = DefaultMaxTokens)
     {
         _llm = llm;
         _tools = tools;
         _approval = approval;
         _systemPrompt = systemPrompt;
         _history = history ?? new ConversationHistory();
+        _maxTokens = maxTokens;
     }
 
     /// <summary>
@@ -452,7 +462,7 @@ public class AgentLoop
         SystemPrompt = _systemPrompt,
         Messages = _history.Messages.ToList(),
         Tools = _tools.GetDefinitions(),
-        MaxTokens = 8192
+        MaxTokens = _maxTokens
     };
 
     /// <summary>
