@@ -121,6 +121,8 @@ public class OpenAiCompatibleClient : ILlmClient
         ct = timeoutCts.Token;
 
         var body = BuildRequestBody(request, stream: false);
+        Console.Error.WriteLine($"[TIMING] request body length: {body.Length}");
+        Console.Error.WriteLine($"[TIMING] request body est. tokens: ~{body.Length / 4}");
         var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _http.PostAsync(_apiUrl, content, ct);
         await EnsureSuccessAsync(response, ct);
