@@ -228,6 +228,7 @@ public class ReplHost
                 AnsiConsole.MarkupLine($"[bold]Sync mode:[/] {(Program.SyncMode ? "on (SendAsync, non-streaming)" : "off (StreamAsync, default)")}");
                 AnsiConsole.MarkupLine($"[bold]Timeout (streaming):[/] {FormatTimeout(_llm.StreamingTimeout)}");
                 AnsiConsole.MarkupLine($"[bold]Timeout (non-streaming):[/] {FormatTimeout(_llm.NonStreamingTimeout)}");
+                AnsiConsole.MarkupLine($"[bold]Max tokens:[/] {_maxTokens}");
                 AnsiConsole.MarkupLine($"[bold]Tools:[/] {_tools.All.Count}");
                 AnsiConsole.MarkupLine($"[bold]Turns:[/] {_turnCount}");
                 AnsiConsole.MarkupLine($"[bold]Messages:[/] {_agent.History.Count}");
@@ -475,7 +476,7 @@ public class ReplHost
     {
         AnsiConsole.Write(new FigletText("AgentSharp").Color(Color.Blue));
         AnsiConsole.MarkupLine("[bold]AI Agent[/] - Built with patterns from Claude Code");
-        AnsiConsole.MarkupLine($"[dim]Provider: {_llm.ProviderName} | Model: {_llm.ModelId} | Tools: {_tools.All.Count}[/]");
+        AnsiConsole.MarkupLine($"[dim]Provider: {_llm.ProviderName} | Model: {_llm.ModelId} | Max tokens: {_maxTokens} | Tools: {_tools.All.Count}[/]");
         if (_project.IsGitRepo)
             AnsiConsole.MarkupLine($"[dim]Git: {_project.GitBranch} | Dir: {_project.WorkingDirectory}[/]");
         AnsiConsole.MarkupLine("[dim]Type /help for commands, or start chatting.[/]");
