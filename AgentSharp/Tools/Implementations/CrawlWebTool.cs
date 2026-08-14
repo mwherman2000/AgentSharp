@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using System.Xml.Linq;
 using AngleSharp;
 using AngleSharp.Dom;
 using ReverseMarkdown;
@@ -7,34 +9,78 @@ using ReverseMarkdown;
 namespace AgentSharp.Tools.Implementations;
 
 /// <summary>
-/// Crawls a WordPress blog's REST API to enumerate every post (paginated) and
-/// fetch a single post's body converted to clean Markdown, with images
-/// resolved to absolute URLs. Exists because a plain web_fetch of raw HTML
-/// leaves pagination, link-following, and HTML-to-Markdown conversion
-/// entirely up to the model -- unreliable even for a large model, and a
-/// near-guaranteed source of fabricated ("hallucinated") content for a small
-/// one, since a raw HTML page is usually too large and noisy (theme chrome,
-/// scripts, nav, comments) for the model to extract a clean post body from.
+/// Crawls a WordPress blog to enumerate every post (paginated) and fetch a
+/// single post's body converted to clean Markdown, with images resolved to
+/// absolute URLs. Exists because a plain web_fetch of raw HTML leaves
+/// pagination, link-following, and HTML-to-Markdown conversion entirely up
+/// to the model -- unreliable even for a large model, and a near-guaranteed
+/// source of fabricated ("hallucinated") content for a small one, since a
+/// raw HTML page is usually too large and noisy (theme chrome, scripts,
+/// nav, comments) for the model to extract a clean post body from.
 ///
-/// The WordPress REST API (`/wp-json/wp/v2/posts`) sidesteps all of that: it
-/// returns clean, structured JSON, its `content.rendered` field is already
-/// isolated to just the post body (no site chrome to strip), and its
+/// Primary path: the WordPress REST API (`/wp-json/wp/v2/posts`). It returns
+/// clean, structured JSON, its `content.rendered` field is already isolated
+/// to just the post body (no site chrome to strip), and its
 /// `page`/`per_page` pagination -- with `X-WP-TotalPages` reporting how many
 /// pages exist -- means a single unified crawl of `/posts` already covers
 /// every post regardless of which archive/category/tag page it would
 /// otherwise appear under, no separate per-category/per-tag traversal
 /// needed.
+///
+/// Fallback tier 2: the REST API is commonly blocked outright (security
+/// plugins, server config) even on sites that are genuinely WordPress --
+/// confirmed against a real site where `/wp-json/` 404s entirely. When that
+/// happens, this falls back to the site's RSS feed (`/feed/`, paginated via
+/// `?paged=N`), which is frequently left reachable even when the REST API
+/// isn't and, like the REST API, carries full post content per item
+/// (`content:encoded`).
+///
+/// Fallback tier 3: if the RSS feed is unavailable too, this falls back to
+/// the site's XML sitemap (`/wp-sitemap.xml` -- WordPress core, present by
+/// default since 5.5 regardless of plugins -- or `/sitemap_index.xml` /
+/// `/sitemap.xml` for SEO-plugin-generated ones), following a sitemap index
+/// down to its post sub-sitemaps. Sitemaps carry URLs only, no content, so
+/// fetch_post falls back further still to fetching the post's own page
+/// directly with a best-effort content-container heuristic when a URL was
+/// only ever discovered this way.
+///
+/// Each tier's availability is probed once and remembered for the lifetime
+/// of this tool instance, so later calls don't keep re-probing a route
+/// that's already known to be dead.
 /// </summary>
 public class CrawlWebTool : ToolBase
 {
     private static readonly HttpClient Http = SafeHttpClientFactory.Create(TimeSpan.FromSeconds(30));
+    private static readonly XNamespace ContentNs = "http://purl.org/rss/1.0/modules/content/";
+
+    /// <summary>null = not yet determined, true = confirmed reachable, false =
+    /// confirmed missing (404) -- once false, callers skip straight to RSS.</summary>
+    private bool? _restApiAvailable;
+
+    /// <summary>Same tri-state as _restApiAvailable, but for the RSS feed -- only
+    /// set false when the feed's own first page 404s, never for a later page (which
+    /// just means normal end-of-pagination).</summary>
+    private bool? _rssAvailable;
+
+    /// <summary>Populated as RSS feed pages are listed, keyed by post URL, so
+    /// fetch_post can return a post's content instantly if list_posts already saw
+    /// it, instead of re-fetching.</summary>
+    private readonly Dictionary<string, RssItem> _rssItemCache = new();
+
+    /// <summary>Full flattened sitemap URL list, fetched once and sliced in memory
+    /// for each list_posts page -- sitemaps aren't paginated per-request the way
+    /// REST/RSS are. Null until first attempted; set to an empty list after a
+    /// confirmed failed attempt, so it's only ever fetched once per tool instance.</summary>
+    private List<(string Url, string? LastMod)>? _sitemapEntries;
 
     public override string Name => "crawl_web";
     public override string Description =>
-        "Enumerate and fetch posts from a WordPress blog via its REST API " +
-        "(/wp-json/wp/v2/posts) -- the reliable way to crawl an entire blog " +
-        "archive, instead of guessing archive/category/tag URLs and " +
-        "parsing raw HTML with web_fetch. Two actions:\n" +
+        "Enumerate and fetch posts from a WordPress blog -- the reliable " +
+        "way to crawl an entire blog archive, instead of guessing archive/" +
+        "category/tag URLs and parsing raw HTML with web_fetch. Uses the " +
+        "WordPress REST API when available, and falls back automatically " +
+        "(nothing to configure) to the site's RSS feed, then its XML " +
+        "sitemap, then a direct page fetch if needed. Two actions:\n" +
         "- 'list_posts': returns one page of posts (title, date, URL) for " +
         "the given base_url, plus 'has_more'. To crawl the WHOLE archive, " +
         "call this repeatedly with an increasing 'page' until 'has_more' " +
@@ -43,7 +89,9 @@ public class CrawlWebTool : ToolBase
         "its title, date, and full body converted to Markdown, with " +
         "images as Markdown image references pointing at absolute URLs. " +
         "Call this once per post you need the full content of.\n" +
-        "Requests to private/internal network addresses are blocked.";
+        "If this tool reports an error, report it and stop -- never invent " +
+        "placeholder posts or content to fill the gap. Requests to " +
+        "private/internal network addresses are blocked.";
     public override ToolRiskLevel RiskLevel => ToolRiskLevel.ReadOnly;
 
     protected override JsonElement BuildInputSchema() => SchemaFrom(new
@@ -70,7 +118,7 @@ public class CrawlWebTool : ToolBase
             per_page = new
             {
                 type = "integer",
-                description = "Posts per page for list_posts. Default: 100 (WordPress's own maximum) -- fewer round trips is better for exhaustive crawling."
+                description = "Posts per page for list_posts. Default: 100 (WordPress's own maximum) -- fewer round trips is better for exhaustive crawling. Ignored when falling back to the RSS feed, which controls its own page size."
             },
             url = new
             {
@@ -108,11 +156,16 @@ public class CrawlWebTool : ToolBase
             return ToolResult.Error($"Invalid base_url: '{baseUrl}'. Only http/https URLs are supported.");
 
         var page = GetOptionalInt(input, "page", 1);
-        // 100 is WordPress's own hard ceiling for per_page -- requesting more returns a
-        // 400 (rest_post_invalid_per_page), so clamping here just avoids that round trip.
+        var baseAuthority = baseUri.GetLeftPart(UriPartial.Authority);
+        // 100 is WordPress's own hard ceiling for REST per_page -- requesting more
+        // returns a 400 (rest_post_invalid_per_page), so clamping avoids that round
+        // trip. Also reused as the slice size for the sitemap fallback tier.
         var perPage = Math.Clamp(GetOptionalInt(input, "per_page", 100), 1, 100);
 
-        var listUrl = $"{baseUri.GetLeftPart(UriPartial.Authority)}/wp-json/wp/v2/posts" +
+        if (_restApiAvailable == false)
+            return await ListPostsViaRssOrSitemapAsync(baseAuthority, page, perPage, ct);
+
+        var listUrl = $"{baseAuthority}/wp-json/wp/v2/posts" +
                       $"?page={page}&per_page={perPage}&_fields=id,link,title,date&orderby=date&order=asc";
 
         HttpResponseMessage response;
@@ -129,6 +182,12 @@ public class CrawlWebTool : ToolBase
             return ToolResult.Error("Request timed out (30s).");
         }
 
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            _restApiAvailable = false;
+            return await ListPostsViaRssOrSitemapAsync(baseAuthority, page, perPage, ct);
+        }
+
         var body = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
@@ -141,9 +200,7 @@ public class CrawlWebTool : ToolBase
                 return ToolResult.Success($"Page {page}: no posts (past the last page). has_more: false");
 
             return ToolResult.Error(
-                $"WordPress REST API request failed ({(int)response.StatusCode} {response.ReasonPhrase}) " +
-                $"at '{listUrl}'. This tool requires the standard WP REST API to be enabled at " +
-                $"{baseUri.GetLeftPart(UriPartial.Authority)}/wp-json/wp/v2/posts.");
+                $"WordPress REST API request failed ({(int)response.StatusCode} {response.ReasonPhrase}) at '{listUrl}'.");
         }
 
         JsonDocument doc;
@@ -191,6 +248,94 @@ public class CrawlWebTool : ToolBase
         return ToolResult.Success(string.Join('\n', lines));
     }
 
+    private async Task<ToolResult> ListPostsViaRssOrSitemapAsync(
+        string baseAuthority, int page, int perPage, CancellationToken ct)
+    {
+        if (_rssAvailable != false)
+        {
+            var (ok, isNotFound, error, items) = await FetchRssPageAsync(baseAuthority, page, ct);
+
+            if (!isNotFound)
+            {
+                if (!ok)
+                    return ToolResult.Error(error!);
+
+                foreach (var item in items)
+                {
+                    if (!string.IsNullOrEmpty(item.Link))
+                        _rssItemCache[item.Link] = item;
+                }
+
+                var lines = new List<string>
+                {
+                    $"Page {page} ({items.Count} posts) [via RSS feed -- REST API unavailable]",
+                    // A nonzero page only means THIS page had content, not that another
+                    // page exists -- but that's the best signal available without an
+                    // extra round trip, so err toward "keep going" and let the true end
+                    // show up as the next page's 404 (one extra call at the end, always
+                    // correct).
+                    $"has_more: {(items.Count > 0 ? "true" : "false")}",
+                    ""
+                };
+
+                var i = 0;
+                foreach (var item in items)
+                {
+                    i++;
+                    lines.Add($"{i}. {item.Title} — {FormatRssDate(item.PubDate)} — {item.Link}");
+                }
+
+                if (items.Count == 0)
+                    lines.Add("(no posts on this page)");
+
+                return ToolResult.Success(string.Join('\n', lines));
+            }
+
+            if (page > 1)
+                // Just the end of RSS pagination, not "RSS is unavailable" -- normal finish.
+                return ToolResult.Success($"Page {page}: no posts (past the last page). has_more: false");
+
+            // Page 1 itself 404'd -- no RSS feed at all. Remember that and fall through
+            // to the sitemap tier.
+            _rssAvailable = false;
+        }
+
+        return await ListPostsViaSitemapAsync(baseAuthority, page, perPage, ct);
+    }
+
+    private async Task<ToolResult> ListPostsViaSitemapAsync(
+        string baseAuthority, int page, int perPage, CancellationToken ct)
+    {
+        _sitemapEntries ??= await LoadSitemapAsync(baseAuthority, ct) ?? [];
+
+        if (_sitemapEntries.Count == 0)
+            return ToolResult.Error(
+                $"No WordPress REST API, RSS feed, or sitemap could be found at {baseAuthority}. Cannot enumerate posts.");
+
+        var pageItems = _sitemapEntries.Skip((page - 1) * perPage).Take(perPage).ToList();
+        var hasMore = page * perPage < _sitemapEntries.Count;
+
+        var lines = new List<string>
+        {
+            $"Page {page} ({_sitemapEntries.Count} URLs total) [via sitemap -- REST API and RSS feed both " +
+            "unavailable; titles unknown here, fetch_post will fill them in]",
+            $"has_more: {(hasMore ? "true" : "false")}",
+            ""
+        };
+
+        var i = (page - 1) * perPage;
+        foreach (var (url, lastMod) in pageItems)
+        {
+            i++;
+            lines.Add($"{i}. (title unknown) — {FormatRssDate(lastMod)} — {url}");
+        }
+
+        if (pageItems.Count == 0)
+            lines.Add("(no more URLs)");
+
+        return ToolResult.Success(string.Join('\n', lines));
+    }
+
     private async Task<ToolResult> FetchPostAsync(JsonElement input, CancellationToken ct)
     {
         var url = GetOptionalString(input, "url");
@@ -200,12 +345,36 @@ public class CrawlWebTool : ToolBase
         if (!Uri.TryCreate(url, UriKind.Absolute, out var postUri) || postUri.Scheme is not ("http" or "https"))
             return ToolResult.Error($"Invalid url: '{url}'. Only http/https URLs are supported.");
 
+        var maxLength = GetOptionalInt(input, "max_length", 20000);
+        var baseAuthority = postUri.GetLeftPart(UriPartial.Authority);
+
+        if (_restApiAvailable != false)
+        {
+            var restResult = await FetchPostViaRestAsync(postUri, baseAuthority, url, maxLength, ct);
+            if (restResult is not null)
+                return restResult;
+
+            // null means the REST route itself is missing (404) -- fall back to RSS.
+            _restApiAvailable = false;
+        }
+
+        return await FetchPostViaRssAsync(postUri, baseAuthority, url, maxLength, ct);
+    }
+
+    /// <summary>
+    /// Returns null specifically when the REST API route doesn't exist (404),
+    /// signaling the caller to fall back to RSS. Any other outcome -- success or a
+    /// real error (bad JSON, no matching slug, network failure) -- is returned
+    /// directly, since those aren't "try RSS instead" situations.
+    /// </summary>
+    private async Task<ToolResult?> FetchPostViaRestAsync(
+        Uri postUri, string baseAuthority, string url, int maxLength, CancellationToken ct)
+    {
         var slug = postUri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
         if (slug is null)
             return ToolResult.Error($"Could not derive a post slug from '{url}'.");
         slug = Uri.UnescapeDataString(slug);
 
-        var baseAuthority = postUri.GetLeftPart(UriPartial.Authority);
         var lookupUrl = $"{baseAuthority}/wp-json/wp/v2/posts" +
                          $"?slug={Uri.EscapeDataString(slug)}&_fields=link,title,date,content";
 
@@ -222,6 +391,9 @@ public class CrawlWebTool : ToolBase
         {
             return ToolResult.Error("Request timed out (30s).");
         }
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
 
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
@@ -250,8 +422,268 @@ public class CrawlWebTool : ToolBase
         var dateOnly = date is { Length: >= 10 } ? date[..10] : date ?? "unknown date";
         var contentHtml = post.GetProperty("content").GetProperty("rendered").GetString() ?? "";
 
+        return await BuildFetchResultAsync(title, link, dateOnly, contentHtml, postUri, maxLength, ct);
+    }
+
+    private async Task<ToolResult> FetchPostViaRssAsync(
+        Uri postUri, string baseAuthority, string url, int maxLength, CancellationToken ct)
+    {
+        if (_rssItemCache.TryGetValue(url, out var cached))
+            return await BuildFetchResultAsync(
+                cached.Title, cached.Link, FormatRssDate(cached.PubDate), cached.ContentHtml, postUri, maxLength, ct);
+
+        // Not seen via a prior list_posts call yet -- search the feed for it (unless
+        // it's already confirmed unavailable), bounded so a URL that doesn't belong to
+        // this site (or a typo) can't loop forever.
+        if (_rssAvailable != false)
+        {
+            const int maxPagesToSearch = 50;
+            for (var page = 1; page <= maxPagesToSearch; page++)
+            {
+                var (ok, isNotFound, error, items) = await FetchRssPageAsync(baseAuthority, page, ct);
+                if (isNotFound)
+                {
+                    if (page == 1) _rssAvailable = false;
+                    break; // ran off the end of the feed (or it doesn't exist) without finding it
+                }
+                if (!ok) return ToolResult.Error(error!);
+
+                foreach (var item in items)
+                {
+                    if (!string.IsNullOrEmpty(item.Link))
+                        _rssItemCache[item.Link] = item;
+                }
+
+                if (_rssItemCache.TryGetValue(url, out var found))
+                    return await BuildFetchResultAsync(
+                        found.Title, found.Link, FormatRssDate(found.PubDate), found.ContentHtml, postUri, maxLength, ct);
+            }
+        }
+
+        // Neither REST nor RSS have this post (or either/both are unavailable at all) --
+        // last resort: fetch the page itself and extract its content heuristically.
+        return await FetchPostViaRawHtmlAsync(postUri, url, maxLength, ct);
+    }
+
+    /// <summary>
+    /// Last-resort fallback: fetches the post's own page directly and guesses at
+    /// its content container using common WordPress theme selectors, since there's
+    /// no structured API left to ask. Lower quality than the REST/RSS paths (no
+    /// guarantee the isolated block is exactly the post body, no site chrome
+    /// leaking in) -- the result says so explicitly rather than presenting it with
+    /// the same confidence as a structured fetch.
+    /// </summary>
+    private static async Task<ToolResult> FetchPostViaRawHtmlAsync(
+        Uri postUri, string url, int maxLength, CancellationToken ct)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await Http.GetAsync(postUri, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            return ToolResult.Error($"Could not reach '{postUri.Host}': {ex.Message}");
+        }
+        catch (TaskCanceledException)
+        {
+            return ToolResult.Error("Request timed out (30s).");
+        }
+
+        if (!response.IsSuccessStatusCode)
+            return ToolResult.Error(
+                $"No REST API entry, RSS entry, or reachable page found for '{url}' " +
+                $"({(int)response.StatusCode} {response.ReasonPhrase} on direct fetch).");
+
+        var html = await response.Content.ReadAsStringAsync(ct);
+
+        var browsingContext = BrowsingContext.New(AngleSharp.Configuration.Default);
+        var document = await browsingContext.OpenAsync(req => req.Content(html), ct);
+
+        var title = WebUtility.HtmlDecode(
+            document.QuerySelector("h1.entry-title")?.TextContent?.Trim()
+            ?? document.QuerySelector("h1")?.TextContent?.Trim()
+            ?? document.Title
+            ?? "(title unknown)");
+
+        // Common WordPress theme content-container selectors, most specific first.
+        string[] contentSelectors = ["article .entry-content", ".entry-content", ".post-content", "article", "main", "#content"];
+        var contentHtml = contentSelectors
+            .Select(sel => document.QuerySelector(sel)?.InnerHtml)
+            .FirstOrDefault(h => !string.IsNullOrWhiteSpace(h))
+            ?? document.Body?.InnerHtml ?? html;
+
+        var result = await BuildFetchResultAsync(title, url, "unknown date", contentHtml, postUri, maxLength, ct);
+        return result with
+        {
+            Output = result.Output + "\n\n[Fetched via direct page HTML with best-effort content extraction -- " +
+                     "no REST API or RSS entry was available for this URL. The body above may include leftover " +
+                     "page chrome, or be missing content the heuristic didn't capture -- verify before relying on it.]"
+        };
+    }
+
+    /// <summary>
+    /// Fetches and parses one page of the RSS feed. Returns isNotFound=true for a 404
+    /// (WordPress's signal for "past the last page" on paginated feed requests, same
+    /// role as the REST API's rest_post_invalid_page_number) -- the caller decides
+    /// whether that means "no feed at all" (page 1) or "end of pagination" (page > 1).
+    /// </summary>
+    private static async Task<(bool ok, bool isNotFound, string? error, List<RssItem> items)> FetchRssPageAsync(
+        string baseAuthority, int page, CancellationToken ct)
+    {
+        var feedUrl = page <= 1 ? $"{baseAuthority}/feed/" : $"{baseAuthority}/feed/?paged={page}";
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await Http.GetAsync(feedUrl, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            return (false, false, $"Could not reach '{new Uri(baseAuthority).Host}': {ex.Message}", []);
+        }
+        catch (TaskCanceledException)
+        {
+            return (false, false, "Request timed out (30s).", []);
+        }
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return (false, true, null, []);
+
+        if (!response.IsSuccessStatusCode)
+            return (false, false, $"RSS feed request failed ({(int)response.StatusCode} {response.ReasonPhrase}) at '{feedUrl}'.", []);
+
+        var xml = await response.Content.ReadAsStringAsync(ct);
+
+        List<RssItem> items;
+        try
+        {
+            var doc = XDocument.Parse(xml);
+            items = doc.Descendants("item").Select(item => new RssItem(
+                WebUtility.HtmlDecode(item.Element("title")?.Value ?? ""),
+                item.Element("link")?.Value ?? "",
+                item.Element("pubDate")?.Value,
+                item.Element(ContentNs + "encoded")?.Value ?? item.Element("description")?.Value ?? ""
+            )).ToList();
+        }
+        catch (System.Xml.XmlException)
+        {
+            return (false, false, $"'{feedUrl}' did not return a valid RSS feed.", []);
+        }
+
+        return (true, false, null, items);
+    }
+
+    /// <summary>
+    /// Tries WordPress's built-in sitemap first (present since core 5.5, independent
+    /// of any plugin, and typically not covered by whatever blocked /wp-json/ since
+    /// it's a separate rewrite rule), then common SEO-plugin sitemap paths. Follows
+    /// a sitemap index down into its sub-sitemaps and flattens everything into one
+    /// list, keeping only sub-sitemaps that look like they hold posts (skips pages,
+    /// categories, tags, authors, media) so paginated results aren't diluted with
+    /// non-post URLs. Returns null only when no candidate path yielded anything.
+    /// </summary>
+    private static async Task<List<(string Url, string? LastMod)>?> LoadSitemapAsync(string baseAuthority, CancellationToken ct)
+    {
+        foreach (var path in new[] { "/wp-sitemap.xml", "/sitemap_index.xml", "/sitemap.xml" })
+        {
+            var rootDoc = await TryFetchXmlAsync($"{baseAuthority}{path}", ct);
+            if (rootDoc?.Root is null)
+                continue;
+
+            var rootName = rootDoc.Root.Name.LocalName;
+
+            if (rootName == "urlset")
+            {
+                var entries = ExtractUrlEntries(rootDoc);
+                if (entries.Count > 0)
+                    return entries;
+                continue;
+            }
+
+            if (rootName != "sitemapindex")
+                continue;
+
+            var subSitemapUrls = rootDoc.Root.Elements()
+                .Where(e => e.Name.LocalName == "sitemap")
+                .Select(e => e.Elements().FirstOrDefault(c => c.Name.LocalName == "loc")?.Value)
+                .Where(u => !string.IsNullOrEmpty(u) && LooksLikePostSitemap(u!))
+                .ToList();
+
+            var allEntries = new List<(string, string?)>();
+            foreach (var subUrl in subSitemapUrls)
+            {
+                var subDoc = await TryFetchXmlAsync(subUrl!, ct);
+                if (subDoc?.Root?.Name.LocalName == "urlset")
+                    allEntries.AddRange(ExtractUrlEntries(subDoc));
+            }
+
+            if (allEntries.Count > 0)
+                return allEntries;
+        }
+
+        return null;
+    }
+
+    private static async Task<XDocument?> TryFetchXmlAsync(string url, CancellationToken ct)
+    {
+        try
+        {
+            var response = await Http.GetAsync(url, ct);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var xml = await response.Content.ReadAsStringAsync(ct);
+            return XDocument.Parse(xml);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Xml.XmlException)
+        {
+            // Any of these just means "this candidate path didn't pan out" -- the
+            // caller tries the next one, so there's nothing more useful to do with
+            // the specific failure reason here.
+            return null;
+        }
+    }
+
+    private static List<(string Url, string? LastMod)> ExtractUrlEntries(XDocument doc) =>
+        doc.Root!.Elements()
+            .Where(e => e.Name.LocalName == "url")
+            .Select(e => (
+                Url: e.Elements().FirstOrDefault(c => c.Name.LocalName == "loc")?.Value ?? "",
+                LastMod: e.Elements().FirstOrDefault(c => c.Name.LocalName == "lastmod")?.Value
+            ))
+            .Where(e => e.Url.Length > 0)
+            .ToList();
+
+    /// <summary>
+    /// Matches WordPress core's naming (wp-sitemap-posts-post-1.xml) and common SEO
+    /// plugins' (post-sitemap1.xml), while excluding sibling sub-sitemaps for pages,
+    /// categories, tags, authors, and media that a sitemap index typically also lists.
+    /// </summary>
+    private static bool LooksLikePostSitemap(string sitemapUrl)
+    {
+        var lower = sitemapUrl.ToLowerInvariant();
+        return lower.Contains("post") &&
+               !lower.Contains("page") && !lower.Contains("categor") && !lower.Contains("tag") &&
+               !lower.Contains("author") && !lower.Contains("media") && !lower.Contains("attachment");
+    }
+
+    private static string FormatRssDate(string? pubDateRaw)
+    {
+        if (pubDateRaw is not null &&
+            DateTimeOffset.TryParse(pubDateRaw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dto))
+            return dto.ToString("yyyy-MM-dd");
+        return pubDateRaw ?? "unknown date";
+    }
+
+    /// <summary>
+    /// Shared by both the REST and RSS fetch paths: resolves images, converts to
+    /// Markdown, applies max_length, and appends the unresolved-images warning.
+    /// </summary>
+    private static async Task<ToolResult> BuildFetchResultAsync(
+        string title, string link, string dateOnly, string contentHtml, Uri postUri, int maxLength, CancellationToken ct)
+    {
         var (markdown, unresolvedImages) = await ConvertToMarkdownAsync(contentHtml, postUri, ct);
-        var maxLength = GetOptionalInt(input, "max_length", 20000);
 
         var result = $"Title: {title}\nURL: {link}\nDate: {dateOnly}\n\n{markdown}";
         if (result.Length > maxLength)
@@ -316,7 +748,8 @@ public class CrawlWebTool : ToolBase
     /// <summary>
     /// WordPress reports "page number beyond the last page" as HTTP 400 with
     /// code "rest_post_invalid_page_number" -- distinguishes that from a real
-    /// failure (auth, rate limit, REST API disabled, etc.).
+    /// failure (auth, rate limit, etc.). A missing/disabled REST API route is a
+    /// plain 404, handled separately by the caller as a signal to fall back to RSS.
     /// </summary>
     internal static bool IsInvalidPageNumberError(string responseBody)
     {
@@ -331,4 +764,6 @@ public class CrawlWebTool : ToolBase
             return false;
         }
     }
+
+    private sealed record RssItem(string Title, string Link, string? PubDate, string ContentHtml);
 }
