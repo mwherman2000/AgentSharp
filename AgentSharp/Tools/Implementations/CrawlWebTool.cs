@@ -30,19 +30,22 @@ namespace AgentSharp.Tools.Implementations;
 /// Fallback tier 2: the REST API is commonly blocked outright (security
 /// plugins, server config) even on sites that are genuinely WordPress --
 /// confirmed against a real site where `/wp-json/` 404s entirely. When that
-/// happens, this falls back to the site's RSS feed (`/feed/`, paginated via
-/// `?paged=N`), which is frequently left reachable even when the REST API
-/// isn't and, like the REST API, carries full post content per item
-/// (`content:encoded`).
+/// happens, this falls back to the site's XML sitemap (`/wp-sitemap.xml` --
+/// WordPress core, present by default since 5.5 regardless of plugins -- or
+/// `/sitemap_index.xml` / `/sitemap.xml` for SEO-plugin-generated ones),
+/// following a sitemap index down to its post sub-sitemaps. Checked ahead of
+/// RSS because it's on a separate rewrite rule from `/wp-json/`, so it's
+/// rarely covered by whatever blocked the REST API, and it gives a complete
+/// URL count up front rather than an estimate discovered page-by-page.
+/// Sitemaps carry URLs only, no content, so titles are unknown until
+/// fetch_post fills them in, and fetch_post itself falls back further still
+/// to fetching the post's own page directly when a URL was only ever
+/// discovered this way.
 ///
-/// Fallback tier 3: if the RSS feed is unavailable too, this falls back to
-/// the site's XML sitemap (`/wp-sitemap.xml` -- WordPress core, present by
-/// default since 5.5 regardless of plugins -- or `/sitemap_index.xml` /
-/// `/sitemap.xml` for SEO-plugin-generated ones), following a sitemap index
-/// down to its post sub-sitemaps. Sitemaps carry URLs only, no content, so
-/// fetch_post falls back further still to fetching the post's own page
-/// directly with a best-effort content-container heuristic when a URL was
-/// only ever discovered this way.
+/// Fallback tier 3: if no sitemap could be found either, this falls back to
+/// the site's RSS feed (`/feed/`, paginated via `?paged=N`), which, like the
+/// REST API, carries full post content per item (`content:encoded`) --
+/// useful when it's the only structured source left standing.
 ///
 /// Each tier's availability is probed once and remembered for the lifetime
 /// of this tool instance, so later calls don't keep re-probing a route
@@ -79,8 +82,8 @@ public class CrawlWebTool : ToolBase
         "way to crawl an entire blog archive, instead of guessing archive/" +
         "category/tag URLs and parsing raw HTML with web_fetch. Uses the " +
         "WordPress REST API when available, and falls back automatically " +
-        "(nothing to configure) to the site's RSS feed, then its XML " +
-        "sitemap, then a direct page fetch if needed. Two actions:\n" +
+        "(nothing to configure) to the site's XML sitemap, then its RSS " +
+        "feed, then a direct page fetch if needed. Two actions:\n" +
         "- 'list_posts': returns one page of posts (title, date, URL) for " +
         "the given base_url, plus 'has_more'. To crawl the WHOLE archive, " +
         "call this repeatedly with an increasing 'page' until 'has_more' " +
@@ -163,7 +166,7 @@ public class CrawlWebTool : ToolBase
         var perPage = Math.Clamp(GetOptionalInt(input, "per_page", 100), 1, 100);
 
         if (_restApiAvailable == false)
-            return await ListPostsViaRssOrSitemapAsync(baseAuthority, page, perPage, ct);
+            return await ListPostsViaSitemapOrRssAsync(baseAuthority, page, perPage, ct);
 
         var listUrl = $"{baseAuthority}/wp-json/wp/v2/posts" +
                       $"?page={page}&per_page={perPage}&_fields=id,link,title,date&orderby=date&order=asc";
@@ -185,7 +188,7 @@ public class CrawlWebTool : ToolBase
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
             _restApiAvailable = false;
-            return await ListPostsViaRssOrSitemapAsync(baseAuthority, page, perPage, ct);
+            return await ListPostsViaSitemapOrRssAsync(baseAuthority, page, perPage, ct);
         }
 
         var body = await response.Content.ReadAsStringAsync(ct);
@@ -248,9 +251,23 @@ public class CrawlWebTool : ToolBase
         return ToolResult.Success(string.Join('\n', lines));
     }
 
-    private async Task<ToolResult> ListPostsViaRssOrSitemapAsync(
+    /// <summary>
+    /// REST API is already known unavailable by the time this is called. Tries the
+    /// sitemap next -- ahead of RSS, since sitemaps are typically unaffected by
+    /// whatever blocked /wp-json/ (a separate rewrite rule, rarely covered by the
+    /// same security-plugin rule) and give a complete URL count up front rather
+    /// than an estimate discovered page-by-page -- falling back to the RSS feed
+    /// only if no sitemap could be found at all.
+    /// </summary>
+    private async Task<ToolResult> ListPostsViaSitemapOrRssAsync(
         string baseAuthority, int page, int perPage, CancellationToken ct)
     {
+        _sitemapEntries ??= await LoadSitemapAsync(baseAuthority, ct) ?? [];
+
+        if (_sitemapEntries.Count > 0)
+            return ListPostsFromSitemapCache(page, perPage);
+
+        // No sitemap found -- fall back to the RSS feed.
         if (_rssAvailable != false)
         {
             var (ok, isNotFound, error, items) = await FetchRssPageAsync(baseAuthority, page, ct);
@@ -268,7 +285,7 @@ public class CrawlWebTool : ToolBase
 
                 var lines = new List<string>
                 {
-                    $"Page {page} ({items.Count} posts) [via RSS feed -- REST API unavailable]",
+                    $"Page {page} ({items.Count} posts) [via RSS feed -- REST API and sitemap both unavailable]",
                     // A nonzero page only means THIS page had content, not that another
                     // page exists -- but that's the best signal available without an
                     // extra round trip, so err toward "keep going" and let the true end
@@ -295,30 +312,23 @@ public class CrawlWebTool : ToolBase
                 // Just the end of RSS pagination, not "RSS is unavailable" -- normal finish.
                 return ToolResult.Success($"Page {page}: no posts (past the last page). has_more: false");
 
-            // Page 1 itself 404'd -- no RSS feed at all. Remember that and fall through
-            // to the sitemap tier.
+            // Page 1 itself 404'd -- no RSS feed at all.
             _rssAvailable = false;
         }
 
-        return await ListPostsViaSitemapAsync(baseAuthority, page, perPage, ct);
+        return ToolResult.Error(
+            $"No WordPress REST API, sitemap, or RSS feed could be found at {baseAuthority}. Cannot enumerate posts.");
     }
 
-    private async Task<ToolResult> ListPostsViaSitemapAsync(
-        string baseAuthority, int page, int perPage, CancellationToken ct)
+    private ToolResult ListPostsFromSitemapCache(int page, int perPage)
     {
-        _sitemapEntries ??= await LoadSitemapAsync(baseAuthority, ct) ?? [];
-
-        if (_sitemapEntries.Count == 0)
-            return ToolResult.Error(
-                $"No WordPress REST API, RSS feed, or sitemap could be found at {baseAuthority}. Cannot enumerate posts.");
-
-        var pageItems = _sitemapEntries.Skip((page - 1) * perPage).Take(perPage).ToList();
+        var pageItems = _sitemapEntries!.Skip((page - 1) * perPage).Take(perPage).ToList();
         var hasMore = page * perPage < _sitemapEntries.Count;
 
         var lines = new List<string>
         {
-            $"Page {page} ({_sitemapEntries.Count} URLs total) [via sitemap -- REST API and RSS feed both " +
-            "unavailable; titles unknown here, fetch_post will fill them in]",
+            $"Page {page} ({_sitemapEntries.Count} URLs total) [via sitemap -- REST API unavailable; " +
+            "titles unknown here, fetch_post will fill them in]",
             $"has_more: {(hasMore ? "true" : "false")}",
             ""
         };
