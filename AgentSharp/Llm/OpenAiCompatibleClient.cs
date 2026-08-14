@@ -227,7 +227,7 @@ public class OpenAiCompatibleClient : ILlmClient
                 }
                 else
                 {
-                    yield return new StreamDone(reason == "stop" ? "end_turn" : reason!);
+                    yield return new StreamDone(MapFinishReason(reason!));
                 }
                 break;
             }
@@ -418,6 +418,22 @@ public class OpenAiCompatibleClient : ILlmClient
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Normalizes an OpenAI-style finish_reason to the internal (Anthropic-shaped)
+    /// StopReason vocabulary AgentLoop checks against -- most importantly "length"
+    /// to "max_tokens", since AgentLoop's continuation nudge only fires on that
+    /// exact string. Without this, a response cut off by the token limit just ends
+    /// the turn silently instead of automatically continuing. "tool_calls" is
+    /// handled by each caller separately, since it needs extra bookkeeping
+    /// (flushing pending tool-call state) that doesn't belong in a pure mapping.
+    /// </summary>
+    private static string MapFinishReason(string finishReason) => finishReason switch
+    {
+        "stop" => "end_turn",
+        "length" => "max_tokens",
+        _ => finishReason
+    };
+
     private static LlmResponse ParseResponse(string json)
     {
         var doc = JsonDocument.Parse(json).RootElement;
@@ -451,8 +467,7 @@ public class OpenAiCompatibleClient : ILlmClient
             }
         }
 
-        var stopReason = finishReason == "tool_calls" ? "tool_use" :
-                         finishReason == "stop" ? "end_turn" : finishReason!;
+        var stopReason = finishReason == "tool_calls" ? "tool_use" : MapFinishReason(finishReason!);
 
         int inputTokens = 0, outputTokens = 0, cacheReadTokens = 0;
         if (doc.TryGetProperty("usage", out var usage))
