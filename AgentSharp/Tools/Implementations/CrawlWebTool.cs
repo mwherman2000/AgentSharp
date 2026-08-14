@@ -322,12 +322,15 @@ public class CrawlWebTool : ToolBase
 
     private ToolResult ListPostsFromSitemapCache(int page, int perPage)
     {
-        var pageItems = _sitemapEntries!.Skip((page - 1) * perPage).Take(perPage).ToList();
-        var hasMore = page * perPage < _sitemapEntries.Count;
+        // Field, not a local -- the compiler can't carry the caller's "count > 0"
+        // narrowing across the call, so bind to a local once instead of repeating '!'.
+        var entries = _sitemapEntries!;
+        var pageItems = entries.Skip((page - 1) * perPage).Take(perPage).ToList();
+        var hasMore = page * perPage < entries.Count;
 
         var lines = new List<string>
         {
-            $"Page {page} ({_sitemapEntries.Count} URLs total) [via sitemap -- REST API unavailable; " +
+            $"Page {page} ({entries.Count} URLs total) [via sitemap -- REST API unavailable; " +
             "titles unknown here, fetch_post will fill them in]",
             $"has_more: {(hasMore ? "true" : "false")}",
             ""
