@@ -233,6 +233,8 @@ public class AgentLoop
                 consecutiveStreamErrors++;
                 streamError = true;
                 AnsiConsole.MarkupLine($"\n[red]Error:[/] [dim]{Markup.Escape(ex.GetType().FullName ?? ex.GetType().Name)}: {Markup.Escape(ex.Message)}[/]");
+                if (ex.InnerException is { } innerEx)
+                    AnsiConsole.MarkupLine($"[dim]  Inner: {Markup.Escape(innerEx.GetType().FullName ?? innerEx.GetType().Name)}: {Markup.Escape(innerEx.Message)}[/]");
                 AnsiConsole.MarkupLine($"[dim]{Markup.Escape(ex.StackTrace ?? "")}[/]");
 
                 if (consecutiveStreamErrors >= maxStreamRetries)
@@ -377,6 +379,8 @@ public class AgentLoop
                 // treatment as streaming's "no content at all" case.
                 consecutiveErrors++;
                 AnsiConsole.MarkupLine($"\n[red]Error:[/] [dim]{Markup.Escape(ex.GetType().FullName ?? ex.GetType().Name)}: {Markup.Escape(ex.Message)}[/]");
+                if (ex.InnerException is { } innerEx)
+                    AnsiConsole.MarkupLine($"[dim]  Inner: {Markup.Escape(innerEx.GetType().FullName ?? innerEx.GetType().Name)}: {Markup.Escape(innerEx.Message)}[/]");
                 AnsiConsole.MarkupLine($"[dim]{Markup.Escape(ex.StackTrace ?? "")}[/]");
 
                 if (consecutiveErrors >= maxRetries)
