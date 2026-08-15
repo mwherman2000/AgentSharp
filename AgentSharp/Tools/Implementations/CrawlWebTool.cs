@@ -230,7 +230,11 @@ public class CrawlWebTool : ToolBase
             totalPages is not null
                 ? $"Page {page} of {totalPages} ({totalPosts} posts total)"
                 : $"Page {page} ({posts.Count} posts)",
-            $"has_more: {(hasMore ? "true" : "false")}",
+            hasMore
+                ? totalPages is not null
+                    ? $"has_more: true -- pages {page + 1}–{totalPages} remain, call list_posts with page={page + 1} to continue"
+                    : $"has_more: true -- call list_posts with page={page + 1} to continue"
+                : "has_more: false",
             ""
         };
 
@@ -291,7 +295,9 @@ public class CrawlWebTool : ToolBase
                     // extra round trip, so err toward "keep going" and let the true end
                     // show up as the next page's 404 (one extra call at the end, always
                     // correct).
-                    $"has_more: {(items.Count > 0 ? "true" : "false")}",
+                    items.Count > 0
+                        ? $"has_more: true -- call list_posts with page={page + 1} to continue"
+                        : "has_more: false",
                     ""
                 };
 
@@ -327,12 +333,16 @@ public class CrawlWebTool : ToolBase
         var entries = _sitemapEntries!;
         var pageItems = entries.Skip((page - 1) * perPage).Take(perPage).ToList();
         var hasMore = page * perPage < entries.Count;
+        var remaining = entries.Count - page * perPage;
+        var totalPageCount = (entries.Count + perPage - 1) / perPage;
 
         var lines = new List<string>
         {
             $"Page {page} ({entries.Count} URLs total) [via sitemap -- REST API unavailable; " +
             "titles unknown here, fetch_post will fill them in]",
-            $"has_more: {(hasMore ? "true" : "false")}",
+            hasMore
+                ? $"has_more: true -- {remaining} URLs remain (pages {page + 1}–{totalPageCount}), call list_posts with page={page + 1} to continue"
+                : "has_more: false",
             ""
         };
 
