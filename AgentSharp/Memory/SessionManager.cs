@@ -23,29 +23,47 @@ public class SessionManager
     }
 
     /// <summary>
-    /// Save a conversation to disk.
+    /// Save a conversation to disk. Returns null (instead of throwing) if
+    /// <paramref name="sessionId"/> isn't a usable file name or the write fails
+    /// (e.g. permission denied) -- a bad /save shouldn't crash the REPL.
     /// </summary>
-    public async Task<string> SaveAsync(ConversationHistory history, string? sessionId = null)
+    public async Task<string?> SaveAsync(ConversationHistory history, string? sessionId = null)
     {
         sessionId ??= Guid.NewGuid().ToString("N")[..8];
+
+        // Path.GetFileName strips any directory portion, so an id like
+        // "../../etc/passwd" or an absolutely-rooted path can't Path.Combine its
+        // way outside the sessions directory (a leading '/' makes the second
+        // Path.Combine argument rooted, silently discarding _sessionsDir).
+        var safeId = Path.GetFileName(sessionId);
+        if (string.IsNullOrEmpty(safeId))
+            return null;
+
         var session = new SessionData
         {
-            Id = sessionId,
+            Id = safeId,
             CreatedAt = DateTime.UtcNow,
             MessageCount = history.Count,
             Messages = history.Messages.Select(SerializeMessage).ToList()
         };
 
-        var path = GetSessionPath(sessionId);
+        var path = GetSessionPath(safeId);
         var json = JsonSerializer.Serialize(session, JsonOptions);
 
         // Write to a unique temp file and rename into place so a concurrent Load,
         // or a crash mid-write, never sees a partially-written session file.
         var tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
-        await File.WriteAllTextAsync(tempPath, json);
-        File.Move(tempPath, path, overwrite: true);
+        try
+        {
+            await File.WriteAllTextAsync(tempPath, json);
+            File.Move(tempPath, path, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
 
-        return sessionId;
+        return safeId;
     }
 
     /// <summary>
@@ -53,7 +71,12 @@ public class SessionManager
     /// </summary>
     public async Task<ConversationHistory?> LoadAsync(string sessionId)
     {
-        var path = GetSessionPath(sessionId);
+        // Same sanitization as SaveAsync -- an id can't escape the sessions directory.
+        var safeId = Path.GetFileName(sessionId);
+        if (string.IsNullOrEmpty(safeId))
+            return null;
+
+        var path = GetSessionPath(safeId);
         if (!File.Exists(path))
             return null;
 
@@ -63,10 +86,10 @@ public class SessionManager
             var json = await File.ReadAllTextAsync(path);
             session = JsonSerializer.Deserialize<SessionData>(json, JsonOptions);
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            // Corrupt or partially-written session file -- treat like "not found"
-            // rather than crashing the REPL.
+            // Corrupt/partially-written/unreadable session file -- treat like
+            // "not found" rather than crashing the REPL.
             return null;
         }
         if (session is null) return null;

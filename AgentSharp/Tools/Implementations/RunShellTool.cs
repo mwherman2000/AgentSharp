@@ -70,6 +70,13 @@ public partial class RunShellTool : ToolBase
             catch (OperationCanceledException)
             {
                 try { process.Kill(true); } catch { }
+
+                // Distinguish the caller's cancellation (Ctrl+C) from this method's
+                // own timeout (cts.CancelAfter): only the former should abort the
+                // turn -- the latter is a normal, reportable tool failure.
+                if (ct.IsCancellationRequested)
+                    throw;
+
                 return ToolResult.Error($"Command timed out after {timeoutMs}ms");
             }
 
@@ -94,6 +101,12 @@ public partial class RunShellTool : ToolBase
             return process.ExitCode == 0
                 ? ToolResult.Success(output.ToString())
                 : ToolResult.Error(output.ToString());
+        }
+        catch (OperationCanceledException)
+        {
+            // Propagate so the parent agent loop stops the turn instead of
+            // reporting cancellation to the LLM as a failed command.
+            throw;
         }
         catch (Exception ex)
         {

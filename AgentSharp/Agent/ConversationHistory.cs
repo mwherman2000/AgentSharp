@@ -34,6 +34,18 @@ public class ConversationHistory
         => _messages.Clear();
 
     /// <summary>
+    /// Removes every message added after <paramref name="count"/>. Used to roll
+    /// back a turn that was cancelled partway through (e.g. Ctrl+C), so the
+    /// interrupted user message and any partial assistant/tool-result messages
+    /// don't linger in history.
+    /// </summary>
+    public void TruncateTo(int count)
+    {
+        if (count < _messages.Count)
+            _messages.RemoveRange(count, _messages.Count - count);
+    }
+
+    /// <summary>
     /// Get the last assistant text response.
     /// </summary>
     public string? GetLastAssistantText()

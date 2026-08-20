@@ -15,6 +15,21 @@ public class Configuration
     public string? ApiKey { get; set; }
     public string? BaseUrl { get; set; }
 
+    /// <summary>Request timeout in minutes, currently only applied to the Ollama client (local
+    /// inference can run far longer than a typical hosted-API timeout). Null means "use the
+    /// provider's default", i.e. <see cref="OpenAiCompatibleClient.DefaultOllamaTimeout"/>.</summary>
+    public double? TimeoutMinutes { get; set; }
+
+    /// <summary>Max output tokens per LLM request. Null means "use the default",
+    /// i.e. <see cref="AgentSharp.Agent.AgentLoop.DefaultMaxTokens"/>.</summary>
+    public int? MaxTokens { get; set; }
+
+    /// <summary>Directory to treat as the project root: where relative tool paths
+    /// (write_file, read_file, run_shell, ...) resolve, and what ProjectContext scans.
+    /// Null means "use the process's actual current directory" -- the default, and
+    /// what every path resolution already falls back to on its own.</summary>
+    public string? WorkingDirectory { get; set; }
+
     /// <summary>
     /// Returns the effective model, using a provider-specific default if none was explicitly set.
     /// </summary>
@@ -63,6 +78,12 @@ public class Configuration
         if (envModel is not null)
             config.Model = envModel;
         config.BaseUrl = Environment.GetEnvironmentVariable("AGENT_BASE_URL") ?? config.BaseUrl;
+        var envTimeout = Environment.GetEnvironmentVariable("AGENT_TIMEOUT_MINUTES");
+        if (envTimeout is not null && double.TryParse(envTimeout, System.Globalization.CultureInfo.InvariantCulture, out var envTimeoutMinutes))
+            config.TimeoutMinutes = envTimeoutMinutes;
+        var envMaxTokens = Environment.GetEnvironmentVariable("AGENT_MAX_TOKENS");
+        if (envMaxTokens is not null && int.TryParse(envMaxTokens, System.Globalization.CultureInfo.InvariantCulture, out var envMaxTokensValue))
+            config.MaxTokens = envMaxTokensValue;
 
         // CLI argument overrides (must run before provider-specific key lookup
         // so that --provider is known before we pick which env var to read)
@@ -81,6 +102,17 @@ public class Configuration
                     break;
                 case "--base-url" when i + 1 < args.Length:
                     config.BaseUrl = args[++i];
+                    break;
+                case "--timeout" when i + 1 < args.Length && double.TryParse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture, out var timeoutMinutes):
+                    config.TimeoutMinutes = timeoutMinutes;
+                    i++;
+                    break;
+                case "--max-tokens" when i + 1 < args.Length && int.TryParse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture, out var maxTokensValue):
+                    config.MaxTokens = maxTokensValue;
+                    i++;
+                    break;
+                case "--dir" when i + 1 < args.Length:
+                    config.WorkingDirectory = args[++i];
                     break;
             }
         }
@@ -109,7 +141,8 @@ public class Configuration
 
         // Ollama runs locally and does not require an API key.
         if (providerKey == "ollama")
-            return OpenAiCompatibleClient.ForOllama(model, BaseUrl ?? "http://localhost:11434/v1");
+            return OpenAiCompatibleClient.ForOllama(model, BaseUrl ?? "http://localhost:11434/v1",
+                TimeoutMinutes is { } minutes ? TimeSpan.FromMinutes(minutes) : null);
 
         if (string.IsNullOrEmpty(ApiKey))
             throw new InvalidOperationException(

@@ -68,4 +68,34 @@ public class SessionManagerTests : IDisposable
         Assert.NotNull(sessionId);
         Assert.Equal(8, sessionId.Length);
     }
+
+    [Theory]
+    [InlineData("../../evil")]
+    [InlineData("/evil")]
+    [InlineData(@"..\..\evil")]
+    public async Task Save_SanitizesId_CannotEscapeSessionsDirectory(string maliciousId)
+    {
+        var history = new ConversationHistory();
+        history.AddUserMessage("hello");
+
+        var sessionId = await _manager.SaveAsync(history, maliciousId);
+
+        Assert.NotNull(sessionId);
+        Assert.Equal("evil", sessionId);
+        Assert.True(File.Exists(Path.Combine(_tempDir, "sessions", "evil.json")));
+    }
+
+    [Theory]
+    [InlineData("../../evil")]
+    [InlineData("/evil")]
+    public async Task Load_SanitizesId_CannotEscapeSessionsDirectory(string maliciousId)
+    {
+        var history = new ConversationHistory();
+        history.AddUserMessage("hello");
+        await _manager.SaveAsync(history, "evil");
+
+        var loaded = await _manager.LoadAsync(maliciousId);
+
+        Assert.NotNull(loaded);
+    }
 }

@@ -92,7 +92,9 @@ public class SubAgentTool : ToolBase
         }
         catch (OperationCanceledException)
         {
-            return ToolResult.Error("Sub-agent execution was cancelled.");
+            // Propagate so the parent agent loop stops the turn instead of
+            // reporting cancellation to the LLM as a failed sub-agent call.
+            throw;
         }
         catch (Exception ex)
         {

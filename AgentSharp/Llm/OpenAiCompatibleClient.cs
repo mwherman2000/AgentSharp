@@ -23,9 +23,19 @@ public class OpenAiCompatibleClient : ILlmClient
     private readonly string _model;
     private readonly string _apiUrl;
     private readonly string _providerName;
+    private readonly TimeSpan _streamingTimeout;
+
+    /// <summary>Non-streaming requests block until the full response body has arrived,
+    /// instead of returning as soon as headers do, so they need a much longer allowance
+    /// than a streaming request for the same prompt -- otherwise long completions
+    /// (large output, extended thinking, slow local inference) time out mid-flight in
+    /// sync mode even though the identical request succeeds when streamed.</summary>
+    private const int NonStreamingTimeoutMultiplier = 10;
 
     public string ProviderName => _providerName;
     public string ModelId => _model;
+    public TimeSpan StreamingTimeout => _streamingTimeout;
+    public TimeSpan NonStreamingTimeout => _streamingTimeout * NonStreamingTimeoutMultiplier;
 
     public OpenAiCompatibleClient(
         string apiKey,
@@ -51,6 +61,16 @@ public class OpenAiCompatibleClient : ILlmClient
         _apiUrl = $"{baseUrl.TrimEnd('/')}/chat/completions";
         _providerName = providerName;
         _http = httpClient;
+
+        // Capture the caller's configured timeout (the 100s HttpClient default, or
+        // DefaultOllamaTimeout/--timeout for Ollama) as the streaming budget, then
+        // disable HttpClient's own single timeout -- streaming and non-streaming calls
+        // enforce their own (different) timeouts per-request via a linked
+        // CancellationTokenSource below, since HttpClient.Timeout is one value shared
+        // by every request made through this client.
+        _streamingTimeout = _http.Timeout;
+        _http.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
+
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
     }
 
@@ -72,17 +92,37 @@ public class OpenAiCompatibleClient : ILlmClient
     public static OpenAiCompatibleClient ForGemini(string apiKey, string model = "gemini-2.5-pro")
         => new(apiKey, model, "https://generativelanguage.googleapis.com/v1beta/openai", "Gemini");
 
+    /// <summary>Default request timeout for a local Ollama server. Overridable via <see cref="ForOllama"/>'s
+    /// <paramref name="timeout"/> parameter (wired to --timeout on the CLI) since local hardware and model
+    /// size vary widely.</summary>
+    public static readonly TimeSpan DefaultOllamaTimeout = TimeSpan.FromHours(1);
+
     /// <summary>
     /// Create a client for a local Ollama server (OpenAI-compatible endpoint).
     /// Ollama doesn't require an API key; a placeholder value is sent since
     /// the underlying HttpClient always attaches an Authorization header.
+    ///
+    /// Local models can take a long time to respond (cold model load, CPU-only
+    /// inference, reasoning/"thinking" models that burn output tokens before the
+    /// visible answer), so this uses a much longer timeout than HttpClient's 100s
+    /// default -- otherwise long-running requests are silently cancelled mid-flight
+    /// and surface as an unhelpful OperationCanceledException.
     /// </summary>
-    public static OpenAiCompatibleClient ForOllama(string model, string baseUrl = "http://localhost:11434/v1")
-        => new("ollama", model, baseUrl, "Ollama");
+    public static OpenAiCompatibleClient ForOllama(string model, string baseUrl = "http://localhost:11434/v1", TimeSpan? timeout = null)
+    {
+        var httpClient = new HttpClient { Timeout = timeout ?? DefaultOllamaTimeout };
+        return new OpenAiCompatibleClient(httpClient, "ollama", model, baseUrl, "Ollama");
+    }
 
     public async Task<LlmResponse> SendAsync(LlmRequest request, CancellationToken ct = default)
     {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(_streamingTimeout * NonStreamingTimeoutMultiplier);
+        ct = timeoutCts.Token;
+
         var body = BuildRequestBody(request, stream: false);
+        Console.Error.WriteLine($"[TIMING] request body length: {body.Length}");
+        Console.Error.WriteLine($"[TIMING] request body est. tokens: ~{body.Length / 4}");
         var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _http.PostAsync(_apiUrl, content, ct);
         await EnsureSuccessAsync(response, ct);
@@ -111,8 +151,13 @@ public class OpenAiCompatibleClient : ILlmClient
         LlmRequest request,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(_streamingTimeout);
+        ct = timeoutCts.Token;
+
         var body = BuildRequestBody(request, stream: true);
         Console.Error.WriteLine($"[TIMING] request body length: {body.Length}");
+        Console.Error.WriteLine($"[TIMING] request body est. tokens: ~{body.Length / 4}");
         var __sw2 = System.Diagnostics.Stopwatch.StartNew();
         var httpContent = new StringContent(body, Encoding.UTF8, "application/json");
 
@@ -182,7 +227,7 @@ public class OpenAiCompatibleClient : ILlmClient
                 }
                 else
                 {
-                    yield return new StreamDone(reason == "stop" ? "end_turn" : reason!);
+                    yield return new StreamDone(MapFinishReason(reason!));
                 }
                 break;
             }
@@ -373,6 +418,22 @@ public class OpenAiCompatibleClient : ILlmClient
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Normalizes an OpenAI-style finish_reason to the internal (Anthropic-shaped)
+    /// StopReason vocabulary AgentLoop checks against -- most importantly "length"
+    /// to "max_tokens", since AgentLoop's continuation nudge only fires on that
+    /// exact string. Without this, a response cut off by the token limit just ends
+    /// the turn silently instead of automatically continuing. "tool_calls" is
+    /// handled by each caller separately, since it needs extra bookkeeping
+    /// (flushing pending tool-call state) that doesn't belong in a pure mapping.
+    /// </summary>
+    private static string MapFinishReason(string finishReason) => finishReason switch
+    {
+        "stop" => "end_turn",
+        "length" => "max_tokens",
+        _ => finishReason
+    };
+
     private static LlmResponse ParseResponse(string json)
     {
         var doc = JsonDocument.Parse(json).RootElement;
@@ -406,8 +467,7 @@ public class OpenAiCompatibleClient : ILlmClient
             }
         }
 
-        var stopReason = finishReason == "tool_calls" ? "tool_use" :
-                         finishReason == "stop" ? "end_turn" : finishReason!;
+        var stopReason = finishReason == "tool_calls" ? "tool_use" : MapFinishReason(finishReason!);
 
         int inputTokens = 0, outputTokens = 0, cacheReadTokens = 0;
         if (doc.TryGetProperty("usage", out var usage))

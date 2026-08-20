@@ -112,4 +112,23 @@ public class ChatMessageTests
 
         Assert.Equal("Hello World", msg.GetText());
     }
+
+    [Fact]
+    public void GetText_InsertsNewline_BetweenBlocksWithNoWhitespaceBoundary()
+    {
+        // Simulates text split across a tool call: the segment resuming after the
+        // tool result doesn't start with a space, so a naive join would glue it onto
+        // the end of the prior segment (e.g. "this one.Alright, look at that").
+        var msg = new ChatMessage
+        {
+            Role = MessageRole.Assistant,
+            Content = new ContentBlock[]
+            {
+                new TextBlock { Text = "...move fast on this one." },
+                new TextBlock { Text = "Alright, look at that" }
+            }
+        };
+
+        Assert.Equal("...move fast on this one.\nAlright, look at that", msg.GetText());
+    }
 }

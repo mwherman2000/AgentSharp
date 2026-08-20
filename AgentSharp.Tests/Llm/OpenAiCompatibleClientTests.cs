@@ -76,6 +76,31 @@ public class OpenAiCompatibleClientTests
     }
 
     [Fact]
+    public async Task SendAsync_MapsLengthFinishReasonToMaxTokens()
+    {
+        // "length" is OpenAI/Ollama's finish_reason for hitting the output token
+        // cap. AgentLoop's continuation nudge only fires on the literal string
+        // "max_tokens" -- an unmapped "length" would silently end the turn instead
+        // of continuing it.
+        const string body = """
+            {
+                "id": "chatcmpl-789",
+                "choices": [{
+                    "index": 0,
+                    "message": { "role": "assistant", "content": "cut off mid-" },
+                    "finish_reason": "length"
+                }],
+                "usage": { "prompt_tokens": 40, "completion_tokens": 6000 }
+            }
+            """;
+        var client = MakeClient(body);
+
+        var response = await client.SendAsync(MakeRequest());
+
+        Assert.Equal("max_tokens", response.StopReason);
+    }
+
+    [Fact]
     public async Task SendAsync_ParsesCachedTokens()
     {
         const string body = """

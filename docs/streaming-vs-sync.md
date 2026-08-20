@@ -34,6 +34,30 @@ else
 There is currently no CLI flag or env var for this — it's REPL-only, toggled per
 session with `/sync`.
 
+## Which mode to use
+
+Streaming (the default) is almost always the better choice, especially for
+interactively-supervised runs against a local model. It gives live
+token-by-token feedback, so you can see the model is actually making
+progress, catch it going off track early, and — via `RequestTrace` /
+`ToolsTrace` / `HistoryTrace` — get per-event trace detail (`<<TextDelta:`,
+`<<ToolUseStart:`, etc.) that non-streaming never produces, since `SendAsync`
+has no incremental events to trace.
+
+Non-streaming blocks silently until the entire response has arrived. For a
+slow local model generating a large response, that can mean several minutes
+of a dead terminal with no signal whether it's progressing or stuck — the
+only feedback is the eventual result or, if something really is stuck, the
+non-streaming timeout (`ILlmClient.NonStreamingTimeout`, 10x the streaming
+timeout — see `docs/max-tokens-and-local-model-context.md`).
+
+There's no correctness difference between the two paths (same request
+building, same tool-execution logic, same response parsing — see below), so
+this is purely a visibility/UX tradeoff, and streaming wins it for anything
+you're actively watching. `/sync` mode is there for cases where you don't
+need live rendering (e.g. scripting against `--prompt` output) rather than as
+a generally-preferred alternative.
+
 ## Why two loops instead of one
 
 The two methods differ only in *how a response is obtained and rendered*:

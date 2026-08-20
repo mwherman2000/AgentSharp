@@ -13,11 +13,21 @@ public class AnthropicClient : ILlmClient
 {
     private readonly HttpClient _http;
     private readonly string _model;
+    private readonly TimeSpan _streamingTimeout;
     private const string ApiUrl = "https://api.anthropic.com/v1/messages";
     private const string ApiVersion = "2023-06-01";
 
+    /// <summary>Non-streaming requests block until the full response body has arrived,
+    /// instead of returning as soon as headers do, so they need a much longer allowance
+    /// than a streaming request for the same prompt -- otherwise long completions
+    /// (large output, extended thinking) time out mid-flight in sync mode even though
+    /// the identical request succeeds when streamed.</summary>
+    private const int NonStreamingTimeoutMultiplier = 10;
+
     public string ProviderName => "Anthropic";
     public string ModelId => _model;
+    public TimeSpan StreamingTimeout => _streamingTimeout;
+    public TimeSpan NonStreamingTimeout => _streamingTimeout * NonStreamingTimeoutMultiplier;
 
     public AnthropicClient(string apiKey, string model = "claude-sonnet-4-20250514")
         : this(new HttpClient(), apiKey, model)
@@ -32,6 +42,15 @@ public class AnthropicClient : ILlmClient
     {
         _model = model;
         _http = httpClient;
+
+        // Capture the caller's configured timeout as the streaming budget, then disable
+        // HttpClient's own single timeout -- streaming and non-streaming calls enforce
+        // their own (different) timeouts per-request via a linked CancellationTokenSource
+        // below, since HttpClient.Timeout is one value shared by every request made
+        // through this client.
+        _streamingTimeout = _http.Timeout;
+        _http.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
+
         _http.DefaultRequestHeaders.Add("x-api-key", apiKey);
         _http.DefaultRequestHeaders.Add("anthropic-version", ApiVersion);
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
@@ -39,6 +58,10 @@ public class AnthropicClient : ILlmClient
 
     public async Task<LlmResponse> SendAsync(LlmRequest request, CancellationToken ct = default)
     {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(_streamingTimeout * NonStreamingTimeoutMultiplier);
+        ct = timeoutCts.Token;
+
         var body = BuildRequestBody(request, stream: false);
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
@@ -76,6 +99,10 @@ public class AnthropicClient : ILlmClient
         LlmRequest request,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(_streamingTimeout);
+        ct = timeoutCts.Token;
+
         var body = BuildRequestBody(request, stream: true);
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 

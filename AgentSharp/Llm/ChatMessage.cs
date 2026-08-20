@@ -104,9 +104,27 @@ public record ChatMessage
     };
 
     /// <summary>
-    /// Get all text content concatenated.
+    /// Get all text content concatenated. A message can hold several text blocks
+    /// separated by tool_use blocks (e.g. text, tool_use, more text) -- each later
+    /// block is fresh model output that doesn't assume a leading space, so plain
+    /// concatenation would glue unrelated sentences together. Insert a newline at
+    /// any block boundary that doesn't already have whitespace on one side.
     /// </summary>
-    public string GetText() => string.Join("", Content.OfType<TextBlock>().Select(b => b.Text));
+    public string GetText()
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var block in Content.OfType<TextBlock>())
+        {
+            if (sb.Length > 0 && block.Text.Length > 0 &&
+                !char.IsWhiteSpace(sb[sb.Length - 1]) &&
+                !char.IsWhiteSpace(block.Text[0]))
+            {
+                sb.Append('\n');
+            }
+            sb.Append(block.Text);
+        }
+        return sb.ToString();
+    }
 
     /// <summary>
     /// Get all tool use blocks.

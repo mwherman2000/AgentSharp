@@ -14,6 +14,8 @@ internal class FakeLlmClient : ILlmClient
 
     public string ProviderName => "Fake";
     public string ModelId => "fake-model";
+    public TimeSpan StreamingTimeout => TimeSpan.FromSeconds(100);
+    public TimeSpan NonStreamingTimeout => TimeSpan.FromSeconds(1000);
     public int CallCount { get; private set; }
     public List<LlmRequest> Requests { get; } = new();
 

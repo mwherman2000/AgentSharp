@@ -33,7 +33,8 @@ public class SubAgent
         ILlmClient llm,
         ToolRegistry tools,
         ApprovalGate approval,
-        string systemPrompt)
+        string systemPrompt,
+        int maxTokens = AgentLoop.DefaultMaxTokens)
     {
         Id = Guid.NewGuid().ToString("N")[..8];
         Name = name;
@@ -62,7 +63,7 @@ public class SubAgent
                 isolatedTools.Register(tool);
         }
 
-        _loop = new AgentLoop(llm, isolatedTools, approval, subAgentPrompt);
+        _loop = new AgentLoop(llm, isolatedTools, approval, subAgentPrompt, maxTokens: maxTokens);
     }
 
     /// <summary>
@@ -75,7 +76,9 @@ public class SubAgent
         try
         {
             Status = SubAgentStatus.Running;
-            Result = await _loop.RunTurnAsync(task, linkedCts.Token);
+            Result = Program.SyncMode
+                ? await _loop.RunTurnNonStreamingAsync(task, linkedCts.Token)
+                : await _loop.RunTurnStreamingAsync(task, linkedCts.Token);
             Status = SubAgentStatus.Completed;
             return Result;
         }

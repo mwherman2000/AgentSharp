@@ -54,6 +54,13 @@ internal class Program
             var config = Configuration.Load(args);
             __Mark("config loaded");
 
+            // Set the process CWD before anything else reads it -- every relative path
+            // (tool file I/O, ProjectContext scanning, MemoryManager, session files) falls
+            // back to Directory.GetCurrentDirectory() on its own, so this one call is
+            // enough to redirect all of them; nothing downstream needs to know --dir exists.
+            if (config.WorkingDirectory is not null)
+                Directory.SetCurrentDirectory(config.WorkingDirectory);
+
             // --- LLM Client ---
             var llm = config.CreateLlmClient();
             __Mark("llm client created");
@@ -72,8 +79,9 @@ internal class Program
             // --- Multi-Agent Orchestrator ---
             // Create orchestrator and register the sub_agent and remember tools
             // (must be done after tool discovery since both require constructor args)
+            var maxTokens = config.MaxTokens ?? AgentSharp.Agent.AgentLoop.DefaultMaxTokens;
             var promptBuilder = new SystemPromptBuilder(new ProjectContext(), memory);
-            var orchestrator = new AgentOrchestrator(llm, tools, approval, promptBuilder.Build());
+            var orchestrator = new AgentOrchestrator(llm, tools, approval, promptBuilder.Build(), maxTokens);
             tools.Register(new SubAgentTool(orchestrator));
             tools.Register(new MemoryTool(memory));
 
@@ -93,18 +101,18 @@ internal class Program
             {
                 // One-shot mode: run a single turn and exit
                 var oneShotPromptBuilder = new SystemPromptBuilder(project, memory);
-                var agentLoop = new AgentSharp.Agent.AgentLoop(llm, tools, approval, oneShotPromptBuilder.Build());
+                var agentLoop = new AgentSharp.Agent.AgentLoop(llm, tools, approval, oneShotPromptBuilder.Build(), maxTokens: maxTokens);
                 __Mark("about to call RunTurnAsync");
                 if (SyncMode)
                     await agentLoop.RunTurnNonStreamingAsync(promptArg);
                 else
-                    await agentLoop.RunTurnAsync(promptArg);
+                    await agentLoop.RunTurnStreamingAsync(promptArg);
                 __Mark("RunTurnAsync done");
                 return;
             }
 
             // --- Interactive REPL ---
-            var repl = new ReplHost(llm, tools, approval, project, sessions, memory);
+            var repl = new ReplHost(llm, tools, approval, project, sessions, memory, maxTokens);
             await repl.RunAsync();
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("API key"))
@@ -146,7 +154,7 @@ internal class Program
             if (index == 0) return false;
             var prev = args[index - 1];
             return prev is "--provider" or "-p" or "--model" or "-m"
-                or "--api-key" or "-k" or "--base-url" or "--prompt";
+                or "--api-key" or "-k" or "--base-url" or "--prompt" or "--timeout" or "--max-tokens" or "--dir";
         }
 
         static void PrintUsage()
@@ -162,6 +170,9 @@ internal class Program
             AnsiConsole.MarkupLine("  -m, --model <name>       Model identifier (e.g., claude-sonnet-4-20250514, gpt-4o)");
             AnsiConsole.MarkupLine("  -k, --api-key <key>      API key (or set via environment variable)");
             AnsiConsole.MarkupLine("      --base-url <url>     Custom API base URL for compatible providers");
+            AnsiConsole.MarkupLine("      --timeout <minutes>  Request timeout, e.g. for slow local Ollama models (default: 60)");
+            AnsiConsole.MarkupLine("      --max-tokens <n>     Max output tokens per request (default: 128000; lower this for small-context local models)");
+            AnsiConsole.MarkupLine("      --dir <path>         Project directory to run in (default: current directory)");
             AnsiConsole.MarkupLine("  -h, --help               Show this help");
             AnsiConsole.MarkupLine("  -v, --version            Show version\n");
             AnsiConsole.MarkupLine("[bold]ENVIRONMENT VARIABLES:[/]");
@@ -172,7 +183,9 @@ internal class Program
             AnsiConsole.MarkupLine("                           (ollama needs no API key; run 'ollama serve' locally)");
             AnsiConsole.MarkupLine("  AGENT_PROVIDER           Default provider");
             AnsiConsole.MarkupLine("  AGENT_MODEL              Default model");
-            AnsiConsole.MarkupLine("  AGENT_API_KEY            Generic API key (any provider)\n");
+            AnsiConsole.MarkupLine("  AGENT_API_KEY            Generic API key (any provider)");
+            AnsiConsole.MarkupLine("  AGENT_TIMEOUT_MINUTES    Request timeout in minutes (default: 60, Ollama only)");
+            AnsiConsole.MarkupLine("  AGENT_MAX_TOKENS         Max output tokens per request (default: 128000)\n");
             AnsiConsole.MarkupLine("[bold]REPL COMMANDS:[/]");
             AnsiConsole.MarkupLine("  /help       Show commands");
             AnsiConsole.MarkupLine("  /exit       Exit the agent");
