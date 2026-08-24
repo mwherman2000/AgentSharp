@@ -1,8 +1,10 @@
 using AgentSharp.Llm;
 using AgentSharp.Safety;
+using AgentSharp.Telemetry;
 using AgentSharp.Tools;
 using Spectre.Console;
 using System;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
@@ -92,6 +94,9 @@ public class AgentLoop
     public async Task<string> RunTurnStreamingAsync(string userMessage, CancellationToken ct = default)
     {
         nTurns++;
+        using var turnActivity = AgentTelemetry.Source.StartActivity("agent.turn");
+        turnActivity?.SetTag("turn.number", nTurns);
+        turnActivity?.SetTag("turn.mode", "streaming");
         //nToolsExecutions = 0;
         _history.AddUserMessage(userMessage);
         Console.WriteLine($"\n{nTurns}>>>userMessage: {userMessage}");
@@ -108,6 +113,9 @@ public class AgentLoop
 
             // --- THINK: Call the LLM with full history ---
             var request = BuildRequest();
+            using var llmActivity = AgentTelemetry.Source.StartActivity("llm.request");
+            llmActivity?.SetTag("llm.messages.count", request.Messages.Count);
+            llmActivity?.SetTag("llm.tools.count", request.Tools?.Count ?? 0);
             if (Program.RequestTrace) Console.WriteLine($"\n{nTurns}>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
             if (Program.ToolsTrace)   Console.WriteLine($"\n >>request.Tools: {System.Text.Json.JsonSerializer.Serialize(request.Tools)}");
             if (Program.HistoryTrace) Console.WriteLine($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(request.Messages)}");
@@ -137,6 +145,8 @@ public class AgentLoop
                             currentText.Append(td.Text);
                             WriteTextToConsole(td.Text);
                             Console.WriteLine($"\n <<TextDelta: {td.Text}");
+                            llmActivity?.AddEvent(new ActivityEvent("text_delta",
+                                tags: new ActivityTagsCollection { { "text.length", td.Text.Length } }));
                             break;
 
                         case ToolUseStart tus:
@@ -152,6 +162,8 @@ public class AgentLoop
                             currentToolName = tus.Name;
                             currentToolInput.Clear();
                             Console.WriteLine($"\n{nToolsExecutions} <<ToolUseStart: {tus.Id} {tus.Name}");
+                            llmActivity?.AddEvent(new ActivityEvent("tool_use_start",
+                                tags: new ActivityTagsCollection { { "tool.id", tus.Id }, { "tool.name", tus.Name } }));
                             break;
 
                         case ToolInputDelta tid:
@@ -195,6 +207,8 @@ public class AgentLoop
                                     Input = inputJson
                                 });
                                 Console.WriteLine($"\n{nToolsExecutions}<<<TextUseEnd: {currentToolId} {currentToolName} {inputJson.ToString()}");
+                                llmActivity?.AddEvent(new ActivityEvent("tool_use_end",
+                                    tags: new ActivityTagsCollection { { "tool.id", currentToolId }, { "tool.name", currentToolName } }));
                             }
                             currentToolId = null;
                             currentToolName = null;
@@ -204,6 +218,7 @@ public class AgentLoop
                         case StreamDone sd:
                             stopReason = sd.StopReason;
                             Console.WriteLine($"\n{nTurns}<<<StreamDone: {stopReason} nToolExecutions {nToolsExecutions}");
+                            llmActivity?.SetTag("llm.stop_reason", stopReason);
                             break;
 
                         case UsageInfo ui:
@@ -212,6 +227,10 @@ public class AgentLoop
                             lastCacheCreationTokens = ui.CacheCreationInputTokens;
                             lastCacheReadTokens = ui.CacheReadInputTokens;
                             Console.WriteLine($"\n <<UsageInfo: input={ui.InputTokens} output={ui.OutputTokens} cacheCreate={ui.CacheCreationInputTokens} cacheRead={ui.CacheReadInputTokens}");
+                            llmActivity?.SetTag("llm.usage.input_tokens", ui.InputTokens);
+                            llmActivity?.SetTag("llm.usage.output_tokens", ui.OutputTokens);
+                            llmActivity?.SetTag("llm.usage.cache_creation_tokens", ui.CacheCreationInputTokens);
+                            llmActivity?.SetTag("llm.usage.cache_read_tokens", ui.CacheReadInputTokens);
                             break;
                     }
                 }
@@ -223,6 +242,7 @@ public class AgentLoop
                 System.Net.HttpStatusCode.BadRequest)
             {
                 // Non-retryable auth/client errors — don't loop, just report
+                llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 AnsiConsole.MarkupLine($"\n[red]Error:[/] {Markup.Escape(ex.Message)}");
                 AnsiConsole.MarkupLine("[dim]Check your API key and provider configuration.[/]");
                 break;
@@ -232,6 +252,7 @@ public class AgentLoop
                 // Transient API or streaming error — retry with exponential backoff
                 consecutiveStreamErrors++;
                 streamError = true;
+                llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 AnsiConsole.MarkupLine($"\n[red]Error:[/] [dim]{Markup.Escape(ex.GetType().FullName ?? ex.GetType().Name)}: {Markup.Escape(ex.Message)}[/]");
                 if (ex.InnerException is { } innerEx)
                     AnsiConsole.MarkupLine($"[dim]  Inner: {Markup.Escape(innerEx.GetType().FullName ?? innerEx.GetType().Name)}: {Markup.Escape(innerEx.Message)}[/]");
@@ -271,6 +292,10 @@ public class AgentLoop
             _totalCacheCreationTokens += lastCacheCreationTokens;
             _totalCacheReadTokens += lastCacheReadTokens;
             Console.WriteLine($"\n<<<TotalUsage: input={_totalInputTokens} output={_totalOutputTokens} cacheCreate={_totalCacheCreationTokens} cacheRead={_totalCacheReadTokens}");
+            turnActivity?.SetTag("turn.total_input_tokens", _totalInputTokens);
+            turnActivity?.SetTag("turn.total_output_tokens", _totalOutputTokens);
+            turnActivity?.SetTag("turn.total_cache_creation_tokens", _totalCacheCreationTokens);
+            turnActivity?.SetTag("turn.total_cache_read_tokens", _totalCacheReadTokens);
 
             // Flush any remaining text
             if (currentText.Length > 0)
@@ -292,6 +317,7 @@ public class AgentLoop
             {
                 AnsiConsole.WriteLine();
                 Console.WriteLine($"\n{nTurns}<<<stopReason: {stopReason} Count 0 nTurns {nTurns} nToolExecutions {nToolsExecutions}");
+                turnActivity?.SetTag("turn.stop_reason", stopReason);
 
                 if (stopReason == "max_tokens")
                 {
@@ -335,6 +361,9 @@ public class AgentLoop
     public async Task<string> RunTurnNonStreamingAsync(string userMessage, CancellationToken ct = default)
     {
         nTurns++;
+        using var turnActivity = AgentTelemetry.Source.StartActivity("agent.turn");
+        turnActivity?.SetTag("turn.number", nTurns);
+        turnActivity?.SetTag("turn.mode", "non-streaming");
         nToolsExecutions = 0;
         _history.AddUserMessage(userMessage);
         Console.WriteLine($"\n{nTurns}>>>userMessage (non-streaming): {userMessage}");
@@ -351,6 +380,9 @@ public class AgentLoop
 
             // --- THINK: Call the LLM with full history ---
             var request = BuildRequest();
+            using var llmActivity = AgentTelemetry.Source.StartActivity("llm.request");
+            llmActivity?.SetTag("llm.messages.count", request.Messages.Count);
+            llmActivity?.SetTag("llm.tools.count", request.Tools?.Count ?? 0);
             if (Program.RequestTrace) Console.WriteLine($"\n{nTurns}>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
             if (Program.ToolsTrace)   Console.WriteLine($"\n >>request.Tools: {System.Text.Json.JsonSerializer.Serialize(request.Tools)}");
             if (Program.HistoryTrace) Console.WriteLine($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(request.Messages)}");
@@ -367,6 +399,7 @@ public class AgentLoop
                 System.Net.HttpStatusCode.BadRequest)
             {
                 // Non-retryable auth/client errors — don't loop, just report
+                llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 AnsiConsole.MarkupLine($"\n[red]Error:[/] {Markup.Escape(ex.Message)}");
                 AnsiConsole.MarkupLine("[dim]Check your API key and provider configuration.[/]");
                 break;
@@ -378,6 +411,7 @@ public class AgentLoop
                 // preserve, so every retryable failure gets the same error+nudge
                 // treatment as streaming's "no content at all" case.
                 consecutiveErrors++;
+                llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 AnsiConsole.MarkupLine($"\n[red]Error:[/] [dim]{Markup.Escape(ex.GetType().FullName ?? ex.GetType().Name)}: {Markup.Escape(ex.Message)}[/]");
                 if (ex.InnerException is { } innerEx)
                     AnsiConsole.MarkupLine($"[dim]  Inner: {Markup.Escape(innerEx.GetType().FullName ?? innerEx.GetType().Name)}: {Markup.Escape(innerEx.Message)}[/]");
@@ -404,11 +438,21 @@ public class AgentLoop
 
             consecutiveErrors = 0;
 
+            llmActivity?.SetTag("llm.stop_reason", response.StopReason);
+            llmActivity?.SetTag("llm.usage.input_tokens", response.InputTokens);
+            llmActivity?.SetTag("llm.usage.output_tokens", response.OutputTokens);
+            llmActivity?.SetTag("llm.usage.cache_creation_tokens", response.CacheCreationInputTokens);
+            llmActivity?.SetTag("llm.usage.cache_read_tokens", response.CacheReadInputTokens);
+
             _totalInputTokens += response.InputTokens;
             _totalOutputTokens += response.OutputTokens;
             _totalCacheCreationTokens += response.CacheCreationInputTokens;
             _totalCacheReadTokens += response.CacheReadInputTokens;
             Console.WriteLine($"\n<<<TotalUsage: input={_totalInputTokens} output={_totalOutputTokens} cacheCreate={_totalCacheCreationTokens} cacheRead={_totalCacheReadTokens}");
+            turnActivity?.SetTag("turn.total_input_tokens", _totalInputTokens);
+            turnActivity?.SetTag("turn.total_output_tokens", _totalOutputTokens);
+            turnActivity?.SetTag("turn.total_cache_creation_tokens", _totalCacheCreationTokens);
+            turnActivity?.SetTag("turn.total_cache_read_tokens", _totalCacheReadTokens);
 
             // SendAsync returns the whole message already assembled (unlike streaming,
             // there's no live rendering as it arrives), so render it here in one shot.
@@ -428,6 +472,7 @@ public class AgentLoop
             {
                 AnsiConsole.WriteLine();
                 Console.WriteLine($"\n{nTurns}<<<stopReason: {response.StopReason} Count 0 nToolExecutions {nToolsExecutions} (non-streaming)");
+                turnActivity?.SetTag("turn.stop_reason", response.StopReason);
 
                 if (response.StopReason == "max_tokens")
                 {
@@ -539,11 +584,16 @@ public class AgentLoop
 
         foreach (var toolUse in toolUses)
         {
+            using var toolActivity = AgentTelemetry.Source.StartActivity($"tool.{toolUse.Name}");
+            toolActivity?.SetTag("tool.id", toolUse.Id);
+            toolActivity?.SetTag("tool.name", toolUse.Name);
+
             // If the LLM sent malformed JSON, return the parse error
             // so the model can self-correct on the next iteration
             if (toolUse.ParseError is not null)
             {
                 var parseErrorResult = ToolResult.Error(toolUse.ParseError);
+                toolActivity?.SetStatus(ActivityStatusCode.Error, toolUse.ParseError);
                 toolResults.Add(new ToolResultBlock
                 {
                     ToolUseId = toolUse.Id,
@@ -567,6 +617,7 @@ public class AgentLoop
                 if (!approved)
                 {
                     var deniedResult = ToolResult.Error("User denied this tool execution.");
+                    toolActivity?.SetStatus(ActivityStatusCode.Error, "User denied this tool execution.");
                     toolResults.Add(new ToolResultBlock
                     {
                         ToolUseId = toolUse.Id,
@@ -580,6 +631,10 @@ public class AgentLoop
 
             // Execute the tool
             var result = await _tools.ExecuteAsync(toolUse.Name, toolUse.Input, ct);
+
+            toolActivity?.SetTag("tool.is_error", result.IsError);
+            if (result.IsError)
+                toolActivity?.SetStatus(ActivityStatusCode.Error, result.Output);
 
             toolResults.Add(new ToolResultBlock
             {

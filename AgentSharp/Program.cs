@@ -3,6 +3,7 @@ using AgentSharp.Agent.MultiAgent;
 using AgentSharp.Context;
 using AgentSharp.Memory;
 using AgentSharp.Safety;
+using AgentSharp.Telemetry;
 using AgentSharp.Tools;
 using AgentSharp.Tools.Implementations;
 using AgentSharp.Ui;
@@ -49,6 +50,11 @@ internal class Program
         {
             var __sw = System.Diagnostics.Stopwatch.StartNew();
             void __Mark(string label) { Console.Error.WriteLine($"[TIMING] {label}: {__sw.ElapsedMilliseconds}ms"); }
+
+            // --- Telemetry (disabled unless AGENT_ENABLE_OTEL is set) ---
+            // Held in `using` so the console exporter flushes any buffered spans
+            // when Main exits, including via an exception unwinding out of this try.
+            using var tracerProvider = AgentTelemetry.Initialize();
 
             // --- Configuration ---
             var config = Configuration.Load(args);
@@ -185,7 +191,8 @@ internal class Program
             AnsiConsole.MarkupLine("  AGENT_MODEL              Default model");
             AnsiConsole.MarkupLine("  AGENT_API_KEY            Generic API key (any provider)");
             AnsiConsole.MarkupLine("  AGENT_TIMEOUT_MINUTES    Request timeout in minutes (default: 60, Ollama only)");
-            AnsiConsole.MarkupLine("  AGENT_MAX_TOKENS         Max output tokens per request (default: 128000)\n");
+            AnsiConsole.MarkupLine("  AGENT_MAX_TOKENS         Max output tokens per request (default: 128000)");
+            AnsiConsole.MarkupLine("  AGENT_ENABLE_OTEL        Emit OpenTelemetry traces via the console exporter (default: off)\n");
             AnsiConsole.MarkupLine("[bold]REPL COMMANDS:[/]");
             AnsiConsole.MarkupLine("  /help       Show commands");
             AnsiConsole.MarkupLine("  /exit       Exit the agent");

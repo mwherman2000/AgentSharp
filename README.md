@@ -56,6 +56,7 @@ AgentSharp resolves configuration in this order: CLI flags → environment varia
 | `AGENT_MODEL` | Default model |
 | `AGENT_API_KEY` | Generic API key (any provider) |
 | `AGENT_BASE_URL` | Custom API base URL for OpenAI-compatible providers |
+| `AGENT_ENABLE_OTEL` | Emit OpenTelemetry traces (turn/LLM-call/tool-call spans) via the console exporter (default: off) |
 
 Ollama needs no API key — just run `ollama serve` locally (default `http://localhost:11434/v1`).
 
