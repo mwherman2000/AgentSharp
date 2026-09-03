@@ -48,7 +48,7 @@ public class ApprovalGate
     /// Check if a tool execution requires approval and, if so, prompt the user.
     /// Returns true if the tool should be executed, false if denied.
     /// </summary>
-    public async Task<bool> CheckApprovalAsync(ITool tool, string inputSummary, JsonElement input = default)
+    public async Task<bool> CheckApprovalAsync(ITool tool, string inputSummary, JsonElement input = default, CancellationToken ct = default)
     {
         // ReadOnly tools are always auto-approved
         if (tool.RiskLevel == ToolRiskLevel.ReadOnly)
@@ -75,7 +75,7 @@ public class ApprovalGate
                 ? _shellClassifier.GetDangerReason(cmd.GetString()!)
                 : null;
 
-        return await PromptForApproval(tool, inputSummary, dangerReason);
+        return await PromptForApproval(tool, inputSummary, dangerReason, ct);
     }
 
     /// <summary>
@@ -84,7 +84,7 @@ public class ApprovalGate
     public bool IsShellCommandDangerous(string command) =>
         _shellClassifier.IsDangerous(command);
 
-    private async Task<bool> PromptForApproval(ITool tool, string inputSummary, string? dangerReason)
+    private async Task<bool> PromptForApproval(ITool tool, string inputSummary, string? dangerReason, CancellationToken ct)
     {
         await _promptLock.WaitAsync();
         try
@@ -106,11 +106,25 @@ public class ApprovalGate
 
             AnsiConsole.MarkupLine("[yellow]Allow this tool execution?[/] (a = allow, d = deny, s = always allow this session)");
 
+            // Console.ReadKey has no cancellable overload, so a plain blocking call
+            // here would swallow Ctrl+C: OnCancelKeyPress cancels the turn's token,
+            // but that has nothing to interrupt a synchronous ReadKey, leaving the
+            // prompt stuck until an actual a/d/s keypress. Polling KeyAvailable lets
+            // us observe cancellation between polls instead.
             ConsoleKey key;
-            do
+            while (true)
             {
-                key = Console.ReadKey(intercept: true).Key;
-            } while (key != ConsoleKey.A && key != ConsoleKey.D && key != ConsoleKey.S);
+                if (Console.KeyAvailable)
+                {
+                    key = Console.ReadKey(intercept: true).Key;
+                    if (key == ConsoleKey.A || key == ConsoleKey.D || key == ConsoleKey.S)
+                        break;
+                }
+                else
+                {
+                    await Task.Delay(50, ct);
+                }
+            }
 
             switch (key)
             {

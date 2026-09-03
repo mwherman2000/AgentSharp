@@ -695,7 +695,7 @@ public class AgentLoop
             // Safety gate: check approval
             if (tool is not null)
             {
-                var approved = await _approval.CheckApprovalAsync(tool, inputSummary, toolUse.Input);
+                var approved = await _approval.CheckApprovalAsync(tool, inputSummary, toolUse.Input, ct);
                 if (!approved)
                 {
                     var deniedResult = ToolResult.Error("User denied this tool execution.");
