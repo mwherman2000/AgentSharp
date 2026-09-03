@@ -295,7 +295,7 @@ public class ReplHost
             case CommandType.Transcript:
                 if (string.IsNullOrWhiteSpace(command.Argument))
                 {
-                    AnsiConsole.MarkupLine("[yellow]Usage: /transcript <name>[/]");
+                    AnsiConsole.MarkupLine("[yellow]Usage: /transcribe <name>[/]");
                     break;
                 }
                 var transcriptPath = WriteTranscript(command.Argument);
@@ -582,7 +582,7 @@ public class ReplHost
             .AddRow("/model", "Show current model info")
             .AddRow("/memory", "Show persistent memory")
             .AddRow("/memory clear", "Clear persistent memory")
-            .AddRow("/transcript <name>", "Write a Q&A transcript of this conversation to <name>.md")
+            .AddRow("/transcribe <name>", "Write a Q&A transcript of this conversation to <name>.md")
             .AddRow("/request", "Toggle request trace")
             .AddRow("/history", "Toggle history trace")
             .AddRow("/tools", "Toggle tools trace")
