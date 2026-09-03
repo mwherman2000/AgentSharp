@@ -336,13 +336,16 @@ public class ReplHost
     }
 
     /// <summary>
-    /// Writes a clean Q&amp;A transcript of the conversation to <paramref name="name"/>.md
+    /// Writes a clean Q&amp;A transcript of the conversation to <paramref name="name"/>
     /// -- the user's typed prompts, the assistant's full text replies, and any "think"
-    /// tool calls (rendered as blockquoted thoughts), with none of the other tool-call/
-    /// tool-result/trace noise that fills the live console output. A single user turn
-    /// can span several history entries (assistant text, tool calls, tool results, more
-    /// assistant text), so consecutive assistant messages are merged into one answer,
-    /// in original order, until the next real user prompt starts a new pair.
+    /// tool calls (rendered as blockquoted/indented thoughts), with none of the other
+    /// tool-call/tool-result/trace noise that fills the live console output. A single
+    /// user turn can span several history entries (assistant text, tool calls, tool
+    /// results, more assistant text), so consecutive assistant messages are merged into
+    /// one answer, in original order, until the next real user prompt starts a new pair.
+    /// Written as Markdown unless <paramref name="name"/> ends in ".docx", in which case
+    /// TranscriptWriter renders it as a minimal Word document instead; any other or
+    /// missing extension defaults to ".md".
     /// </summary>
     private string? WriteTranscript(string name)
     {
@@ -357,12 +360,17 @@ public class ReplHost
             return null;
         }
 
-        var fileName = safeName.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ? safeName : $"{safeName}.md";
+        // Format is chosen by the requested file's own extension -- anything else
+        // (no extension, or one we don't recognize) defaults to Markdown as before.
+        var isDocx = safeName.EndsWith(".docx", StringComparison.OrdinalIgnoreCase);
+        var fileName = isDocx || safeName.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
+            ? safeName
+            : $"{safeName}.md";
         var path = Path.Combine(_project.WorkingDirectory, fileName);
 
-        var qaPairs = new List<(string Question, string Answer)>();
+        var qaPairs = new List<(string Question, List<AnswerSegment> Segments)>();
         string? currentQuestion = null;
-        var answer = new System.Text.StringBuilder();
+        var segments = new List<AnswerSegment>();
 
         foreach (var message in _agent.History.Messages)
         {
@@ -374,58 +382,40 @@ public class ReplHost
                 if (text.Length == 0) continue;
 
                 if (currentQuestion is not null)
-                    qaPairs.Add((currentQuestion, answer.ToString().Trim()));
+                    qaPairs.Add((currentQuestion, segments));
 
                 currentQuestion = CapitalizeFirstLetter(text);
-                answer.Clear();
+                segments = new List<AnswerSegment>();
             }
             else if (message.Role == MessageRole.Assistant)
             {
                 foreach (var block in message.Content)
                 {
-                    var segment = block switch
+                    switch (block)
                     {
-                        TextBlock { Text.Length: > 0 } tb => tb.Text,
-                        ToolUseBlock { Name: "think" } thinkBlock => FormatThought(thinkBlock),
-                        _ => null
-                    };
-                    if (segment is null) continue;
-
-                    if (answer.Length > 0) answer.Append("\n\n");
-                    answer.Append(segment);
+                        case TextBlock { Text.Length: > 0 } tb:
+                            segments.Add(new AnswerSegment(false, tb.Text));
+                            break;
+                        case ToolUseBlock { Name: "think" } thinkBlock:
+                            if (ExtractThought(thinkBlock) is { } thought)
+                                segments.Add(new AnswerSegment(true, thought));
+                            break;
+                    }
                 }
             }
         }
         if (currentQuestion is not null)
-            qaPairs.Add((currentQuestion, answer.ToString().Trim()));
+            qaPairs.Add((currentQuestion, segments));
 
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"# {name}");
-        sb.AppendLine();
         var systemPromptIntro = GetFirstParagraph(_agent.SystemPrompt);
-        if (systemPromptIntro.Length > 0)
-        {
-            foreach (var line in systemPromptIntro.Split('\n'))
-                sb.AppendLine($"> {line}");
-            sb.AppendLine();
-        }
-        sb.AppendLine($"_Transcript generated {DateTime.Now:yyyy-MM-dd HH:mm}_");
-        sb.AppendLine();
-        for (int i = 0; i < qaPairs.Count; i++)
-        {
-            sb.AppendLine($"## Q{i + 1}");
-            sb.AppendLine();
-            sb.AppendLine(qaPairs[i].Question);
-            sb.AppendLine();
-            sb.AppendLine($"## A{i + 1}");
-            sb.AppendLine();
-            sb.AppendLine(qaPairs[i].Answer.Length > 0 ? qaPairs[i].Answer : "_(no response)_");
-            sb.AppendLine();
-        }
+        var generatedAt = DateTime.Now;
 
         try
         {
-            File.WriteAllText(path, sb.ToString());
+            if (isDocx)
+                File.WriteAllBytes(path, TranscriptWriter.BuildDocx(name, systemPromptIntro, generatedAt, qaPairs));
+            else
+                File.WriteAllText(path, TranscriptWriter.BuildMarkdown(name, systemPromptIntro, generatedAt, qaPairs));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -436,19 +426,17 @@ public class ReplHost
     }
 
     /// <summary>
-    /// Renders a "think" tool call's recorded thought as a blockquote, so it reads as
-    /// the model's scratchpad reasoning rather than part of its actual reply. Returns
-    /// null (dropped from the transcript) if the block isn't a well-formed think call --
-    /// e.g. the LLM sent malformed input that failed to parse into a "thought" string.
+    /// Pulls the raw reasoning text out of a "think" tool call, leaving the choice of
+    /// how to render it (Markdown blockquote vs. docx paragraph) to TranscriptWriter.
+    /// Returns null if the block isn't a well-formed think call -- e.g. the LLM sent
+    /// malformed input that failed to parse into a "thought" string.
     /// </summary>
-    private static string? FormatThought(ToolUseBlock block)
+    private static string? ExtractThought(ToolUseBlock block)
     {
         if (!block.Input.TryGetProperty("thought", out var thoughtProp) ||
             thoughtProp.GetString() is not { Length: > 0 } thought)
             return null;
-
-        var lines = new[] { "***Thinking...***" }.Concat(thought.Split('\n'));
-        return string.Join("\n", lines.Select(line => $"> {line}"));
+        return thought;
     }
 
     /// <summary>
@@ -582,7 +570,7 @@ public class ReplHost
             .AddRow("/model", "Show current model info")
             .AddRow("/memory", "Show persistent memory")
             .AddRow("/memory clear", "Clear persistent memory")
-            .AddRow("/transcribe <name>", "Write a Q&A transcript of this conversation to <name>.md")
+            .AddRow("/transcribe <name>", "Write a Q&A transcript of this conversation to <name> (.md by default, or .docx)")
             .AddRow("/request", "Toggle request trace")
             .AddRow("/history", "Toggle history trace")
             .AddRow("/tools", "Toggle tools trace")
