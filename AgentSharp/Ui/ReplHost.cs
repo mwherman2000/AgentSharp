@@ -447,8 +447,8 @@ public class ReplHost
             thoughtProp.GetString() is not { Length: > 0 } thought)
             return null;
 
-        var quoted = string.Join("\n", thought.Split('\n').Select(line => $"> {line}"));
-        return $"*Thinking:*\n{quoted}";
+        var lines = new[] { "***Thinking...***" }.Concat(thought.Split('\n'));
+        return string.Join("\n", lines.Select(line => $"> {line}"));
     }
 
     /// <summary>
