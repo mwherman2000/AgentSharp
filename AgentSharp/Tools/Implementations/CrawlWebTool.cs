@@ -754,13 +754,54 @@ public class CrawlWebTool : ToolBase
         var browsingContext = BrowsingContext.New(AngleSharp.Configuration.Default);
         var document = await browsingContext.OpenAsync(req => req.Content(html), ct);
 
+        // Never content, regardless of site: analytics/tracking scripts, style rules,
+        // noscript fallbacks, embedded frames (tracking pixels are almost always
+        // 0x0 iframes), inline SVG icons, and stray head elements a malformed page
+        // left in the body. The converter's PassThrough setting below means an
+        // unstripped tag like this survives as literal raw HTML in the Markdown
+        // output instead of being dropped -- fine for an occasional real embed
+        // inside isolated post content, actively harmful when converting a whole
+        // arbitrary page body (web_fetch) that's mostly this kind of noise.
+        foreach (var noise in document.QuerySelectorAll("script, style, noscript, iframe, svg, link, meta"))
+            noise.Remove();
+
+        // Presentational only, never content -- but worth stripping explicitly rather
+        // than leaving it for PassThrough to preserve, since an inline style is a
+        // second (and easy to miss) place a data: URI shows up, e.g. a CSS
+        // mask-image/background-image icon on an otherwise plain element like a
+        // <button>, carrying the same base64-bloat problem as an <img src="data:...">.
+        foreach (var styled in document.QuerySelectorAll("[style]"))
+            styled.RemoveAttribute("style");
+
         foreach (var img in document.QuerySelectorAll("img"))
         {
             var src = FirstNonEmpty(img.GetAttribute("src"), img.GetAttribute("data-src"), img.GetAttribute("data-lazy-src"));
 
-            if (string.IsNullOrWhiteSpace(src) || !Uri.TryCreate(postUri, src, out var absolute))
+            if (string.IsNullOrWhiteSpace(src))
             {
-                unresolvedImages.Add(src ?? "(no src attribute)");
+                unresolvedImages.Add("(no src attribute)");
+                img.Remove();
+                continue;
+            }
+
+            // A data: URI's payload IS its src -- often tens of thousands of base64
+            // characters for a single inline image. Reporting a short placeholder
+            // instead of the literal src (as the other unresolved cases do below)
+            // avoids embedding that payload in the unresolved-images list, which
+            // would be far more wasteful than the noise this list exists to flag.
+            if (src.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                unresolvedImages.Add($"(inline data: image, {src.Length} chars, omitted)");
+                img.Remove();
+                continue;
+            }
+
+            // Anything that isn't http(s) after resolution (e.g. javascript:, or a
+            // data: URI that slipped past the check above via data-src) isn't a
+            // stable, fetchable reference either.
+            if (!Uri.TryCreate(postUri, src, out var absolute) || absolute.Scheme is not ("http" or "https"))
+            {
+                unresolvedImages.Add(src);
                 img.Remove();
                 continue;
             }
@@ -776,6 +817,16 @@ public class CrawlWebTool : ToolBase
             Links = { SmartHref = true }
         });
 
+        // Tried preferring the page's first <article>/<main> element here as a
+        // generic way to skip nav/header/footer chrome without a per-site selector.
+        // Reverted: a real-world page can carry several such elements (e.g. a
+        // "related content" or promo widget also marked up as <article>), and
+        // QuerySelector silently returns whichever comes first in document order --
+        // on a real site this picked a sidebar promo instead of the actual article,
+        // with no error or signal that anything had gone wrong. Confidently wrong
+        // beats noisy-but-complete for a tool whose whole job is evidence gathering,
+        // so this falls back to the full body like FetchPostViaRawHtmlAsync's own
+        // best-effort fallback already does -- noisier, but not silently mistaken.
         var markdown = converter.Convert(document.Body?.InnerHtml ?? html);
         return (markdown.Trim(), unresolvedImages);
     }
