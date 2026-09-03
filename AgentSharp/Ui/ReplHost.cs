@@ -315,11 +315,12 @@ public class ReplHost
 
     /// <summary>
     /// Writes a clean Q&amp;A transcript of the conversation to <paramref name="name"/>.md
-    /// -- just the user's typed prompts and the assistant's full text replies, with none
-    /// of the tool-call/tool-result/trace noise that fills the live console output.
-    /// A single user turn can span several history entries (assistant text, tool calls,
-    /// tool results, more assistant text), so consecutive assistant text messages are
-    /// merged into one answer until the next real user prompt starts a new pair.
+    /// -- the user's typed prompts, the assistant's full text replies, and any "think"
+    /// tool calls (rendered as blockquoted thoughts), with none of the other tool-call/
+    /// tool-result/trace noise that fills the live console output. A single user turn
+    /// can span several history entries (assistant text, tool calls, tool results, more
+    /// assistant text), so consecutive assistant messages are merged into one answer,
+    /// in original order, until the next real user prompt starts a new pair.
     /// </summary>
     private string? WriteTranscript(string name)
     {
@@ -358,11 +359,19 @@ public class ReplHost
             }
             else if (message.Role == MessageRole.Assistant)
             {
-                var text = message.GetText();
-                if (text.Length == 0) continue;
+                foreach (var block in message.Content)
+                {
+                    var segment = block switch
+                    {
+                        TextBlock { Text.Length: > 0 } tb => tb.Text,
+                        ToolUseBlock { Name: "think" } thinkBlock => FormatThought(thinkBlock),
+                        _ => null
+                    };
+                    if (segment is null) continue;
 
-                if (answer.Length > 0) answer.Append("\n\n");
-                answer.Append(text);
+                    if (answer.Length > 0) answer.Append("\n\n");
+                    answer.Append(segment);
+                }
             }
         }
         if (currentQuestion is not null)
@@ -402,6 +411,22 @@ public class ReplHost
             return null;
         }
         return path;
+    }
+
+    /// <summary>
+    /// Renders a "think" tool call's recorded thought as a blockquote, so it reads as
+    /// the model's scratchpad reasoning rather than part of its actual reply. Returns
+    /// null (dropped from the transcript) if the block isn't a well-formed think call --
+    /// e.g. the LLM sent malformed input that failed to parse into a "thought" string.
+    /// </summary>
+    private static string? FormatThought(ToolUseBlock block)
+    {
+        if (!block.Input.TryGetProperty("thought", out var thoughtProp) ||
+            thoughtProp.GetString() is not { Length: > 0 } thought)
+            return null;
+
+        var quoted = string.Join("\n", thought.Split('\n').Select(line => $"> {line}"));
+        return $"*Thinking:*\n{quoted}";
     }
 
     /// <summary>
