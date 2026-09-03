@@ -39,6 +39,13 @@ public class EditFileTool : ToolBase
         if (!File.Exists(path))
             return ToolResult.Error($"File not found: {path}");
 
+        // An empty old_string makes CountOccurrences loop forever: IndexOf("", index)
+        // always returns index unchanged, so the scan position never advances. Reject
+        // it up front rather than hanging -- GetRequiredString only rejects a missing
+        // property, not an empty string, so this can genuinely reach here.
+        if (oldString.Length == 0)
+            return ToolResult.Error("old_string cannot be empty.");
+
         try
         {
             var content = await File.ReadAllTextAsync(path, ct);

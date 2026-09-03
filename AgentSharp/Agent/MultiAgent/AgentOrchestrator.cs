@@ -28,7 +28,17 @@ public class AgentOrchestrator
     private readonly string _systemPrompt;
     private readonly int _maxTokens;
     private readonly int _maxIterations;
+    private readonly int _maxConcurrentSubAgents;
     private readonly ConcurrentDictionary<string, SubAgent> _agents = new();
+
+    /// <summary>Default cap on how many sub-agents RunParallelAsync actually runs at
+    /// once. Nothing else limits fan-out -- the model decides how many tasks to hand
+    /// it -- and each sub-agent is a full AgentLoop capable of its own maxIterations
+    /// round-trips, so an unbounded Task.WhenAll over dozens of tasks (plausible for a
+    /// "research N sources in parallel" style request) risks a burst of simultaneous
+    /// LLM/HTTP calls large enough to trip provider rate limits, with no throttle at
+    /// all on the resulting cost.</summary>
+    public const int DefaultMaxConcurrentSubAgents = 5;
 
     public IReadOnlyCollection<SubAgent> ActiveAgents => _agents.Values.ToList();
 
@@ -38,7 +48,8 @@ public class AgentOrchestrator
         ApprovalGate approval,
         string systemPrompt,
         int maxTokens = AgentLoop.DefaultMaxTokens,
-        int maxIterations = AgentLoop.DefaultMaxIterations)
+        int maxIterations = AgentLoop.DefaultMaxIterations,
+        int maxConcurrentSubAgents = DefaultMaxConcurrentSubAgents)
     {
         _llm = llm;
         _tools = tools;
@@ -46,6 +57,7 @@ public class AgentOrchestrator
         _systemPrompt = systemPrompt;
         _maxTokens = maxTokens;
         _maxIterations = maxIterations;
+        _maxConcurrentSubAgents = maxConcurrentSubAgents;
     }
 
     /// <summary>
@@ -99,19 +111,33 @@ public class AgentOrchestrator
     {
         var taskList = tasks.ToList();
 
-        AnsiConsole.MarkupLine($"[cyan]Spawning {taskList.Count} sub-agents in parallel...[/]");
+        AnsiConsole.MarkupLine(
+            $"[cyan]Spawning {taskList.Count} sub-agents (max {_maxConcurrentSubAgents} running at once)...[/]");
 
         var agents = taskList.Select(t => (agent: Spawn(t.name, t.task), t.task)).ToList();
 
-        // Run all concurrently
+        // Throttled, not fully concurrent: each sub-agent is a full AgentLoop capable
+        // of its own maxIterations round-trips, so letting an unbounded Task.WhenAll
+        // start all of them at once risks a burst of simultaneous LLM/HTTP calls large
+        // enough to trip provider rate limits, with no cap on the resulting cost.
+        using var throttle = new SemaphoreSlim(_maxConcurrentSubAgents);
+
         var runTasks = agents.Select(async a =>
         {
-            AnsiConsole.MarkupLine($"  [dim]Starting: {Markup.Escape(a.agent.Name)}[/]");
-            var result = await a.agent.RunAsync(a.task, ct);
-            AnsiConsole.MarkupLine(a.agent.Status == SubAgentStatus.Completed
-                ? $"  [green]Done: {Markup.Escape(a.agent.Name)}[/]"
-                : $"  [red]Failed: {Markup.Escape(a.agent.Name)}[/]");
-            return new SubAgentResult(a.agent.Name, a.agent.Id, result, a.agent.Status);
+            await throttle.WaitAsync(ct);
+            try
+            {
+                AnsiConsole.MarkupLine($"  [dim]Starting: {Markup.Escape(a.agent.Name)}[/]");
+                var result = await a.agent.RunAsync(a.task, ct);
+                AnsiConsole.MarkupLine(a.agent.Status == SubAgentStatus.Completed
+                    ? $"  [green]Done: {Markup.Escape(a.agent.Name)}[/]"
+                    : $"  [red]Failed: {Markup.Escape(a.agent.Name)}[/]");
+                return new SubAgentResult(a.agent.Name, a.agent.Id, result, a.agent.Status);
+            }
+            finally
+            {
+                throttle.Release();
+            }
         }).ToList();
 
         var results = await Task.WhenAll(runTasks);

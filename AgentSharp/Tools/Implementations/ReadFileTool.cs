@@ -39,15 +39,22 @@ public class ReadFileTool : ToolBase
 
         try
         {
-            var lines = File.ReadLines(path)
-                .Skip(offset)
-                .Take(limit)
-                .Select((line, i) => $"{offset + i + 1}\t{line}");
+            // Single pass instead of two full File.ReadLines enumerations (one for the
+            // requested slice, a separate one just to count total lines) -- the second
+            // pass re-reads and re-scans the entire file from disk again purely to
+            // print the "[Showing lines X-Y of Z total]" footer, real cost on a large
+            // file even when offset/limit already cover the whole thing.
+            var selectedLines = new List<string>(Math.Min(limit, 4096));
+            var totalLines = 0;
 
-            var content = string.Join(Environment.NewLine, lines);
-            var totalLines = File.ReadLines(path).Count();
+            foreach (var line in File.ReadLines(path))
+            {
+                if (totalLines >= offset && selectedLines.Count < limit)
+                    selectedLines.Add($"{totalLines + 1}\t{line}");
+                totalLines++;
+            }
 
-            var result = content;
+            var result = string.Join(Environment.NewLine, selectedLines);
             if (offset + limit < totalLines)
                 result += $"\n\n[Showing lines {offset + 1}-{Math.Min(offset + limit, totalLines)} of {totalLines} total]";
 

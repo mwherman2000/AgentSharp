@@ -75,13 +75,31 @@ public class ReplHost
             if (_inputHistory.Count == 0 || _inputHistory[^1] != input)
                 _inputHistory.Add(input);
 
-            // Parse slash commands
-            var command = CommandParser.Parse(input);
-            if (command.Type != CommandType.None)
+            // Parse and dispatch slash commands. Unlike the regular-message path
+            // below, this had no exception handling at all -- an exception from
+            // parsing (a bare "/" used to throw IndexOutOfRangeException, now fixed
+            // at the source, but this stays as defense in depth) or from any command
+            // handler (e.g. a corrupt /load session file) would propagate straight
+            // out of RunAsync and take down the entire interactive session over a
+            // single command, not just fail that one command.
+            try
             {
-                var shouldContinue = await HandleCommandAsync(command, ct);
-                if (!shouldContinue)
-                    break;
+                var command = CommandParser.Parse(input);
+                if (command.Type != CommandType.None)
+                {
+                    var shouldContinue = await HandleCommandAsync(command, ct);
+                    if (!shouldContinue)
+                        break;
+                    continue;
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"\n[red]Error:[/] {Markup.Escape(ex.Message)}");
                 continue;
             }
 

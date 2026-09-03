@@ -48,7 +48,12 @@ public class GrepTool : ToolBase
             if (!caseSensitive)
                 regexOptions |= RegexOptions.IgnoreCase;
 
-            var regex = new Regex(pattern, regexOptions);
+            // pattern is arbitrary text from the model, not a vetted regex -- a
+            // catastrophic-backtracking pattern (e.g. something equivalent to
+            // (a+)+$) matched against a non-matching line would otherwise hang this
+            // synchronous loop indefinitely with no way to cancel it, since neither
+            // Regex nor the loop below previously checked ct at all.
+            var regex = new Regex(pattern, regexOptions, TimeSpan.FromSeconds(5));
             var results = new List<string>();
             int totalMatches = 0;
             int filesSearched = 0;
@@ -57,6 +62,8 @@ public class GrepTool : ToolBase
 
             foreach (var file in Directory.EnumerateFiles(searchPath, filePattern, SearchOption.AllDirectories))
             {
+                ct.ThrowIfCancellationRequested();
+
                 if (ShouldSkip(file, searchPath))
                     continue;
 
@@ -119,6 +126,19 @@ public class GrepTool : ToolBase
         catch (RegexParseException)
         {
             return Task.FromResult(ToolResult.Error($"Invalid regex pattern: {pattern}"));
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return Task.FromResult(ToolResult.Error(
+                $"Regex pattern '{pattern}' took too long to match (possible catastrophic backtracking) -- try a simpler or more specific pattern."));
+        }
+        catch (OperationCanceledException)
+        {
+            // Let cancellation (e.g. Ctrl+C) propagate to ToolRegistry/AgentLoop
+            // instead of being swallowed into a "failed search" error result --
+            // the generic catch below would otherwise catch this too, since
+            // OperationCanceledException derives from Exception.
+            throw;
         }
         catch (Exception ex)
         {

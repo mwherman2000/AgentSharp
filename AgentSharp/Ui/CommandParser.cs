@@ -35,6 +35,13 @@ public static class CommandParser
             return new ParsedCommand(CommandType.None);
 
         var parts = input.TrimStart('/').Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        // A bare "/" (or "/" followed only by whitespace) trims/splits down to an
+        // empty array -- parts[0] below would throw IndexOutOfRangeException, and
+        // with no try/catch around command dispatch that used to take down the
+        // entire REPL session over a single stray keystroke.
+        if (parts.Length == 0)
+            return new ParsedCommand(CommandType.Unknown, "");
+
         var command = parts[0].ToLowerInvariant();
         var argument = parts.Length > 1 ? parts[1] : null;
 
