@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using AgentSharp.Tools;
 using Spectre.Console;
@@ -25,8 +26,23 @@ public enum ApprovalResult
 /// </summary>
 public class ApprovalGate
 {
-    private readonly HashSet<string> _alwaysAllowed = new(StringComparer.OrdinalIgnoreCase);
+    // ConcurrentDictionary used as a thread-safe set (value is unused) -- one
+    // ApprovalGate is shared by every concurrent sub-agent (AgentOrchestrator hands
+    // the same instance to each SubAgent), so two agents granting/checking "always
+    // allow" for the same or different tools at the same time must not race on a
+    // plain HashSet.
+    private readonly ConcurrentDictionary<string, byte> _alwaysAllowed = new(StringComparer.OrdinalIgnoreCase);
     private readonly ShellCommandClassifier _shellClassifier = new();
+
+    // Guards only the interactive prompt itself (console rendering + Console.ReadKey),
+    // not the whole approval check -- so a call that's auto-approved or already in
+    // _alwaysAllowed never blocks behind another agent's unrelated live prompt.
+    // Without this, two concurrent sub-agents both hitting a Destructive tool at
+    // nearly the same time could interleave their prompts on the same console and
+    // both read from the same Console.ReadKey call, so a user pressing 'a' for what's
+    // on screen for one agent could actually approve a completely different pending
+    // command from the other.
+    private readonly SemaphoreSlim _promptLock = new(1, 1);
 
     /// <summary>
     /// Check if a tool execution requires approval and, if so, prompt the user.
@@ -39,7 +55,7 @@ public class ApprovalGate
             return true;
 
         // Check if user has granted "always allow" for this tool
-        if (_alwaysAllowed.Contains(tool.Name))
+        if (_alwaysAllowed.ContainsKey(tool.Name))
             return true;
 
         // Write tools: auto-approve but log
@@ -68,37 +84,51 @@ public class ApprovalGate
     public bool IsShellCommandDangerous(string command) =>
         _shellClassifier.IsDangerous(command);
 
-    private Task<bool> PromptForApproval(ITool tool, string inputSummary, string? dangerReason)
+    private async Task<bool> PromptForApproval(ITool tool, string inputSummary, string? dangerReason)
     {
-        AnsiConsole.WriteLine();
-        AnsiConsole.Write(new Rule($"[yellow]Approval Required[/]").RuleStyle("yellow"));
-        AnsiConsole.MarkupLine($"[yellow]Tool:[/] [bold]{Markup.Escape(tool.Name)}[/]");
-        AnsiConsole.MarkupLine($"[yellow]Risk:[/] [red]{tool.RiskLevel}[/]");
-        if (dangerReason is not null)
-            AnsiConsole.MarkupLine($"[red]Warning:[/] {Markup.Escape(dangerReason)}");
-        AnsiConsole.MarkupLine($"[yellow]Action:[/] {Markup.Escape(inputSummary)}");
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.MarkupLine("[yellow]Allow this tool execution?[/] (a = allow, d = deny, s = always allow this session)");
-
-        ConsoleKey key;
-        do
+        await _promptLock.WaitAsync();
+        try
         {
-            key = Console.ReadKey(intercept: true).Key;
-        } while (key != ConsoleKey.A && key != ConsoleKey.D && key != ConsoleKey.S);
+            // Another concurrent agent may have just been granted "always allow" for
+            // this same tool while this call was waiting for the lock -- re-check so
+            // we don't prompt redundantly for something already approved.
+            if (_alwaysAllowed.ContainsKey(tool.Name))
+                return true;
 
-        switch (key)
+            AnsiConsole.WriteLine();
+            AnsiConsole.Write(new Rule($"[yellow]Approval Required[/]").RuleStyle("yellow"));
+            AnsiConsole.MarkupLine($"[yellow]Tool:[/] [bold]{Markup.Escape(tool.Name)}[/]");
+            AnsiConsole.MarkupLine($"[yellow]Risk:[/] [red]{tool.RiskLevel}[/]");
+            if (dangerReason is not null)
+                AnsiConsole.MarkupLine($"[red]Warning:[/] {Markup.Escape(dangerReason)}");
+            AnsiConsole.MarkupLine($"[yellow]Action:[/] {Markup.Escape(inputSummary)}");
+            AnsiConsole.WriteLine();
+
+            AnsiConsole.MarkupLine("[yellow]Allow this tool execution?[/] (a = allow, d = deny, s = always allow this session)");
+
+            ConsoleKey key;
+            do
+            {
+                key = Console.ReadKey(intercept: true).Key;
+            } while (key != ConsoleKey.A && key != ConsoleKey.D && key != ConsoleKey.S);
+
+            switch (key)
+            {
+                case ConsoleKey.A:
+                    AnsiConsole.MarkupLine("[green]  Allowed.[/]");
+                    return true;
+                case ConsoleKey.S:
+                    _alwaysAllowed[tool.Name] = 0;
+                    AnsiConsole.MarkupLine($"[green]  {Markup.Escape(tool.Name)} will be auto-approved for this session.[/]");
+                    return true;
+                default:
+                    AnsiConsole.MarkupLine("[red]  Denied.[/]");
+                    return false;
+            }
+        }
+        finally
         {
-            case ConsoleKey.A:
-                AnsiConsole.MarkupLine("[green]  Allowed.[/]");
-                return Task.FromResult(true);
-            case ConsoleKey.S:
-                _alwaysAllowed.Add(tool.Name);
-                AnsiConsole.MarkupLine($"[green]  {Markup.Escape(tool.Name)} will be auto-approved for this session.[/]");
-                return Task.FromResult(true);
-            default:
-                AnsiConsole.MarkupLine("[red]  Denied.[/]");
-                return Task.FromResult(false);
+            _promptLock.Release();
         }
     }
 }

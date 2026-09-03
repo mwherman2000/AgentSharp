@@ -249,7 +249,7 @@ public class AgentLoop
                 // Non-retryable auth/client errors — don't loop, just report
                 llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 AnsiConsole.MarkupLine($"\n[red]Error:[/] {Markup.Escape(ex.Message)}");
-                AnsiConsole.MarkupLine("[dim]Check your API key and provider configuration.[/]");
+                PrintAuthOrConfigHint(ex.Message);
                 break;
             }
             catch (Exception ex)
@@ -401,7 +401,7 @@ public class AgentLoop
                 // Non-retryable auth/client errors — don't loop, just report
                 llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 AnsiConsole.MarkupLine($"\n[red]Error:[/] {Markup.Escape(ex.Message)}");
-                AnsiConsole.MarkupLine("[dim]Check your API key and provider configuration.[/]");
+                PrintAuthOrConfigHint(ex.Message);
                 break;
             }
             catch (Exception ex)
@@ -516,6 +516,33 @@ public class AgentLoop
     /// </summary>
     private static TimeSpan ComputeBackoffDelay(int attempt) =>
         TimeSpan.FromMilliseconds(500 * Math.Pow(2, attempt - 1));
+
+    /// <summary>
+    /// Anthropic and OpenAI both report a too-long conversation as a plain 400 --
+    /// the same status this catch already treats as "non-retryable client error" --
+    /// so without this check a context-length overflow prints the generic
+    /// "check your API key" hint, actively pointing the user at the wrong fix.
+    /// There's no dedicated status code for it, only wording in the error body, so
+    /// this matches on the phrasing providers actually use rather than a status.
+    /// </summary>
+    private static bool IsContextLengthError(string exceptionMessage) =>
+        exceptionMessage.Contains("too long", StringComparison.OrdinalIgnoreCase) ||
+        exceptionMessage.Contains("context_length_exceeded", StringComparison.OrdinalIgnoreCase) ||
+        exceptionMessage.Contains("context length", StringComparison.OrdinalIgnoreCase) ||
+        exceptionMessage.Contains("maximum context", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Follow-up hint for a non-retryable 4xx from the LLM: a context-length overflow
+    /// gets specific recovery guidance (there's no compaction here -- ConversationHistory
+    /// is a flat append-only list, so /clear or a fresh session are the only ways out),
+    /// anything else keeps the original "check your API key" hint.
+    /// </summary>
+    private static void PrintAuthOrConfigHint(string exceptionMessage)
+    {
+        AnsiConsole.MarkupLine(IsContextLengthError(exceptionMessage)
+            ? "[dim]This conversation has grown too large for the model's context window -- not an API key or config problem. Use /clear to start fresh (this discards history), or continue the remaining work in a new session.[/]"
+            : "[dim]Check your API key and provider configuration.[/]");
+    }
 
     /// <summary>
     /// The response (or a tool call the model was mid-way through starting) got cut
