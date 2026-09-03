@@ -532,16 +532,44 @@ public class AgentLoop
         exceptionMessage.Contains("maximum context", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Anthropic reports an empty/insufficient account balance as a plain 400 too --
+    /// same non-dedicated-status-code situation as context length, and the API key
+    /// itself may be perfectly valid -- without this check it gets the same
+    /// misleading "check your API key" hint as a real auth failure, when the actual
+    /// fix is adding credits/checking the plan, not touching the key or config at
+    /// all. Also matches OpenAI's equivalent wording for the same underlying case.
+    /// </summary>
+    private static bool IsInsufficientCreditError(string exceptionMessage) =>
+        exceptionMessage.Contains("credit balance", StringComparison.OrdinalIgnoreCase) ||
+        exceptionMessage.Contains("insufficient_quota", StringComparison.OrdinalIgnoreCase) ||
+        exceptionMessage.Contains("exceeded your current quota", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Follow-up hint for a non-retryable 4xx from the LLM: a context-length overflow
-    /// gets specific recovery guidance (there's no compaction here -- ConversationHistory
-    /// is a flat append-only list, so /clear or a fresh session are the only ways out),
-    /// anything else keeps the original "check your API key" hint.
+    /// or an out-of-credit account each get specific recovery guidance instead of the
+    /// generic "check your API key" hint, which is actively wrong for both -- neither
+    /// is an API key or config problem. (There's no compaction for the context-length
+    /// case -- ConversationHistory is a flat append-only list, so /clear or a fresh
+    /// session are the only ways out.)
     /// </summary>
     private static void PrintAuthOrConfigHint(string exceptionMessage)
     {
-        AnsiConsole.MarkupLine(IsContextLengthError(exceptionMessage)
-            ? "[dim]This conversation has grown too large for the model's context window -- not an API key or config problem. Use /clear to start fresh (this discards history), or continue the remaining work in a new session.[/]"
-            : "[dim]Check your API key and provider configuration.[/]");
+        if (IsContextLengthError(exceptionMessage))
+        {
+            AnsiConsole.MarkupLine("[dim]This conversation has grown too large for the model's context window -- " +
+                "not an API key or config problem. Use /clear to start fresh (this discards history), or continue " +
+                "the remaining work in a new session.[/]");
+        }
+        else if (IsInsufficientCreditError(exceptionMessage))
+        {
+            AnsiConsole.MarkupLine("[dim]Your account has run out of credit/quota -- not an API key or config " +
+                "problem. Add credits or check your plan at your provider's billing page (e.g. " +
+                "console.anthropic.com -> Plans & Billing for Anthropic), then retry.[/]");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine("[dim]Check your API key and provider configuration.[/]");
+        }
     }
 
     /// <summary>
