@@ -146,4 +146,91 @@ public class AgentLoopTelemetryTests
         Assert.Equal(true, toolActivity.GetTagItem("tool.is_error"));
         Assert.Equal(ActivityStatusCode.Error, toolActivity.Status);
     }
+
+    [Fact]
+    public async Task RunTurnNonStreamingAsync_MultipleToolCalls_CountsExecutionsPerTurnAndTotal()
+    {
+        var activities = new List<Activity>();
+        using var listener = StartListening(activities);
+
+        const string callId1 = "call_count_test_1_987654";
+        const string callId2 = "call_count_test_2_987654";
+        var tool = new FakeTool("count_test_tool_a", ToolRiskLevel.ReadOnly, _ => ToolResult.Success("ok"));
+        var tools = new ToolRegistry();
+        tools.Register(tool);
+
+        // A single non-streaming response can carry more than one tool_use block --
+        // both execute within the same turn, so both should count against it.
+        var llm = new FakeLlmClient()
+            .Enqueue(new LlmResponse
+            {
+                Message = new ChatMessage
+                {
+                    Role = MessageRole.Assistant,
+                    Content =
+                    [
+                        new ToolUseBlock { Id = callId1, Name = tool.Name, Input = JsonSerializer.SerializeToElement(new { }) },
+                        new ToolUseBlock { Id = callId2, Name = tool.Name, Input = JsonSerializer.SerializeToElement(new { }) }
+                    ]
+                },
+                StopReason = "tool_use",
+                InputTokens = 1,
+                OutputTokens = 1
+            })
+            .Enqueue(TextResponse("Done", inputTokens: 1, outputTokens: 1));
+
+        var loop = new AgentLoop(llm, tools, new ApprovalGate(), "system prompt");
+
+        await loop.RunTurnNonStreamingAsync("do two things");
+
+        var first = Assert.Single(activities, a => callId1.Equals(a.GetTagItem("tool.id")));
+        var second = Assert.Single(activities, a => callId2.Equals(a.GetTagItem("tool.id")));
+        Assert.Equal(1, first.GetTagItem("tool.execution.turn_count"));
+        Assert.Equal(1, first.GetTagItem("tool.execution.total_count"));
+        Assert.Equal(2, second.GetTagItem("tool.execution.turn_count"));
+        Assert.Equal(2, second.GetTagItem("tool.execution.total_count"));
+
+        // tool.* -> llm.request -> agent.turn, same parent-chain pattern the other
+        // tests in this file follow (e.g. llmActivity.Parent above).
+        var turnActivity = first.Parent?.Parent;
+        Assert.NotNull(turnActivity);
+        Assert.Equal("agent.turn", turnActivity!.OperationName);
+        Assert.Equal(2, turnActivity.GetTagItem("turn.tool_executions"));
+        Assert.Equal(2, loop.TotalToolExecutions);
+    }
+
+    [Fact]
+    public async Task RunTurnNonStreamingAsync_SecondTurn_ResetsPerTurnCountButKeepsAccumulatingTotal()
+    {
+        var activities = new List<Activity>();
+        using var listener = StartListening(activities);
+
+        const string turn1CallId = "call_count_test_turn1_987655";
+        const string turn2CallId = "call_count_test_turn2_987655";
+        var tool = new FakeTool("count_test_tool_b", ToolRiskLevel.ReadOnly, _ => ToolResult.Success("ok"));
+        var tools = new ToolRegistry();
+        tools.Register(tool);
+
+        var llm = new FakeLlmClient()
+            .Enqueue(ToolUseResponse(turn1CallId, tool.Name, new { }, inputTokens: 1, outputTokens: 1))
+            .Enqueue(TextResponse("Done 1", inputTokens: 1, outputTokens: 1))
+            .Enqueue(ToolUseResponse(turn2CallId, tool.Name, new { }, inputTokens: 1, outputTokens: 1))
+            .Enqueue(TextResponse("Done 2", inputTokens: 1, outputTokens: 1));
+
+        var loop = new AgentLoop(llm, tools, new ApprovalGate(), "system prompt");
+
+        await loop.RunTurnNonStreamingAsync("first turn");
+        await loop.RunTurnNonStreamingAsync("second turn");
+
+        var turn1Tool = Assert.Single(activities, a => turn1CallId.Equals(a.GetTagItem("tool.id")));
+        var turn2Tool = Assert.Single(activities, a => turn2CallId.Equals(a.GetTagItem("tool.id")));
+
+        // Per-turn count resets each turn...
+        Assert.Equal(1, turn1Tool.GetTagItem("tool.execution.turn_count"));
+        Assert.Equal(1, turn2Tool.GetTagItem("tool.execution.turn_count"));
+        // ...but the grand total keeps accumulating across turns.
+        Assert.Equal(1, turn1Tool.GetTagItem("tool.execution.total_count"));
+        Assert.Equal(2, turn2Tool.GetTagItem("tool.execution.total_count"));
+        Assert.Equal(2, loop.TotalToolExecutions);
+    }
 }

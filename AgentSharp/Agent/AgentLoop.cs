@@ -34,6 +34,26 @@ public class AgentLoop
     private int _totalCacheCreationTokens;
     private int _totalCacheReadTokens;
 
+    /// <summary>Turn counter for OTel turn.number tags and the RequestTrace/ToolsTrace/
+    /// HistoryTrace console prefixes. Instance state, not static -- each concurrent
+    /// sub-agent owns its own AgentLoop, so a shared static counter would let them
+    /// stomp on each other's turn numbers in telemetry.</summary>
+    private int _turnNumber;
+
+    /// <summary>Running count of tool executions within the current turn only, reset
+    /// to 0 at the start of each RunTurn*Async call. Tagged on every tool.* telemetry
+    /// span alongside <see cref="_totalToolExecutions"/> so a trace shows both "how
+    /// far into this turn" and "how far into the whole conversation."</summary>
+    private int _turnToolExecutions;
+
+    /// <summary>Grand total tool executions across every turn this AgentLoop has run
+    /// (never reset). Instance state for the same reason as <see cref="_turnNumber"/> --
+    /// each sub-agent's own AgentLoop tracks its own total independently.</summary>
+    private int _totalToolExecutions;
+
+    /// <summary>Grand total tool executions across every turn this AgentLoop has run.</summary>
+    public int TotalToolExecutions => _totalToolExecutions;
+
     public ConversationHistory History => _history;
 
     /// <summary>The system prompt this AgentLoop was built with.</summary>
@@ -103,15 +123,13 @@ public class AgentLoop
     /// as many LLM calls and tool executions as needed until the model
     /// produces a final text response (stop_reason: "end_turn").
     /// </summary>
-    static private int nTurns = 0;
-    static private int nToolsExecutions = 0;
     public async Task<string> RunTurnStreamingAsync(string userMessage, CancellationToken ct = default)
     {
-        nTurns++;
+        _turnNumber++;
+        _turnToolExecutions = 0;
         using var turnActivity = AgentTelemetry.Source.StartActivity("agent.turn");
-        turnActivity?.SetTag("turn.number", nTurns);
+        turnActivity?.SetTag("turn.number", _turnNumber);
         turnActivity?.SetTag("turn.mode", "streaming");
-        //nToolsExecutions = 0;
         _history.AddUserMessage(userMessage);
 
         var fullResponseText = new StringBuilder();
@@ -128,7 +146,7 @@ public class AgentLoop
             using var llmActivity = AgentTelemetry.Source.StartActivity("llm.request");
             llmActivity?.SetTag("llm.messages.count", request.Messages.Count);
             llmActivity?.SetTag("llm.tools.count", request.Tools?.Count ?? 0);
-            if (Program.RequestTrace) Console.WriteLine($"\n{nTurns}>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
+            if (Program.RequestTrace) Console.WriteLine($"\n{_turnNumber}>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
             if (Program.ToolsTrace)   Console.WriteLine($"\n >>request.Tools: {System.Text.Json.JsonSerializer.Serialize(request.Tools)}");
             if (Program.HistoryTrace) Console.WriteLine($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(request.Messages)}");
 
@@ -161,7 +179,6 @@ public class AgentLoop
                             break;
 
                         case ToolUseStart tus:
-                            nToolsExecutions++;
                             // Flush any accumulated text
                             if (currentText.Length > 0)
                             {
@@ -320,6 +337,7 @@ public class AgentLoop
             {
                 AnsiConsole.WriteLine();
                 turnActivity?.SetTag("turn.stop_reason", stopReason);
+                turnActivity?.SetTag("turn.tool_executions", _turnToolExecutions);
 
                 if (stopReason == "max_tokens")
                 {
@@ -362,11 +380,11 @@ public class AgentLoop
     /// </summary>
     public async Task<string> RunTurnNonStreamingAsync(string userMessage, CancellationToken ct = default)
     {
-        nTurns++;
+        _turnNumber++;
+        _turnToolExecutions = 0;
         using var turnActivity = AgentTelemetry.Source.StartActivity("agent.turn");
-        turnActivity?.SetTag("turn.number", nTurns);
+        turnActivity?.SetTag("turn.number", _turnNumber);
         turnActivity?.SetTag("turn.mode", "non-streaming");
-        nToolsExecutions = 0;
         _history.AddUserMessage(userMessage);
 
         var fullResponseText = new StringBuilder();
@@ -383,7 +401,7 @@ public class AgentLoop
             using var llmActivity = AgentTelemetry.Source.StartActivity("llm.request");
             llmActivity?.SetTag("llm.messages.count", request.Messages.Count);
             llmActivity?.SetTag("llm.tools.count", request.Tools?.Count ?? 0);
-            if (Program.RequestTrace) Console.WriteLine($"\n{nTurns}>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
+            if (Program.RequestTrace) Console.WriteLine($"\n{_turnNumber}>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
             if (Program.ToolsTrace)   Console.WriteLine($"\n >>request.Tools: {System.Text.Json.JsonSerializer.Serialize(request.Tools)}");
             if (Program.HistoryTrace) Console.WriteLine($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(request.Messages)}");
 
@@ -470,6 +488,7 @@ public class AgentLoop
             {
                 AnsiConsole.WriteLine();
                 turnActivity?.SetTag("turn.stop_reason", response.StopReason);
+                turnActivity?.SetTag("turn.tool_executions", _turnToolExecutions);
 
                 if (response.StopReason == "max_tokens")
                 {
@@ -479,8 +498,6 @@ public class AgentLoop
 
                 break;
             }
-
-            nToolsExecutions += toolUses.Count;
 
             // --- EXECUTE: Run each tool call ---
             var toolResults = await ExecuteToolCallsAsync(toolUses, ct);
@@ -636,9 +653,22 @@ public class AgentLoop
 
         foreach (var toolUse in toolUses)
         {
+            // Counted here -- the single place shared by both the streaming and
+            // non-streaming turn loops -- rather than at each call site, which
+            // previously counted inconsistently: streaming incremented as soon as
+            // the model started emitting a tool call (ToolUseStart), before it was
+            // even validated, while non-streaming added the whole batch up front.
+            // Counting every toolUse processed here (including a parse error or a
+            // denied approval below) matches that prior "tool_use blocks issued"
+            // semantic, now counted exactly once and in one place for both paths.
+            _turnToolExecutions++;
+            _totalToolExecutions++;
+
             using var toolActivity = AgentTelemetry.Source.StartActivity($"tool.{toolUse.Name}");
             toolActivity?.SetTag("tool.id", toolUse.Id);
             toolActivity?.SetTag("tool.name", toolUse.Name);
+            toolActivity?.SetTag("tool.execution.turn_count", _turnToolExecutions);
+            toolActivity?.SetTag("tool.execution.total_count", _totalToolExecutions);
 
             // If the LLM sent malformed JSON, return the parse error
             // so the model can self-correct on the next iteration
