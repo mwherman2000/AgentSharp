@@ -68,13 +68,26 @@ public class AgentLoop
     /// chapter in one tool call) need real headroom here, not a small default.</summary>
     public const int DefaultMaxTokens = 128_000;
 
+    /// <summary>Default cap on LLM&lt;-&gt;tool round-trips within a single turn, overridable
+    /// per instance via the <c>maxIterations</c> constructor parameter (wired to
+    /// <c>--max-iterations</c>/<c>AGENT_MAX_ITERATIONS</c> on the CLI). Guards against a
+    /// runaway loop, but a single iteration typically only fetches/verifies a handful of
+    /// sources -- a deep multi-phase deliverable (e.g. a 20-40-source sourced report,
+    /// each fetched and verified individually, then synthesized and rendered to a file)
+    /// can legitimately need several times the old 25-iteration default before it ever
+    /// reaches a final answer.</summary>
+    public const int DefaultMaxIterations = 100;
+
+    private readonly int _maxIterations;
+
     public AgentLoop(
         ILlmClient llm,
         ToolRegistry tools,
         ApprovalGate approval,
         string systemPrompt,
         ConversationHistory? history = null,
-        int maxTokens = DefaultMaxTokens)
+        int maxTokens = DefaultMaxTokens,
+        int maxIterations = DefaultMaxIterations)
     {
         _llm = llm;
         _tools = tools;
@@ -82,6 +95,7 @@ public class AgentLoop
         _systemPrompt = systemPrompt;
         _history = history ?? new ConversationHistory();
         _maxTokens = maxTokens;
+        _maxIterations = maxIterations;
     }
 
     /// <summary>
@@ -103,10 +117,9 @@ public class AgentLoop
         var fullResponseText = new StringBuilder();
         int iterations = 0;
         int consecutiveStreamErrors = 0;
-        const int maxIterations = 25; // Safety limit to prevent infinite loops
         const int maxStreamRetries = 3; // Max consecutive streaming failures before giving up
 
-        while (iterations++ < maxIterations)
+        while (iterations++ < _maxIterations)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -332,7 +345,7 @@ public class AgentLoop
             // Loop continues -- the LLM will see the tool results and decide next steps
         }
 
-        if (iterations >= maxIterations)
+        if (iterations >= _maxIterations)
         {
             AnsiConsole.MarkupLine("[yellow]Warning: Agent loop reached maximum iterations. Stopping.[/]");
         }
@@ -359,10 +372,9 @@ public class AgentLoop
         var fullResponseText = new StringBuilder();
         int iterations = 0;
         int consecutiveErrors = 0;
-        const int maxIterations = 25; // Safety limit to prevent infinite loops
         const int maxRetries = 3; // Max consecutive call failures before giving up
 
-        while (iterations++ < maxIterations)
+        while (iterations++ < _maxIterations)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -479,7 +491,7 @@ public class AgentLoop
             // Loop continues -- the LLM will see the tool results and decide next steps
         }
 
-        if (iterations >= maxIterations)
+        if (iterations >= _maxIterations)
         {
             AnsiConsole.MarkupLine("[yellow]Warning: Agent loop reached maximum iterations. Stopping.[/]");
         }

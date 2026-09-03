@@ -25,6 +25,13 @@ public class Configuration
     /// i.e. <see cref="AgentSharp.Agent.AgentLoop.DefaultMaxTokens"/>.</summary>
     public int? MaxTokens { get; set; }
 
+    /// <summary>Cap on LLM&lt;-&gt;tool round-trips within a single turn. Null means "use
+    /// the default", i.e. <see cref="AgentSharp.Agent.AgentLoop.DefaultMaxIterations"/>.
+    /// Raise this for deep, multi-phase tasks (e.g. a sourced report that fetches and
+    /// verifies dozens of URLs individually) that legitimately need more round-trips
+    /// than the default budgets for.</summary>
+    public int? MaxIterations { get; set; }
+
     /// <summary>Directory to treat as the project root: where relative tool paths
     /// (write_file, read_file, run_shell, ...) resolve, and what ProjectContext scans.
     /// Null means "use the process's actual current directory" -- the default, and
@@ -85,6 +92,9 @@ public class Configuration
         var envMaxTokens = Environment.GetEnvironmentVariable("AGENT_MAX_TOKENS");
         if (envMaxTokens is not null && int.TryParse(envMaxTokens, System.Globalization.CultureInfo.InvariantCulture, out var envMaxTokensValue))
             config.MaxTokens = envMaxTokensValue;
+        var envMaxIterations = Environment.GetEnvironmentVariable("AGENT_MAX_ITERATIONS");
+        if (envMaxIterations is not null && int.TryParse(envMaxIterations, System.Globalization.CultureInfo.InvariantCulture, out var envMaxIterationsValue))
+            config.MaxIterations = envMaxIterationsValue;
 
         // CLI argument overrides (must run before provider-specific key lookup
         // so that --provider is known before we pick which env var to read)
@@ -110,6 +120,10 @@ public class Configuration
                     break;
                 case "--max-tokens" when i + 1 < args.Length && int.TryParse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture, out var maxTokensValue):
                     config.MaxTokens = maxTokensValue;
+                    i++;
+                    break;
+                case "--max-iterations" when i + 1 < args.Length && int.TryParse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture, out var maxIterationsValue):
+                    config.MaxIterations = maxIterationsValue;
                     i++;
                     break;
                 case "--dir" when i + 1 < args.Length:

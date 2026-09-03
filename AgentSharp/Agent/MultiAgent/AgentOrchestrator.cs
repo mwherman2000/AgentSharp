@@ -27,6 +27,7 @@ public class AgentOrchestrator
     private readonly ApprovalGate _approval;
     private readonly string _systemPrompt;
     private readonly int _maxTokens;
+    private readonly int _maxIterations;
     private readonly ConcurrentDictionary<string, SubAgent> _agents = new();
 
     public IReadOnlyCollection<SubAgent> ActiveAgents => _agents.Values.ToList();
@@ -36,13 +37,15 @@ public class AgentOrchestrator
         ToolRegistry tools,
         ApprovalGate approval,
         string systemPrompt,
-        int maxTokens = AgentLoop.DefaultMaxTokens)
+        int maxTokens = AgentLoop.DefaultMaxTokens,
+        int maxIterations = AgentLoop.DefaultMaxIterations)
     {
         _llm = llm;
         _tools = tools;
         _approval = approval;
         _systemPrompt = systemPrompt;
         _maxTokens = maxTokens;
+        _maxIterations = maxIterations;
     }
 
     /// <summary>
@@ -51,7 +54,7 @@ public class AgentOrchestrator
     /// </summary>
     public SubAgent Spawn(string name, string task)
     {
-        var agent = new SubAgent(name, task, _llm, _tools, _approval, _systemPrompt, _maxTokens);
+        var agent = new SubAgent(name, task, _llm, _tools, _approval, _systemPrompt, _maxTokens, _maxIterations);
         _agents[agent.Id] = agent;
         return agent;
     }

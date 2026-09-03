@@ -85,8 +85,9 @@ internal class Program
             // Create orchestrator and register the sub_agent and remember tools
             // (must be done after tool discovery since both require constructor args)
             var maxTokens = config.MaxTokens ?? AgentSharp.Agent.AgentLoop.DefaultMaxTokens;
+            var maxIterations = config.MaxIterations ?? AgentSharp.Agent.AgentLoop.DefaultMaxIterations;
             var promptBuilder = new SystemPromptBuilder(new ProjectContext(), memory);
-            var orchestrator = new AgentOrchestrator(llm, tools, approval, promptBuilder.Build(), maxTokens);
+            var orchestrator = new AgentOrchestrator(llm, tools, approval, promptBuilder.Build(), maxTokens, maxIterations);
             tools.Register(new SubAgentTool(orchestrator));
             tools.Register(new MemoryTool(memory));
 
@@ -106,7 +107,7 @@ internal class Program
             {
                 // One-shot mode: run a single turn and exit
                 var oneShotPromptBuilder = new SystemPromptBuilder(project, memory);
-                var agentLoop = new AgentSharp.Agent.AgentLoop(llm, tools, approval, oneShotPromptBuilder.Build(), maxTokens: maxTokens);
+                var agentLoop = new AgentSharp.Agent.AgentLoop(llm, tools, approval, oneShotPromptBuilder.Build(), maxTokens: maxTokens, maxIterations: maxIterations);
                 __Mark("about to call RunTurnAsync");
                 if (SyncMode)
                     await agentLoop.RunTurnNonStreamingAsync(promptArg);
@@ -117,7 +118,7 @@ internal class Program
             }
 
             // --- Interactive REPL ---
-            var repl = new ReplHost(llm, tools, approval, project, sessions, memory, maxTokens);
+            var repl = new ReplHost(llm, tools, approval, project, sessions, memory, maxTokens, maxIterations);
             await repl.RunAsync();
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("API key"))

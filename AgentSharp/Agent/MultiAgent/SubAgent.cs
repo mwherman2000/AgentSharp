@@ -34,7 +34,8 @@ public class SubAgent
         ToolRegistry tools,
         ApprovalGate approval,
         string systemPrompt,
-        int maxTokens = AgentLoop.DefaultMaxTokens)
+        int maxTokens = AgentLoop.DefaultMaxTokens,
+        int maxIterations = AgentLoop.DefaultMaxIterations)
     {
         Id = Guid.NewGuid().ToString("N")[..8];
         Name = name;
@@ -63,7 +64,7 @@ public class SubAgent
                 isolatedTools.Register(tool);
         }
 
-        _loop = new AgentLoop(llm, isolatedTools, approval, subAgentPrompt, maxTokens: maxTokens);
+        _loop = new AgentLoop(llm, isolatedTools, approval, subAgentPrompt, maxTokens: maxTokens, maxIterations: maxIterations);
     }
 
     /// <summary>

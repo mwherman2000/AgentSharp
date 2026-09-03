@@ -24,6 +24,7 @@ public class ReplHost
     private readonly MemoryManager _memory;
     private AgentLoop _agent;
     private readonly int _maxTokens;
+    private readonly int _maxIterations;
     private int _turnCount;
     private readonly List<string> _inputHistory = new();
     private CancellationTokenSource? _turnCts;
@@ -35,7 +36,8 @@ public class ReplHost
         ProjectContext project,
         SessionManager sessions,
         MemoryManager memory,
-        int maxTokens = AgentLoop.DefaultMaxTokens)
+        int maxTokens = AgentLoop.DefaultMaxTokens,
+        int maxIterations = AgentLoop.DefaultMaxIterations)
     {
         _llm = llm;
         _tools = tools;
@@ -44,9 +46,10 @@ public class ReplHost
         _sessions = sessions;
         _memory = memory;
         _maxTokens = maxTokens;
+        _maxIterations = maxIterations;
 
         var promptBuilder = new SystemPromptBuilder(_project, _memory);
-        _agent = new AgentLoop(_llm, _tools, _approval, promptBuilder.Build(), maxTokens: _maxTokens);
+        _agent = new AgentLoop(_llm, _tools, _approval, promptBuilder.Build(), maxTokens: _maxTokens, maxIterations: _maxIterations);
         WireEvents(_agent);
     }
 
@@ -194,7 +197,7 @@ public class ReplHost
 
             case CommandType.Clear:
                 _agent = new AgentLoop(_llm, _tools, _approval,
-                    new SystemPromptBuilder(_project, _memory).Build(), maxTokens: _maxTokens);
+                    new SystemPromptBuilder(_project, _memory).Build(), maxTokens: _maxTokens, maxIterations: _maxIterations);
                 WireEvents(_agent);
                 _turnCount = 0;
                 AnsiConsole.Clear();
@@ -223,7 +226,7 @@ public class ReplHost
                     break;
                 }
                 _agent = new AgentLoop(_llm, _tools, _approval,
-                    new SystemPromptBuilder(_project, _memory).Build(), history, _maxTokens);
+                    new SystemPromptBuilder(_project, _memory).Build(), history, _maxTokens, _maxIterations);
                 WireEvents(_agent);
                 AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages)");
                 break;
@@ -239,6 +242,7 @@ public class ReplHost
                 AnsiConsole.MarkupLine($"[bold]Timeout (streaming):[/] {FormatTimeout(_llm.StreamingTimeout)}");
                 AnsiConsole.MarkupLine($"[bold]Timeout (non-streaming):[/] {FormatTimeout(_llm.NonStreamingTimeout)}");
                 AnsiConsole.MarkupLine($"[bold]Max tokens:[/] {_maxTokens}");
+                AnsiConsole.MarkupLine($"[bold]Max iterations:[/] {_maxIterations}");
                 var toolNames = string.Join(", ", _tools.All.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal));
                 AnsiConsole.MarkupLine($"[bold]Tools:[/] {_tools.All.Count} [dim]({Markup.Escape(toolNames)})[/]");
                 AnsiConsole.MarkupLine($"[bold]Turns:[/] {_turnCount}");
