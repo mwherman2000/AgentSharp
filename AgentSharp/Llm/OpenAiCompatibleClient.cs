@@ -90,6 +90,14 @@ public class OpenAiCompatibleClient : ILlmClient
         // see its doc comment for why a bare HttpClient sending no User-Agent at all
         // is worth fixing even for an authenticated, purpose-built API endpoint like this one.
         _http.DefaultRequestHeaders.UserAgent.ParseAdd(Tools.SafeHttpClientFactory.UserAgent);
+
+        // HttpClient defaults to HTTP/1.1; RequestVersionOrLower lets it use HTTP/2
+        // (connection multiplexing, HPACK header compression) against endpoints that
+        // support it -- OpenAI/Grok/Gemini's APIs do -- while falling back cleanly to
+        // 1.1 for anything that doesn't, same works-with-modern-servers/degrades-
+        // gracefully shape as AutomaticDecompression above.
+        _http.DefaultRequestVersion = HttpVersion.Version20;
+        _http.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
     }
 
     /// <summary>

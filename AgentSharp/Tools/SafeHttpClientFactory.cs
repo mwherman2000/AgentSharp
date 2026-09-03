@@ -37,7 +37,17 @@ internal static class SafeHttpClientFactory
     /// </summary>
     public static HttpClient Create(TimeSpan timeout)
     {
-        var client = new HttpClient(CreateHandler()) { Timeout = timeout };
+        var client = new HttpClient(CreateHandler())
+        {
+            Timeout = timeout,
+            // HttpClient defaults to HTTP/1.1; RequestVersionOrLower lets it use
+            // HTTP/2 (connection multiplexing, HPACK header compression) against
+            // sites that support it, falling back cleanly to 1.1 for anything that
+            // doesn't -- same works-with-modern-servers/degrades-gracefully shape as
+            // AutomaticDecompression on the handler above.
+            DefaultRequestVersion = HttpVersion.Version20,
+            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower
+        };
         client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
         return client;
     }
