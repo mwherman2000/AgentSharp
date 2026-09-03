@@ -13,33 +13,67 @@ namespace AgentSharp.Telemetry;
 /// other's trace output the way interleaved Console.WriteLine text does.
 ///
 /// Disabled by default. Set AGENT_ENABLE_OTEL=1 to emit spans via the console
-/// exporter. When disabled, ActivitySource.StartActivity returns null with
-/// negligible overhead, so every call site guarded by "activity?." is a no-op.
+/// exporter at startup, or switch to exporting to Jaeger at any point in a session
+/// via the /jaeger REPL command. When no provider is active, ActivitySource.
+/// StartActivity returns null with negligible overhead, so every call site guarded
+/// by "activity?." is a no-op.
 /// </summary>
 public static class AgentTelemetry
 {
     public const string SourceName = "AgentSharp";
 
+    /// <summary>Default OTLP/gRPC endpoint Jaeger (and most local collectors) listen on.</summary>
+    public const string DefaultJaegerEndpoint = "http://localhost:4317";
+
     public static readonly ActivitySource Source = new(SourceName, "0.1.0");
+
+    private static TracerProvider? _provider;
 
     /// <summary>
     /// Wires up the console exporter if AGENT_ENABLE_OTEL is set to a truthy value.
-    /// Returns null (nothing to dispose) when tracing is disabled, which is the
-    /// default -- callers should still hold the result in a `using` so tracing can
-    /// be enabled later without an API change.
+    /// Leaves tracing off (the default) otherwise. Call Shutdown() once at process
+    /// exit to flush whichever provider -- this one, or one from a later
+    /// SwitchToJaeger call -- ends up active.
     /// </summary>
-    public static TracerProvider? Initialize()
+    public static void Initialize()
     {
         var enabled = Environment.GetEnvironmentVariable("AGENT_ENABLE_OTEL");
         if (string.IsNullOrEmpty(enabled) ||
             enabled.Equals("0", StringComparison.OrdinalIgnoreCase) ||
             enabled.Equals("false", StringComparison.OrdinalIgnoreCase))
-            return null;
+            return;
 
-        return Sdk.CreateTracerProviderBuilder()
+        _provider = BuildProvider(useConsole: true, otlpEndpoint: null);
+    }
+
+    /// <summary>
+    /// Switches the active exporter to OTLP, pointed at a locally running Jaeger (or
+    /// any OTLP/gRPC-compatible collector) -- tearing down whatever provider was
+    /// previously active (console, or an earlier SwitchToJaeger call) and replacing
+    /// it. Works even if AGENT_ENABLE_OTEL was never set: this both enables tracing
+    /// and redirects it in one step, from that point in the session onward.
+    /// </summary>
+    public static void SwitchToJaeger(string endpoint = DefaultJaegerEndpoint)
+    {
+        _provider?.Dispose();
+        _provider = BuildProvider(useConsole: false, otlpEndpoint: endpoint);
+    }
+
+    /// <summary>Flushes and disposes the active provider, if any. Call once at process exit.</summary>
+    public static void Shutdown() => _provider?.Dispose();
+
+    private static TracerProvider BuildProvider(bool useConsole, string? otlpEndpoint)
+    {
+        var builder = Sdk.CreateTracerProviderBuilder()
             .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService(SourceName))
-            .AddSource(SourceName)
-            .AddConsoleExporter()
-            .Build();
+            .AddSource(SourceName);
+
+        if (useConsole)
+            builder.AddConsoleExporter();
+
+        if (otlpEndpoint is not null)
+            builder.AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint));
+
+        return builder.Build();
     }
 }

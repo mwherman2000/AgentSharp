@@ -51,10 +51,9 @@ internal class Program
             var __sw = System.Diagnostics.Stopwatch.StartNew();
             void __Mark(string label) { Console.Error.WriteLine($"[TIMING] {label}: {__sw.ElapsedMilliseconds}ms"); }
 
-            // --- Telemetry (disabled unless AGENT_ENABLE_OTEL is set) ---
-            // Held in `using` so the console exporter flushes any buffered spans
-            // when Main exits, including via an exception unwinding out of this try.
-            using var tracerProvider = AgentTelemetry.Initialize();
+            // --- Telemetry (disabled unless AGENT_ENABLE_OTEL is set; can also be
+            // switched on/redirected to Jaeger mid-session via the /jaeger command) ---
+            AgentTelemetry.Initialize();
 
             // --- Configuration ---
             var config = Configuration.Load(args);
@@ -139,6 +138,12 @@ internal class Program
             AnsiConsole.MarkupLine($"[dim]{Markup.Escape(ex.StackTrace ?? "")}[/]");
             Environment.ExitCode = 1;
         }
+        finally
+        {
+            // Flushes whichever provider ended up active (console from startup, or
+            // OTLP/Jaeger if /jaeger was used) before the process exits.
+            AgentTelemetry.Shutdown();
+        }
 
         static string? GetPromptArgument(string[] args)
         {
@@ -206,6 +211,7 @@ internal class Program
             AnsiConsole.MarkupLine("  /history    Toggle history trace");
             AnsiConsole.MarkupLine("  /tools      Toggle tools trace");
             AnsiConsole.MarkupLine("  /sync       Toggle SendAsync (non-streaming) vs StreamAsync (default)");
+            AnsiConsole.MarkupLine("  /jaeger     Switch OTel export to Jaeger (OTLP @ http://localhost:4317)");
         }
     }
 }

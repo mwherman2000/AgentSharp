@@ -65,6 +65,14 @@ Start-Process dotnet -ArgumentList 'run', '--project', 'AgentSharp' -NoNewWindow
 
 To persist it across terminal sessions: `setx AGENT_ENABLE_OTEL 1` (only affects *new* terminals; add `/M` from an elevated prompt for machine-wide).
 
+By default this exports to the console. To send traces to [Jaeger](https://www.jaegertracing.io/download/) instead (a real trace-waterfall UI at `http://localhost:16686`), run Jaeger locally, then use the `/jaeger` REPL command mid-session — it switches the exporter to OTLP (`http://localhost:4317` by default) even if `AGENT_ENABLE_OTEL` was never set:
+
+```pwsh
+/jaeger
+```
+
+Or point it at a different OTLP endpoint: `/jaeger http://localhost:4318`.
+
 ## Attaching the VS Code debugger (breakpoints)
 
 With the C# Dev Kit (or OmniSharp) extension installed:

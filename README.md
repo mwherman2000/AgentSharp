@@ -98,6 +98,7 @@ dotnet run --project AgentSharp
 | `/history` | Toggle history trace |
 | `/tools` | Toggle tools trace |
 | `/sync` | Toggle non-streaming vs streaming responses |
+| `/jaeger [endpoint]` | Switch OTel export to Jaeger (OTLP, default `http://localhost:4317`) |
 
 ## Project structure
 

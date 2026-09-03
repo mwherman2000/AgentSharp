@@ -21,6 +21,7 @@ public enum CommandType
     Request,
     Sync,
     Transcript,
+    Jaeger,
     Unknown
 }
 
@@ -53,6 +54,7 @@ public static class CommandParser
             "request" => new ParsedCommand(CommandType.Request),
             "sync" => new ParsedCommand(CommandType.Sync),
             "transcript" => new ParsedCommand(CommandType.Transcript, argument),
+            "jaeger" => new ParsedCommand(CommandType.Jaeger, argument),
             _ => new ParsedCommand(CommandType.Unknown, command)
         };
     }

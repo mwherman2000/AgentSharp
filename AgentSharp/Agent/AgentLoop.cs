@@ -99,7 +99,6 @@ public class AgentLoop
         turnActivity?.SetTag("turn.mode", "streaming");
         //nToolsExecutions = 0;
         _history.AddUserMessage(userMessage);
-        Console.WriteLine($"\n{nTurns}>>>userMessage: {userMessage}");
 
         var fullResponseText = new StringBuilder();
         int iterations = 0;
@@ -144,9 +143,8 @@ public class AgentLoop
                         case TextDelta td:
                             currentText.Append(td.Text);
                             WriteTextToConsole(td.Text);
-                            Console.WriteLine($"\n <<TextDelta: {td.Text}");
                             llmActivity?.AddEvent(new ActivityEvent("text_delta",
-                                tags: new ActivityTagsCollection { { "text.length", td.Text.Length } }));
+                                tags: new ActivityTagsCollection { { "text.length", td.Text.Length }, { "text.content", td.Text } }));
                             break;
 
                         case ToolUseStart tus:
@@ -161,14 +159,12 @@ public class AgentLoop
                             currentToolId = tus.Id;
                             currentToolName = tus.Name;
                             currentToolInput.Clear();
-                            Console.WriteLine($"\n{nToolsExecutions} <<ToolUseStart: {tus.Id} {tus.Name}");
                             llmActivity?.AddEvent(new ActivityEvent("tool_use_start",
                                 tags: new ActivityTagsCollection { { "tool.id", tus.Id }, { "tool.name", tus.Name } }));
                             break;
 
                         case ToolInputDelta tid:
                             currentToolInput.Append(tid.PartialJson);
-                            Console.WriteLine($"\n <<ToolInputDelta: {tid.PartialJson}");
                             break;
 
                         case ToolUseEnd:
@@ -180,7 +176,6 @@ public class AgentLoop
                                     inputJson = currentToolInput.Length > 0
                                         ? JsonDocument.Parse(currentToolInput.ToString()).RootElement.Clone()
                                         : JsonDocument.Parse("{}").RootElement;
-                                    Console.WriteLine($"\n{nToolsExecutions} <<ToolUseEnd.inputJson: {inputJson.ToString()}");
                                 }
                                 catch (JsonException ex)
                                 {
@@ -206,9 +201,8 @@ public class AgentLoop
                                     Name = currentToolName,
                                     Input = inputJson
                                 });
-                                Console.WriteLine($"\n{nToolsExecutions}<<<TextUseEnd: {currentToolId} {currentToolName} {inputJson.ToString()}");
                                 llmActivity?.AddEvent(new ActivityEvent("tool_use_end",
-                                    tags: new ActivityTagsCollection { { "tool.id", currentToolId }, { "tool.name", currentToolName } }));
+                                    tags: new ActivityTagsCollection { { "tool.id", currentToolId }, { "tool.name", currentToolName }, { "tool.input", inputJson.GetRawText() } }));
                             }
                             currentToolId = null;
                             currentToolName = null;
@@ -217,7 +211,6 @@ public class AgentLoop
 
                         case StreamDone sd:
                             stopReason = sd.StopReason;
-                            Console.WriteLine($"\n{nTurns}<<<StreamDone: {stopReason} nToolExecutions {nToolsExecutions}");
                             llmActivity?.SetTag("llm.stop_reason", stopReason);
                             break;
 
@@ -226,7 +219,6 @@ public class AgentLoop
                             lastOutputTokens = ui.OutputTokens;
                             lastCacheCreationTokens = ui.CacheCreationInputTokens;
                             lastCacheReadTokens = ui.CacheReadInputTokens;
-                            Console.WriteLine($"\n <<UsageInfo: input={ui.InputTokens} output={ui.OutputTokens} cacheCreate={ui.CacheCreationInputTokens} cacheRead={ui.CacheReadInputTokens}");
                             llmActivity?.SetTag("llm.usage.input_tokens", ui.InputTokens);
                             llmActivity?.SetTag("llm.usage.output_tokens", ui.OutputTokens);
                             llmActivity?.SetTag("llm.usage.cache_creation_tokens", ui.CacheCreationInputTokens);
@@ -291,7 +283,6 @@ public class AgentLoop
             _totalOutputTokens += lastOutputTokens;
             _totalCacheCreationTokens += lastCacheCreationTokens;
             _totalCacheReadTokens += lastCacheReadTokens;
-            Console.WriteLine($"\n<<<TotalUsage: input={_totalInputTokens} output={_totalOutputTokens} cacheCreate={_totalCacheCreationTokens} cacheRead={_totalCacheReadTokens}");
             turnActivity?.SetTag("turn.total_input_tokens", _totalInputTokens);
             turnActivity?.SetTag("turn.total_output_tokens", _totalOutputTokens);
             turnActivity?.SetTag("turn.total_cache_creation_tokens", _totalCacheCreationTokens);
@@ -302,7 +293,6 @@ public class AgentLoop
             {
                 contentBlocks.Add(new TextBlock { Text = currentText.ToString() });
                 AppendResponseSegment(fullResponseText, currentText.ToString());
-                Console.WriteLine($"\n<<<fullResponseText: {fullResponseText}");
             }
 
             // --- DECIDE: Append assistant message to history ---
@@ -316,7 +306,6 @@ public class AgentLoop
             if (toolUses.Count == 0)
             {
                 AnsiConsole.WriteLine();
-                Console.WriteLine($"\n{nTurns}<<<stopReason: {stopReason} Count 0 nTurns {nTurns} nToolExecutions {nToolsExecutions}");
                 turnActivity?.SetTag("turn.stop_reason", stopReason);
 
                 if (stopReason == "max_tokens")
@@ -366,7 +355,6 @@ public class AgentLoop
         turnActivity?.SetTag("turn.mode", "non-streaming");
         nToolsExecutions = 0;
         _history.AddUserMessage(userMessage);
-        Console.WriteLine($"\n{nTurns}>>>userMessage (non-streaming): {userMessage}");
 
         var fullResponseText = new StringBuilder();
         int iterations = 0;
@@ -448,7 +436,6 @@ public class AgentLoop
             _totalOutputTokens += response.OutputTokens;
             _totalCacheCreationTokens += response.CacheCreationInputTokens;
             _totalCacheReadTokens += response.CacheReadInputTokens;
-            Console.WriteLine($"\n<<<TotalUsage: input={_totalInputTokens} output={_totalOutputTokens} cacheCreate={_totalCacheCreationTokens} cacheRead={_totalCacheReadTokens}");
             turnActivity?.SetTag("turn.total_input_tokens", _totalInputTokens);
             turnActivity?.SetTag("turn.total_output_tokens", _totalOutputTokens);
             turnActivity?.SetTag("turn.total_cache_creation_tokens", _totalCacheCreationTokens);
@@ -461,7 +448,6 @@ public class AgentLoop
             {
                 WriteTextToConsole(text);
                 AppendResponseSegment(fullResponseText, text);
-                Console.WriteLine($"\n<<<fullResponseText: {fullResponseText}");
             }
 
             // --- DECIDE: Append assistant message to history ---
@@ -471,7 +457,6 @@ public class AgentLoop
             if (toolUses.Count == 0)
             {
                 AnsiConsole.WriteLine();
-                Console.WriteLine($"\n{nTurns}<<<stopReason: {response.StopReason} Count 0 nToolExecutions {nToolsExecutions} (non-streaming)");
                 turnActivity?.SetTag("turn.stop_reason", response.StopReason);
 
                 if (response.StopReason == "max_tokens")
@@ -606,7 +591,7 @@ public class AgentLoop
 
             var tool = _tools.Get(toolUse.Name);
             var inputSummary = SummarizeInput(toolUse.Name, toolUse.Input);
-            Console.WriteLine($"\n<<<toolUse: {toolUse.Id} {toolUse.Name} {toolUse.Input}\ninputSummary: {inputSummary}");
+            toolActivity?.SetTag("tool.input", toolUse.Input.GetRawText());
 
             OnToolStart?.Invoke(toolUse.Name, inputSummary);
 
@@ -633,6 +618,7 @@ public class AgentLoop
             var result = await _tools.ExecuteAsync(toolUse.Name, toolUse.Input, ct);
 
             toolActivity?.SetTag("tool.is_error", result.IsError);
+            toolActivity?.SetTag("tool.output.length", result.Output.Length);
             if (result.IsError)
                 toolActivity?.SetStatus(ActivityStatusCode.Error, result.Output);
 
@@ -642,7 +628,6 @@ public class AgentLoop
                 Content = result.Output,
                 IsError = result.IsError
             });
-            Console.WriteLine($"\n<<<toolResults: {toolUse.Id} {toolUse.Name} {result.IsError}\nresult.Output:{result.Output}");
 
             OnToolEnd?.Invoke(toolUse.Name, result);
         }

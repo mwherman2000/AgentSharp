@@ -3,6 +3,7 @@ using AgentSharp.Context;
 using AgentSharp.Llm;
 using AgentSharp.Memory;
 using AgentSharp.Safety;
+using AgentSharp.Telemetry;
 using AgentSharp.Tools;
 using Spectre.Console;
 
@@ -180,6 +181,15 @@ public class ReplHost
                 AnsiConsole.MarkupLine(Program.SyncMode
                     ? "[bold]SyncMode:[/] on (using SendAsync, non-streaming)"
                     : "[bold]SyncMode:[/] off (using StreamAsync, default)");
+                break;
+
+            case CommandType.Jaeger:
+                var jaegerEndpoint = string.IsNullOrWhiteSpace(command.Argument)
+                    ? AgentTelemetry.DefaultJaegerEndpoint
+                    : command.Argument;
+                AgentTelemetry.SwitchToJaeger(jaegerEndpoint);
+                AnsiConsole.MarkupLine($"[green]OTel export switched to Jaeger[/] (OTLP @ {Markup.Escape(jaegerEndpoint)}).");
+                AnsiConsole.MarkupLine("[dim]View traces at http://localhost:16686 (assumes Jaeger is running locally).[/]");
                 break;
 
             case CommandType.Clear:
@@ -480,6 +490,9 @@ public class ReplHost
         AnsiConsole.MarkupLine($"[dim]Provider: {_llm.ProviderName} | Model: {_llm.ModelId} | Max tokens: {_maxTokens} | Tools: {_tools.All.Count}[/]");
         if (_project.IsGitRepo)
             AnsiConsole.MarkupLine($"[dim]Git: {_project.GitBranch} | Dir: {_project.WorkingDirectory}[/]");
+        var systemPromptFirstLine = _agent.SystemPrompt.Split('\n', 2)[0].TrimEnd('\r');
+        if (systemPromptFirstLine.Length > 0)
+            AnsiConsole.MarkupLine($"[dim]{Markup.Escape(systemPromptFirstLine)}[/]");
         AnsiConsole.MarkupLine("[dim]Type /help for commands, or start chatting.[/]");
         AnsiConsole.Write(new Rule().RuleStyle("dim"));
     }
@@ -526,7 +539,8 @@ public class ReplHost
             .AddRow("/request", "Toggle request trace")
             .AddRow("/history", "Toggle history trace")
             .AddRow("/tools", "Toggle tools trace")
-            .AddRow("/sync", "Toggle SendAsync (non-streaming) vs StreamAsync (default)");
+            .AddRow("/sync", "Toggle SendAsync (non-streaming) vs StreamAsync (default)")
+            .AddRow("/jaeger [[endpoint]]", "Switch OTel export to Jaeger (OTLP, default http://localhost:4317)");
 
         AnsiConsole.Write(table);
     }
