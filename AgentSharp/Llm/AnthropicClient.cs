@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -36,7 +37,13 @@ public class AnthropicClient : ILlmClient
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(10);
 
     public AnthropicClient(string apiKey, string model = "claude-sonnet-4-20250514", TimeSpan? timeout = null)
-        : this(new HttpClient { Timeout = timeout ?? DefaultTimeout }, apiKey, model)
+        // A bare HttpClient() defaults to DecompressionMethods.None -- no Accept-Encoding
+        // is sent and every response arrives uncompressed, real bandwidth/latency cost
+        // for this specifically: large JSON request bodies (a full conversation history
+        // resent every turn, growing unboundedly -- this session saw single requests
+        // over 200K tokens) and SSE streaming responses both compress well.
+        : this(new HttpClient(new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All })
+            { Timeout = timeout ?? DefaultTimeout }, apiKey, model)
     {
     }
 
@@ -61,6 +68,10 @@ public class AnthropicClient : ILlmClient
         _http.DefaultRequestHeaders.Add("x-api-key", apiKey);
         _http.DefaultRequestHeaders.Add("anthropic-version", ApiVersion);
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        // Shares the same identifier web_fetch/crawl_web use (Tools.SafeHttpClientFactory) --
+        // see its doc comment for why a bare HttpClient sending no User-Agent at all
+        // is worth fixing even for an authenticated, purpose-built API endpoint like this one.
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd(Tools.SafeHttpClientFactory.UserAgent);
     }
 
     public async Task<LlmResponse> SendAsync(LlmRequest request, CancellationToken ct = default)

@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -49,7 +50,13 @@ public class OpenAiCompatibleClient : ILlmClient
         string baseUrl = "https://api.openai.com/v1",
         string providerName = "OpenAI",
         TimeSpan? timeout = null)
-        : this(new HttpClient { Timeout = timeout ?? DefaultTimeout }, apiKey, model, baseUrl, providerName)
+        // A bare HttpClient() defaults to DecompressionMethods.None -- no Accept-Encoding
+        // is sent and every response arrives uncompressed, real bandwidth/latency cost
+        // for this specifically: large JSON request bodies (a full conversation history
+        // resent every turn, growing unboundedly -- this session saw single requests
+        // over 200K tokens) and SSE streaming responses both compress well.
+        : this(new HttpClient(new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All })
+            { Timeout = timeout ?? DefaultTimeout }, apiKey, model, baseUrl, providerName)
     {
     }
 
@@ -79,6 +86,10 @@ public class OpenAiCompatibleClient : ILlmClient
         _http.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
 
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        // Shares the same identifier web_fetch/crawl_web use (Tools.SafeHttpClientFactory) --
+        // see its doc comment for why a bare HttpClient sending no User-Agent at all
+        // is worth fixing even for an authenticated, purpose-built API endpoint like this one.
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd(Tools.SafeHttpClientFactory.UserAgent);
     }
 
     /// <summary>
@@ -117,7 +128,10 @@ public class OpenAiCompatibleClient : ILlmClient
     /// </summary>
     public static OpenAiCompatibleClient ForOllama(string model, string baseUrl = "http://localhost:11434/v1", TimeSpan? timeout = null)
     {
-        var httpClient = new HttpClient { Timeout = timeout ?? DefaultOllamaTimeout };
+        // Less impactful over loopback than for a hosted provider, but no downside
+        // either -- kept consistent with the other constructors.
+        var httpClient = new HttpClient(new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All })
+            { Timeout = timeout ?? DefaultOllamaTimeout };
         return new OpenAiCompatibleClient(httpClient, "ollama", model, baseUrl, "Ollama");
     }
 

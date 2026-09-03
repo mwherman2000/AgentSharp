@@ -10,6 +10,20 @@ namespace AgentSharp.Tools;
 /// </summary>
 internal static class SafeHttpClientFactory
 {
+    /// <summary>Sent with every request AgentSharp makes -- both these tools' fetches
+    /// and (via a direct reference to this constant) the LLM provider clients in
+    /// AgentSharp.Llm -- since a bare HttpClient sends no User-Agent at all. For
+    /// arbitrary web pages, many real-world sites (SEC EDGAR, which explicitly
+    /// requires one per its fair-access policy, plus Wikipedia, G2, Crunchbase,
+    /// Cloudflare-fronted sites, etc.) return 403 to requests with no/empty
+    /// User-Agent rather than serving them, which otherwise reads as "page doesn't
+    /// exist" instead of "request was blocked." For the LLM provider APIs the risk of
+    /// outright blocking is much lower (authenticated, purpose-built endpoints, not
+    /// arbitrary sites behind bot-detection), but identifying the client is still
+    /// correct HTTP hygiene and useful for the provider's own rate-limiting/support
+    /// diagnostics.</summary>
+    internal const string UserAgent = "Mozilla/5.0 (compatible; AgentSharp/0.1; +https://github.com/mwherman2000/AgentSharp)";
+
     /// <summary>
     /// Creates an HttpClient whose ConnectCallback validates the actual IP
     /// address it's about to connect to (not just the pre-resolved DNS
@@ -21,13 +35,6 @@ internal static class SafeHttpClientFactory
     /// attacker's DNS could return a public IP for a first lookup and a
     /// private one for the real connection.
     /// </summary>
-    /// <summary>Sent with every request since a bare HttpClient sends no User-Agent at
-    /// all -- many real-world sites (SEC EDGAR, which explicitly requires one per its
-    /// fair-access policy, plus Wikipedia, G2, Crunchbase, Cloudflare-fronted sites,
-    /// etc.) return 403 to requests with no/empty User-Agent rather than serving them,
-    /// which otherwise reads as "page doesn't exist" instead of "request was blocked."</summary>
-    private const string UserAgent = "Mozilla/5.0 (compatible; AgentSharp/0.1; +https://github.com/mwherman2000/AgentSharp)";
-
     public static HttpClient Create(TimeSpan timeout)
     {
         var client = new HttpClient(CreateHandler()) { Timeout = timeout };
@@ -37,6 +44,13 @@ internal static class SafeHttpClientFactory
 
     private static SocketsHttpHandler CreateHandler() => new()
     {
+        // A bare SocketsHttpHandler defaults to DecompressionMethods.None -- no
+        // Accept-Encoding is sent and every fetched page arrives uncompressed, real
+        // bandwidth/latency cost for HTML pages specifically, which compress well and
+        // are already getting truncated at a fixed character budget (WebFetchTool/
+        // CrawlWebTool's max_length) -- faster transfer means more of the real page
+        // fits before that cutoff.
+        AutomaticDecompression = DecompressionMethods.All,
         ConnectCallback = async (context, ct) =>
         {
             var addresses = await Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, ct);
