@@ -77,15 +77,118 @@ public class TranscriptWriterTests
             ("Q", new List<AnswerSegment> { new(IsThought: false, Text: "A & B < C > D") }),
         };
 
-        var bytes = TranscriptWriter.BuildDocx("t", "", DateTime.Now, pairs);
+        var documentXml = BuildAndReadDocument("t", pairs);
 
+        // Well-formed parse fails outright on unescaped &/</> in text content.
+        Assert.Contains("A &amp; B &lt; C &gt; D", documentXml);
+    }
+
+    [Fact]
+    public void BuildDocx_RendersFencedCodeBlockAsShadedMonospaceParagraph()
+    {
+        var reply = "Here:\n\n```csharp\nvar x = 1;\nConsole.WriteLine(x);\n```\n";
+        var pairs = new List<(string Question, List<AnswerSegment> Segments)>
+        {
+            ("Q", new List<AnswerSegment> { new(IsThought: false, Text: reply) }),
+        };
+
+        var documentXml = BuildAndReadDocument("t", pairs);
+
+        Assert.Contains("csharp", documentXml);
+        Assert.Contains("var x = 1;", documentXml);
+        Assert.Contains("Console.WriteLine(x);", documentXml);
+        Assert.Contains("w:ascii=\"Consolas\"", documentXml);
+        Assert.Contains("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"F2F2F2\"/>", documentXml);
+        // The two code lines must be joined by a run break inside one paragraph, not
+        // split across separate <w:p> boxes.
+        Assert.Contains("var x = 1;</w:t></w:r><w:r><w:br/></w:r>", documentXml);
+    }
+
+    [Fact]
+    public void BuildDocx_RendersBoldAndItalicEmphasisAsRealFormatting()
+    {
+        var reply = "This is **bold** and this is *italic* and this is `code`.";
+        var pairs = new List<(string Question, List<AnswerSegment> Segments)>
+        {
+            ("Q", new List<AnswerSegment> { new(IsThought: false, Text: reply) }),
+        };
+
+        var documentXml = BuildAndReadDocument("t", pairs);
+
+        Assert.DoesNotContain("**bold**", documentXml);
+        Assert.DoesNotContain("*italic*", documentXml);
+        Assert.Contains("<w:r><w:rPr><w:b/></w:rPr><w:t xml:space=\"preserve\">bold</w:t></w:r>", documentXml);
+        Assert.Contains("<w:r><w:rPr><w:i/></w:rPr><w:t xml:space=\"preserve\">italic</w:t></w:r>", documentXml);
+        Assert.Contains("code", documentXml);
+        Assert.Contains("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"F2F2F2\"/>", documentXml);
+    }
+
+    [Fact]
+    public void BuildDocx_RendersBulletListItemsWithMarkers()
+    {
+        var reply = "- first item\n- second item\n";
+        var pairs = new List<(string Question, List<AnswerSegment> Segments)>
+        {
+            ("Q", new List<AnswerSegment> { new(IsThought: false, Text: reply) }),
+        };
+
+        var documentXml = BuildAndReadDocument("t", pairs);
+
+        Assert.Contains("first item", documentXml);
+        Assert.Contains("second item", documentXml);
+        Assert.Contains("w:hanging=\"360\"", documentXml);
+    }
+
+    [Fact]
+    public void BuildDocx_RendersLinksAsRealHyperlinksWithRelationship()
+    {
+        var reply = "See [the docs](https://example.com/docs) for more.";
+        var pairs = new List<(string Question, List<AnswerSegment> Segments)>
+        {
+            ("Q", new List<AnswerSegment> { new(IsThought: false, Text: reply) }),
+        };
+
+        var bytes = TranscriptWriter.BuildDocx("t", "", DateTime.Now, pairs);
+        using var stream = new MemoryStream(bytes);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+
+        var documentXml = ReadEntry(archive, "word/document.xml");
+        Assert.Contains("<w:hyperlink r:id=\"rId1\"", documentXml);
+        Assert.Contains("the docs", documentXml);
+
+        var relsXml = ReadEntry(archive, "word/_rels/document.xml.rels");
+        XDocument.Parse(relsXml);
+        Assert.Contains("Id=\"rId1\"", relsXml);
+        Assert.Contains("https://example.com/docs", relsXml);
+        Assert.Contains("TargetMode=\"External\"", relsXml);
+    }
+
+    [Fact]
+    public void BuildDocx_RendersPipeTableAsWordTable()
+    {
+        var reply = "| A | B |\n| --- | --- |\n| 1 | 2 |\n";
+        var pairs = new List<(string Question, List<AnswerSegment> Segments)>
+        {
+            ("Q", new List<AnswerSegment> { new(IsThought: false, Text: reply) }),
+        };
+
+        var documentXml = BuildAndReadDocument("t", pairs);
+
+        Assert.Contains("<w:tbl>", documentXml);
+        Assert.Contains("</w:tbl>", documentXml);
+        Assert.Contains("<w:tr>", documentXml);
+        Assert.Contains("<w:tc>", documentXml);
+    }
+
+    private static string BuildAndReadDocument(string title, List<(string Question, List<AnswerSegment> Segments)> pairs)
+    {
+        var bytes = TranscriptWriter.BuildDocx(title, "", DateTime.Now, pairs);
         using var stream = new MemoryStream(bytes);
         using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
         var documentXml = ReadEntry(archive, "word/document.xml");
-
-        // Well-formed parse fails outright on unescaped &/</> in text content.
+        // Throws if malformed -- Word will refuse to open a package with invalid XML.
         XDocument.Parse(documentXml);
-        Assert.Contains("A &amp; B &lt; C &gt; D", documentXml);
+        return documentXml;
     }
 
     private static string ReadEntry(ZipArchive archive, string name)
