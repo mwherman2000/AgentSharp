@@ -35,23 +35,31 @@ public partial class RunShellTool : ToolBase
     {
         var command = GetRequiredString(input, "command");
         var workingDir = GetOptionalString(input, "working_directory") ?? Directory.GetCurrentDirectory();
-        var timeoutMs = GetOptionalInt(input, "timeout_ms", 30_000);
+        // Clamped to a sane minimum so a bad/negative timeout_ms from the model can't
+        // reach CancellationTokenSource.CancelAfter, which throws ArgumentOutOfRangeException
+        // for any value < -1 -- previously that exception fell into the generic catch
+        // below, which returns an error but never kills the process already started
+        // on line below, orphaning it with nothing left tracking it.
+        var timeoutMs = Math.Max(GetOptionalInt(input, "timeout_ms", 30_000), 1);
 
+        Process? process = null;
         try
         {
             // Determine shell based on OS
             var (shell, shellArgs) = GetShellCommand(command);
 
-            using var process = new Process();
-            process.StartInfo = new ProcessStartInfo
+            process = new Process
             {
-                FileName = shell,
-                Arguments = shellArgs,
-                WorkingDirectory = workingDir,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = shell,
+                    Arguments = shellArgs,
+                    WorkingDirectory = workingDir,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
             };
 
             process.Start();
@@ -110,7 +118,20 @@ public partial class RunShellTool : ToolBase
         }
         catch (Exception ex)
         {
+            // Belt and suspenders alongside the timeout-path Kill() above: any other
+            // unexpected failure after Start() (e.g. a stdout/stderr read fault) must
+            // not leave the child process running with nothing left tracking it.
+            // HasExited itself throws if the process was never started, so the check
+            // and the kill both need to be inside the swallowing try.
+            if (process is not null)
+            {
+                try { if (!process.HasExited) process.Kill(true); } catch { }
+            }
             return ToolResult.Error($"Error executing command: {ex.Message}");
+        }
+        finally
+        {
+            process?.Dispose();
         }
     }
 

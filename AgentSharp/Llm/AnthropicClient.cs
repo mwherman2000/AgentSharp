@@ -79,7 +79,7 @@ public class AnthropicClient : ILlmClient
         foreach (var header in _http.DefaultRequestHeaders)
             httpRequest.Headers.TryAddWithoutValidation(header.Key, header.Value);
 
-        var response = await _http.SendAsync(httpRequest, ct);
+        using var response = await _http.SendAsync(httpRequest, ct);
         await EnsureSuccessAsync(response, ct);
 
         var json = await response.Content.ReadAsStringAsync(ct);

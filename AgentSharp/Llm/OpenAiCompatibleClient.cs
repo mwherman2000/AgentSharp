@@ -129,7 +129,7 @@ public class OpenAiCompatibleClient : ILlmClient
 
         var body = BuildRequestBody(request, stream: false);
         var content = new StringContent(body, Encoding.UTF8, "application/json");
-        var response = await _http.PostAsync(_apiUrl, content, ct);
+        using var response = await _http.PostAsync(_apiUrl, content, ct);
         await EnsureSuccessAsync(response, ct);
 
         var json = await response.Content.ReadAsStringAsync(ct);

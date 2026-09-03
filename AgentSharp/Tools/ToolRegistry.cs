@@ -1,5 +1,6 @@
 using System.Reflection;
 using AgentSharp.Llm;
+using Spectre.Console;
 
 namespace AgentSharp.Tools;
 
@@ -45,10 +46,22 @@ public class ToolRegistry
                 if (Activator.CreateInstance(type) is ITool tool)
                     Register(tool);
             }
-            catch
+            catch (MissingMethodException)
             {
-                // Skip tools that require constructor parameters --
-                // they must be registered manually.
+                // No parameterless constructor -- this tool needs arguments (e.g.
+                // SubAgentTool, MemoryTool) and must be registered manually instead.
+                // Expected, not a bug.
+            }
+            catch (Exception ex)
+            {
+                // Anything else is a genuine bug in the tool's own constructor or a
+                // static initializer it touches -- previously swallowed by a bare
+                // `catch { }`, so the tool just vanished from the tool list with zero
+                // diagnostic, leaving neither the user nor the model any way to know
+                // it was ever supposed to exist. Surface it instead of hiding it.
+                var inner = ex is TargetInvocationException { InnerException: { } ie } ? ie : ex;
+                AnsiConsole.MarkupLine(
+                    $"[dim yellow]Skipped tool '{Markup.Escape(type.Name)}': {Markup.Escape(inner.Message)}[/]");
             }
         }
     }

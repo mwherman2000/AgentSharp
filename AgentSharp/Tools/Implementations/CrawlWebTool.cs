@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
@@ -56,25 +57,40 @@ public class CrawlWebTool : ToolBase
     private static readonly HttpClient Http = SafeHttpClientFactory.Create(TimeSpan.FromSeconds(30));
     private static readonly XNamespace ContentNs = "http://purl.org/rss/1.0/modules/content/";
 
-    /// <summary>null = not yet determined, true = confirmed reachable, false =
-    /// confirmed missing (404) -- once false, callers skip straight to RSS.</summary>
-    private bool? _restApiAvailable;
+    /// <summary>Per-site probe/cache state. This tool is discovered once at startup and
+    /// reused for the rest of the process's life -- across every site the user crawls in
+    /// a session, and (since ToolRegistry entries are copied by reference into each
+    /// sub-agent's isolated registry) across every concurrent sub-agent too. Keying this
+    /// by base authority instead of holding the fields directly on the tool means
+    /// crawling site B can never see site A's REST/RSS/sitemap probe results or cached
+    /// posts -- a mixup here previously meant B could silently be served A's sitemap
+    /// URLs, presented as B's own posts, with no error.</summary>
+    private sealed class SiteState
+    {
+        /// <summary>null = not yet determined, true = confirmed reachable, false =
+        /// confirmed missing (404) -- once false, callers skip straight to RSS.</summary>
+        public bool? RestApiAvailable;
 
-    /// <summary>Same tri-state as _restApiAvailable, but for the RSS feed -- only
-    /// set false when the feed's own first page 404s, never for a later page (which
-    /// just means normal end-of-pagination).</summary>
-    private bool? _rssAvailable;
+        /// <summary>Same tri-state as RestApiAvailable, but for the RSS feed -- only
+        /// set false when the feed's own first page 404s, never for a later page (which
+        /// just means normal end-of-pagination).</summary>
+        public bool? RssAvailable;
 
-    /// <summary>Populated as RSS feed pages are listed, keyed by post URL, so
-    /// fetch_post can return a post's content instantly if list_posts already saw
-    /// it, instead of re-fetching.</summary>
-    private readonly Dictionary<string, RssItem> _rssItemCache = new();
+        /// <summary>Populated as RSS feed pages are listed, keyed by post URL, so
+        /// fetch_post can return a post's content instantly if list_posts already saw
+        /// it, instead of re-fetching.</summary>
+        public readonly ConcurrentDictionary<string, RssItem> RssItemCache = new();
 
-    /// <summary>Full flattened sitemap URL list, fetched once and sliced in memory
-    /// for each list_posts page -- sitemaps aren't paginated per-request the way
-    /// REST/RSS are. Null until first attempted; set to an empty list after a
-    /// confirmed failed attempt, so it's only ever fetched once per tool instance.</summary>
-    private List<(string Url, string? LastMod)>? _sitemapEntries;
+        /// <summary>Full flattened sitemap URL list, fetched once and sliced in memory
+        /// for each list_posts page -- sitemaps aren't paginated per-request the way
+        /// REST/RSS are. Null until first attempted; set to an empty list after a
+        /// confirmed failed attempt, so it's only ever fetched once per site.</summary>
+        public List<(string Url, string? LastMod)>? SitemapEntries;
+    }
+
+    private readonly ConcurrentDictionary<string, SiteState> _sites = new(StringComparer.OrdinalIgnoreCase);
+
+    private SiteState GetSiteState(string baseAuthority) => _sites.GetOrAdd(baseAuthority, static _ => new SiteState());
 
     public override string Name => "crawl_web";
     public override string Description =>
@@ -164,9 +180,10 @@ public class CrawlWebTool : ToolBase
         // returns a 400 (rest_post_invalid_per_page), so clamping avoids that round
         // trip. Also reused as the slice size for the sitemap fallback tier.
         var perPage = Math.Clamp(GetOptionalInt(input, "per_page", 100), 1, 100);
+        var site = GetSiteState(baseAuthority);
 
-        if (_restApiAvailable == false)
-            return await ListPostsViaSitemapOrRssAsync(baseAuthority, page, perPage, ct);
+        if (site.RestApiAvailable == false)
+            return await ListPostsViaSitemapOrRssAsync(site, baseAuthority, page, perPage, ct);
 
         var listUrl = $"{baseAuthority}/wp-json/wp/v2/posts" +
                       $"?page={page}&per_page={perPage}&_fields=id,link,title,date&orderby=date&order=asc";
@@ -187,8 +204,8 @@ public class CrawlWebTool : ToolBase
 
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            _restApiAvailable = false;
-            return await ListPostsViaSitemapOrRssAsync(baseAuthority, page, perPage, ct);
+            site.RestApiAvailable = false;
+            return await ListPostsViaSitemapOrRssAsync(site, baseAuthority, page, perPage, ct);
         }
 
         var body = await response.Content.ReadAsStringAsync(ct);
@@ -264,15 +281,15 @@ public class CrawlWebTool : ToolBase
     /// only if no sitemap could be found at all.
     /// </summary>
     private async Task<ToolResult> ListPostsViaSitemapOrRssAsync(
-        string baseAuthority, int page, int perPage, CancellationToken ct)
+        SiteState site, string baseAuthority, int page, int perPage, CancellationToken ct)
     {
-        _sitemapEntries ??= await LoadSitemapAsync(baseAuthority, ct) ?? [];
+        site.SitemapEntries ??= await LoadSitemapAsync(baseAuthority, ct) ?? [];
 
-        if (_sitemapEntries.Count > 0)
-            return ListPostsFromSitemapCache(page, perPage);
+        if (site.SitemapEntries.Count > 0)
+            return ListPostsFromSitemapCache(site.SitemapEntries, page, perPage);
 
         // No sitemap found -- fall back to the RSS feed.
-        if (_rssAvailable != false)
+        if (site.RssAvailable != false)
         {
             var (ok, isNotFound, error, items) = await FetchRssPageAsync(baseAuthority, page, ct);
 
@@ -284,7 +301,7 @@ public class CrawlWebTool : ToolBase
                 foreach (var item in items)
                 {
                     if (!string.IsNullOrEmpty(item.Link))
-                        _rssItemCache[item.Link] = item;
+                        site.RssItemCache[item.Link] = item;
                 }
 
                 var lines = new List<string>
@@ -319,18 +336,15 @@ public class CrawlWebTool : ToolBase
                 return ToolResult.Success($"Page {page}: no posts (past the last page). has_more: false");
 
             // Page 1 itself 404'd -- no RSS feed at all.
-            _rssAvailable = false;
+            site.RssAvailable = false;
         }
 
         return ToolResult.Error(
             $"No WordPress REST API, sitemap, or RSS feed could be found at {baseAuthority}. Cannot enumerate posts.");
     }
 
-    private ToolResult ListPostsFromSitemapCache(int page, int perPage)
+    private static ToolResult ListPostsFromSitemapCache(List<(string Url, string? LastMod)> entries, int page, int perPage)
     {
-        // Field, not a local -- the compiler can't carry the caller's "count > 0"
-        // narrowing across the call, so bind to a local once instead of repeating '!'.
-        var entries = _sitemapEntries!;
         var pageItems = entries.Skip((page - 1) * perPage).Take(perPage).ToList();
         var hasMore = page * perPage < entries.Count;
         var remaining = entries.Count - page * perPage;
@@ -370,18 +384,19 @@ public class CrawlWebTool : ToolBase
 
         var maxLength = GetOptionalInt(input, "max_length", 20000);
         var baseAuthority = postUri.GetLeftPart(UriPartial.Authority);
+        var site = GetSiteState(baseAuthority);
 
-        if (_restApiAvailable != false)
+        if (site.RestApiAvailable != false)
         {
             var restResult = await FetchPostViaRestAsync(postUri, baseAuthority, url, maxLength, ct);
             if (restResult is not null)
                 return restResult;
 
             // null means the REST route itself is missing (404) -- fall back to RSS.
-            _restApiAvailable = false;
+            site.RestApiAvailable = false;
         }
 
-        return await FetchPostViaRssAsync(postUri, baseAuthority, url, maxLength, ct);
+        return await FetchPostViaRssAsync(site, postUri, baseAuthority, url, maxLength, ct);
     }
 
     /// <summary>
@@ -449,16 +464,16 @@ public class CrawlWebTool : ToolBase
     }
 
     private async Task<ToolResult> FetchPostViaRssAsync(
-        Uri postUri, string baseAuthority, string url, int maxLength, CancellationToken ct)
+        SiteState site, Uri postUri, string baseAuthority, string url, int maxLength, CancellationToken ct)
     {
-        if (_rssItemCache.TryGetValue(url, out var cached))
+        if (site.RssItemCache.TryGetValue(url, out var cached))
             return await BuildFetchResultAsync(
                 cached.Title, cached.Link, FormatRssDate(cached.PubDate), cached.ContentHtml, postUri, maxLength, ct);
 
         // Not seen via a prior list_posts call yet -- search the feed for it (unless
         // it's already confirmed unavailable), bounded so a URL that doesn't belong to
         // this site (or a typo) can't loop forever.
-        if (_rssAvailable != false)
+        if (site.RssAvailable != false)
         {
             const int maxPagesToSearch = 50;
             for (var page = 1; page <= maxPagesToSearch; page++)
@@ -466,7 +481,7 @@ public class CrawlWebTool : ToolBase
                 var (ok, isNotFound, error, items) = await FetchRssPageAsync(baseAuthority, page, ct);
                 if (isNotFound)
                 {
-                    if (page == 1) _rssAvailable = false;
+                    if (page == 1) site.RssAvailable = false;
                     break; // ran off the end of the feed (or it doesn't exist) without finding it
                 }
                 if (!ok) return ToolResult.Error(error!);
@@ -474,10 +489,10 @@ public class CrawlWebTool : ToolBase
                 foreach (var item in items)
                 {
                     if (!string.IsNullOrEmpty(item.Link))
-                        _rssItemCache[item.Link] = item;
+                        site.RssItemCache[item.Link] = item;
                 }
 
-                if (_rssItemCache.TryGetValue(url, out var found))
+                if (site.RssItemCache.TryGetValue(url, out var found))
                     return await BuildFetchResultAsync(
                         found.Title, found.Link, FormatRssDate(found.PubDate), found.ContentHtml, postUri, maxLength, ct);
             }

@@ -9,6 +9,14 @@ public class MemoryManager
 {
     private readonly string _memoryPath;
 
+    // One MemoryManager instance is shared by every concurrent sub-agent (they all
+    // register the same MemoryTool wrapping the same MemoryManager), so two
+    // simultaneous `remember` calls could otherwise race on the File.Exists
+    // check-then-write below -- one agent's WriteAllTextAsync (creating the file)
+    // could clobber the file the other just created via AppendAllTextAsync, losing
+    // an entry. Serializing the whole read-check-write keeps every append intact.
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
+
     public MemoryManager(string? projectDir = null)
     {
         projectDir ??= Directory.GetCurrentDirectory();
@@ -35,14 +43,22 @@ public class MemoryManager
         var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
         var formattedEntry = $"\n## [{timestamp}]\n{entry}\n";
 
-        if (!File.Exists(_memoryPath))
+        await _writeLock.WaitAsync();
+        try
         {
-            await File.WriteAllTextAsync(_memoryPath,
-                $"# Agent Memory\n\nPersistent memory for AgentSharp sessions.\n{formattedEntry}");
+            if (!File.Exists(_memoryPath))
+            {
+                await File.WriteAllTextAsync(_memoryPath,
+                    $"# Agent Memory\n\nPersistent memory for AgentSharp sessions.\n{formattedEntry}");
+            }
+            else
+            {
+                await File.AppendAllTextAsync(_memoryPath, formattedEntry);
+            }
         }
-        else
+        finally
         {
-            await File.AppendAllTextAsync(_memoryPath, formattedEntry);
+            _writeLock.Release();
         }
     }
 
