@@ -29,8 +29,14 @@ public class AnthropicClient : ILlmClient
     public TimeSpan StreamingTimeout => _streamingTimeout;
     public TimeSpan NonStreamingTimeout => _streamingTimeout * NonStreamingTimeoutMultiplier;
 
-    public AnthropicClient(string apiKey, string model = "claude-sonnet-4-20250514")
-        : this(new HttpClient(), apiKey, model)
+    /// <summary>Default streaming timeout when the caller doesn't configure one via
+    /// --timeout/AGENT_TIMEOUT_MINUTES. HttpClient's own 100s default is tight enough
+    /// that a single large tool call (e.g. a long write_file input) can get cut off
+    /// mid-stream before the model finishes emitting it.</summary>
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(10);
+
+    public AnthropicClient(string apiKey, string model = "claude-sonnet-4-20250514", TimeSpan? timeout = null)
+        : this(new HttpClient { Timeout = timeout ?? DefaultTimeout }, apiKey, model)
     {
     }
 
@@ -43,11 +49,12 @@ public class AnthropicClient : ILlmClient
         _model = model;
         _http = httpClient;
 
-        // Capture the caller's configured timeout as the streaming budget, then disable
-        // HttpClient's own single timeout -- streaming and non-streaming calls enforce
-        // their own (different) timeouts per-request via a linked CancellationTokenSource
-        // below, since HttpClient.Timeout is one value shared by every request made
-        // through this client.
+        // Capture the caller's configured timeout (DefaultTimeout, or --timeout/
+        // AGENT_TIMEOUT_MINUTES) as the streaming budget, then disable HttpClient's own
+        // single timeout -- streaming and non-streaming calls enforce their own
+        // (different) timeouts per-request via a linked CancellationTokenSource below,
+        // since HttpClient.Timeout is one value shared by every request made through
+        // this client.
         _streamingTimeout = _http.Timeout;
         _http.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
 
@@ -118,8 +125,13 @@ public class AnthropicClient : ILlmClient
 
         string? eventType = null;
 
-        while (!reader.EndOfStream && !ct.IsCancellationRequested)
+        while (!reader.EndOfStream)
         {
+            // Throw rather than silently stopping enumeration: the caller is mid
+            // tool-call accumulation at an arbitrary point here, and a quiet "no more
+            // events" reads as a clean end_turn instead of the timeout it actually is
+            // -- dropping whatever tool call was in flight without a trace.
+            ct.ThrowIfCancellationRequested();
             var line = await reader.ReadLineAsync(ct);
             if (line is null) break;
 

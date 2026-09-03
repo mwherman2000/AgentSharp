@@ -37,12 +37,19 @@ public class OpenAiCompatibleClient : ILlmClient
     public TimeSpan StreamingTimeout => _streamingTimeout;
     public TimeSpan NonStreamingTimeout => _streamingTimeout * NonStreamingTimeoutMultiplier;
 
+    /// <summary>Default streaming timeout when the caller doesn't configure one via
+    /// --timeout/AGENT_TIMEOUT_MINUTES. HttpClient's own 100s default is tight enough
+    /// that a single large tool call (e.g. a long write_file input) can get cut off
+    /// mid-stream before the model finishes emitting it.</summary>
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(10);
+
     public OpenAiCompatibleClient(
         string apiKey,
         string model,
         string baseUrl = "https://api.openai.com/v1",
-        string providerName = "OpenAI")
-        : this(new HttpClient(), apiKey, model, baseUrl, providerName)
+        string providerName = "OpenAI",
+        TimeSpan? timeout = null)
+        : this(new HttpClient { Timeout = timeout ?? DefaultTimeout }, apiKey, model, baseUrl, providerName)
     {
     }
 
@@ -77,20 +84,20 @@ public class OpenAiCompatibleClient : ILlmClient
     /// <summary>
     /// Create a client for OpenAI.
     /// </summary>
-    public static OpenAiCompatibleClient ForOpenAi(string apiKey, string model = "gpt-4o")
-        => new(apiKey, model, "https://api.openai.com/v1", "OpenAI");
+    public static OpenAiCompatibleClient ForOpenAi(string apiKey, string model = "gpt-4o", TimeSpan? timeout = null)
+        => new(apiKey, model, "https://api.openai.com/v1", "OpenAI", timeout);
 
     /// <summary>
     /// Create a client for xAI / Grok.
     /// </summary>
-    public static OpenAiCompatibleClient ForGrok(string apiKey, string model = "grok-3")
-        => new(apiKey, model, "https://api.x.ai/v1", "Grok");
+    public static OpenAiCompatibleClient ForGrok(string apiKey, string model = "grok-3", TimeSpan? timeout = null)
+        => new(apiKey, model, "https://api.x.ai/v1", "Grok", timeout);
 
     /// <summary>
     /// Create a client for Google Gemini (OpenAI-compatible endpoint).
     /// </summary>
-    public static OpenAiCompatibleClient ForGemini(string apiKey, string model = "gemini-2.5-pro")
-        => new(apiKey, model, "https://generativelanguage.googleapis.com/v1beta/openai", "Gemini");
+    public static OpenAiCompatibleClient ForGemini(string apiKey, string model = "gemini-2.5-pro", TimeSpan? timeout = null)
+        => new(apiKey, model, "https://generativelanguage.googleapis.com/v1beta/openai", "Gemini", timeout);
 
     /// <summary>Default request timeout for a local Ollama server. Overridable via <see cref="ForOllama"/>'s
     /// <paramref name="timeout"/> parameter (wired to --timeout on the CLI) since local hardware and model
@@ -121,8 +128,6 @@ public class OpenAiCompatibleClient : ILlmClient
         ct = timeoutCts.Token;
 
         var body = BuildRequestBody(request, stream: false);
-        Console.Error.WriteLine($"[TIMING] request body length: {body.Length}");
-        Console.Error.WriteLine($"[TIMING] request body est. tokens: ~{body.Length / 4}");
         var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _http.PostAsync(_apiUrl, content, ct);
         await EnsureSuccessAsync(response, ct);
@@ -156,9 +161,6 @@ public class OpenAiCompatibleClient : ILlmClient
         ct = timeoutCts.Token;
 
         var body = BuildRequestBody(request, stream: true);
-        Console.Error.WriteLine($"[TIMING] request body length: {body.Length}");
-        Console.Error.WriteLine($"[TIMING] request body est. tokens: ~{body.Length / 4}");
-        var __sw2 = System.Diagnostics.Stopwatch.StartNew();
         var httpContent = new StringContent(body, Encoding.UTF8, "application/json");
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _apiUrl) { Content = httpContent };
@@ -166,7 +168,6 @@ public class OpenAiCompatibleClient : ILlmClient
             httpRequest.Headers.TryAddWithoutValidation(header.Key, header.Value);
 
         using var response = await _http.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
-        Console.Error.WriteLine($"[TIMING] headers received: {__sw2.ElapsedMilliseconds}ms");
         await EnsureSuccessAsync(response, ct);
 
         using var stream = await response.Content.ReadAsStreamAsync(ct);
@@ -175,8 +176,13 @@ public class OpenAiCompatibleClient : ILlmClient
         // Track tool calls being built across deltas
         var activeToolCalls = new Dictionary<int, (string id, string name, StringBuilder inputJson)>();
 
-        while (!reader.EndOfStream && !ct.IsCancellationRequested)
+        while (!reader.EndOfStream)
         {
+            // Throw rather than silently stopping enumeration: the caller is mid
+            // tool-call accumulation at an arbitrary point here, and a quiet "no more
+            // events" reads as a clean end_turn instead of the timeout it actually is
+            // -- dropping whatever tool call was in flight without a trace.
+            ct.ThrowIfCancellationRequested();
             var line = await reader.ReadLineAsync(ct);
             if (line is null || string.IsNullOrWhiteSpace(line)) continue;
             if (!line.StartsWith("data: ")) continue;

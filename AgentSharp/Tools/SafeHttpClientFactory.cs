@@ -21,7 +21,19 @@ internal static class SafeHttpClientFactory
     /// attacker's DNS could return a public IP for a first lookup and a
     /// private one for the real connection.
     /// </summary>
-    public static HttpClient Create(TimeSpan timeout) => new(CreateHandler()) { Timeout = timeout };
+    /// <summary>Sent with every request since a bare HttpClient sends no User-Agent at
+    /// all -- many real-world sites (SEC EDGAR, which explicitly requires one per its
+    /// fair-access policy, plus Wikipedia, G2, Crunchbase, Cloudflare-fronted sites,
+    /// etc.) return 403 to requests with no/empty User-Agent rather than serving them,
+    /// which otherwise reads as "page doesn't exist" instead of "request was blocked."</summary>
+    private const string UserAgent = "Mozilla/5.0 (compatible; AgentSharp/0.1; +https://github.com/mwherman2000/AgentSharp)";
+
+    public static HttpClient Create(TimeSpan timeout)
+    {
+        var client = new HttpClient(CreateHandler()) { Timeout = timeout };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
+        return client;
+    }
 
     private static SocketsHttpHandler CreateHandler() => new()
     {

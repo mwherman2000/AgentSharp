@@ -15,9 +15,10 @@ public class Configuration
     public string? ApiKey { get; set; }
     public string? BaseUrl { get; set; }
 
-    /// <summary>Request timeout in minutes, currently only applied to the Ollama client (local
-    /// inference can run far longer than a typical hosted-API timeout). Null means "use the
-    /// provider's default", i.e. <see cref="OpenAiCompatibleClient.DefaultOllamaTimeout"/>.</summary>
+    /// <summary>Request timeout in minutes, applied to whichever provider is active. Null means
+    /// "use the provider's default" -- <see cref="OpenAiCompatibleClient.DefaultOllamaTimeout"/>
+    /// for Ollama (local inference can run far longer than a typical hosted-API timeout),
+    /// or each client's own <c>DefaultTimeout</c> otherwise.</summary>
     public double? TimeoutMinutes { get; set; }
 
     /// <summary>Max output tokens per LLM request. Null means "use the default",
@@ -138,11 +139,11 @@ public class Configuration
     {
         var model = EffectiveModel;
         var providerKey = Provider.ToLowerInvariant();
+        TimeSpan? timeout = TimeoutMinutes is { } minutes ? TimeSpan.FromMinutes(minutes) : null;
 
         // Ollama runs locally and does not require an API key.
         if (providerKey == "ollama")
-            return OpenAiCompatibleClient.ForOllama(model, BaseUrl ?? "http://localhost:11434/v1",
-                TimeoutMinutes is { } minutes ? TimeSpan.FromMinutes(minutes) : null);
+            return OpenAiCompatibleClient.ForOllama(model, BaseUrl ?? "http://localhost:11434/v1", timeout);
 
         if (string.IsNullOrEmpty(ApiKey))
             throw new InvalidOperationException(
@@ -150,13 +151,13 @@ public class Configuration
 
         return providerKey switch
         {
-            "anthropic" => new AnthropicClient(ApiKey, model),
+            "anthropic" => new AnthropicClient(ApiKey, model, timeout),
             "openai" => BaseUrl is not null
-                ? new OpenAiCompatibleClient(ApiKey, model, BaseUrl, "OpenAI")
-                : OpenAiCompatibleClient.ForOpenAi(ApiKey, model),
-            "grok" or "xai" => OpenAiCompatibleClient.ForGrok(ApiKey, model),
-            "gemini" or "google" => OpenAiCompatibleClient.ForGemini(ApiKey, model),
-            _ when BaseUrl is not null => new OpenAiCompatibleClient(ApiKey, model, BaseUrl, Provider),
+                ? new OpenAiCompatibleClient(ApiKey, model, BaseUrl, "OpenAI", timeout)
+                : OpenAiCompatibleClient.ForOpenAi(ApiKey, model, timeout),
+            "grok" or "xai" => OpenAiCompatibleClient.ForGrok(ApiKey, model, timeout),
+            "gemini" or "google" => OpenAiCompatibleClient.ForGemini(ApiKey, model, timeout),
+            _ when BaseUrl is not null => new OpenAiCompatibleClient(ApiKey, model, BaseUrl, Provider, timeout),
             _ => throw new InvalidOperationException($"Unknown provider: {Provider}. Use --base-url for custom providers.")
         };
     }
