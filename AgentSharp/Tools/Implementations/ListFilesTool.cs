@@ -32,6 +32,20 @@ public class ListFilesTool : ToolBase
         var pattern = GetOptionalString(input, "pattern") ?? "*";
         var recursive = GetOptionalBool(input, "recursive", false);
 
+        // Directory.GetFiles has no concept of "**" meaning "any depth" -- it only
+        // supports */? wildcards within a single filename component, and a literal
+        // '/' in the pattern never matches a real filename. Without this, the
+        // "**/*.json" example this tool's own description/schema advertise would
+        // silently return "No files found" even when matching files exist deeper in
+        // the tree -- indistinguishable from a genuinely empty result, with nothing
+        // signaling that the pattern itself was the problem. "**/" specifically
+        // means "at any depth", so treat it as an explicit recursive request too.
+        if (pattern.StartsWith("**/", StringComparison.Ordinal))
+        {
+            pattern = pattern[3..];
+            recursive = true;
+        }
+
         path = Path.GetFullPath(path);
 
         if (!Directory.Exists(path))

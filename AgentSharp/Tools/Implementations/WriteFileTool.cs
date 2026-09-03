@@ -32,18 +32,35 @@ public class WriteFileTool : ToolBase
 
         path = Path.GetFullPath(path);
 
+        // Write to a unique temp file and rename into place -- matching
+        // SessionManager.SaveAsync's own pattern -- so a cancellation mid-write or a
+        // process crash never leaves the target path truncated/partially written.
+        // Writing directly to `path` would otherwise silently clobber whatever good
+        // content was there before with no warning that it happened.
+        var tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
         try
         {
             var dir = Path.GetDirectoryName(path);
             if (dir is not null && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
 
-            await File.WriteAllTextAsync(path, content, ct);
+            await File.WriteAllTextAsync(tempPath, content, ct);
+            File.Move(tempPath, path, overwrite: true);
             var lines = content.Split('\n').Length;
             return ToolResult.Success($"Successfully wrote {lines} lines to {path}");
         }
+        catch (OperationCanceledException)
+        {
+            // Let cancellation (e.g. Ctrl+C) propagate to ToolRegistry/AgentLoop
+            // instead of being reported as a misleading "error writing file" --
+            // the generic catch below would otherwise catch this too, since
+            // OperationCanceledException derives from Exception.
+            try { File.Delete(tempPath); } catch { }
+            throw;
+        }
         catch (Exception ex)
         {
+            try { File.Delete(tempPath); } catch { }
             return ToolResult.Error($"Error writing file: {ex.Message}");
         }
     }

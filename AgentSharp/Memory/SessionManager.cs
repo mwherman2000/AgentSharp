@@ -80,24 +80,33 @@ public class SessionManager
         if (!File.Exists(path))
             return null;
 
-        SessionData? session;
+        List<ChatMessage> chatMessages;
         try
         {
             var json = await File.ReadAllTextAsync(path);
-            session = JsonSerializer.Deserialize<SessionData>(json, JsonOptions);
+            var session = JsonSerializer.Deserialize<SessionData>(json, JsonOptions);
+            if (session is null) return null;
+
+            // DeserializeMessage is called here, inside the same try, not in a
+            // separate loop below -- it's JSON-valid-but-malformed content (e.g. a
+            // tool_use block missing "input") that this needs to catch too, not just
+            // a parse failure. GetProperty throws KeyNotFoundException for a missing
+            // field and GetString()/GetBoolean() throw InvalidOperationException for
+            // a field of the wrong JSON type, both plausible from a hand-edited or
+            // version-skewed session file.
+            chatMessages = session.Messages.Select(DeserializeMessage).ToList();
         }
-        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException
+            or KeyNotFoundException or InvalidOperationException)
         {
-            // Corrupt/partially-written/unreadable session file -- treat like
-            // "not found" rather than crashing the REPL.
+            // Corrupt/partially-written/unreadable/malformed session file -- treat
+            // like "not found" rather than surfacing a raw deserialization exception.
             return null;
         }
-        if (session is null) return null;
 
         var history = new ConversationHistory();
-        foreach (var msg in session.Messages)
+        foreach (var chatMsg in chatMessages)
         {
-            var chatMsg = DeserializeMessage(msg);
             if (chatMsg.Role == MessageRole.Assistant)
                 history.AddAssistantMessage(chatMsg);
             else if (chatMsg.Content.Any(b => b is ToolResultBlock))
