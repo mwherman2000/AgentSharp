@@ -268,22 +268,36 @@ internal static class TranscriptWriter
     {
         body.Append(
             "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/><w:tblBorders>" +
-            "<w:top w:val=\"single\" w:sz=\"4\" w:color=\"999999\"/>" +
-            "<w:left w:val=\"single\" w:sz=\"4\" w:color=\"999999\"/>" +
-            "<w:bottom w:val=\"single\" w:sz=\"4\" w:color=\"999999\"/>" +
-            "<w:right w:val=\"single\" w:sz=\"4\" w:color=\"999999\"/>" +
-            "<w:insideH w:val=\"single\" w:sz=\"4\" w:color=\"999999\"/>" +
-            "<w:insideV w:val=\"single\" w:sz=\"4\" w:color=\"999999\"/>" +
-            "</w:tblBorders></w:tblPr>");
+            "<w:top w:val=\"single\" w:sz=\"8\" w:color=\"999999\"/>" +
+            "<w:left w:val=\"single\" w:sz=\"8\" w:color=\"999999\"/>" +
+            "<w:bottom w:val=\"single\" w:sz=\"8\" w:color=\"999999\"/>" +
+            "<w:right w:val=\"single\" w:sz=\"8\" w:color=\"999999\"/>" +
+            "<w:insideH w:val=\"single\" w:sz=\"4\" w:color=\"CCCCCC\"/>" +
+            "<w:insideV w:val=\"single\" w:sz=\"4\" w:color=\"CCCCCC\"/>" +
+            "</w:tblBorders>" +
+            // Default cell padding -- without this Word packs cell text right up
+            // against the borders, which is what made the tables feel cramped.
+            "<w:tblCellMar>" +
+            "<w:top w:w=\"80\" w:type=\"dxa\"/>" +
+            "<w:left w:w=\"150\" w:type=\"dxa\"/>" +
+            "<w:bottom w:w=\"80\" w:type=\"dxa\"/>" +
+            "<w:right w:w=\"150\" w:type=\"dxa\"/>" +
+            "</w:tblCellMar>" +
+            "</w:tblPr>");
 
         foreach (var rowBlock in table)
         {
             if (rowBlock is not TableRow row) continue;
-            body.Append("<w:tr>");
+            // tblHeader repeats the header row on every page if the table spans a
+            // page break; harmless (and ignored) for a header-less or single-page table.
+            body.Append(row.IsHeader ? "<w:tr><w:trPr><w:tblHeader/></w:trPr>" : "<w:tr>");
             foreach (var cellBlock in row)
             {
                 if (cellBlock is not TableCell cell) continue;
-                body.Append("<w:tc><w:tcPr><w:tcW w:w=\"0\" w:type=\"auto\"/></w:tcPr>");
+                body.Append("<w:tc><w:tcPr><w:tcW w:w=\"0\" w:type=\"auto\"/><w:vAlign w:val=\"center\"/>");
+                if (row.IsHeader)
+                    body.Append("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"F2F2F2\"/>");
+                body.Append("</w:tcPr>");
                 var wroteParagraph = false;
                 foreach (var content in cell)
                 {

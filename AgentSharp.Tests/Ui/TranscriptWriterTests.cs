@@ -178,6 +178,13 @@ public class TranscriptWriterTests
         Assert.Contains("</w:tbl>", documentXml);
         Assert.Contains("<w:tr>", documentXml);
         Assert.Contains("<w:tc>", documentXml);
+        // Cell padding, so text doesn't sit flush against the borders.
+        Assert.Contains("<w:tblCellMar>", documentXml);
+        Assert.Contains("<w:left w:w=\"150\" w:type=\"dxa\"/>", documentXml);
+        // Header row repeats on page breaks and is shaded to stand out from data rows.
+        Assert.Contains("<w:tblHeader/>", documentXml);
+        Assert.Contains("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"F2F2F2\"/>", documentXml);
+        Assert.Contains("<w:vAlign w:val=\"center\"/>", documentXml);
     }
 
     private static string BuildAndReadDocument(string title, List<(string Question, List<AnswerSegment> Segments)> pairs)
