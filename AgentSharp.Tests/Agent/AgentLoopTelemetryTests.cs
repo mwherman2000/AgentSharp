@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
 using AgentSharp.Agent;
@@ -51,8 +52,16 @@ public class AgentLoopTelemetryTests
         OutputTokens = outputTokens
     };
 
-    private static ActivityListener StartListening(List<Activity> sink)
+    private static ActivityListener StartListening(ConcurrentBag<Activity> sink)
     {
+        // sink must be thread-safe: the listener matches by source name only, so it
+        // also captures Activities from any other test class concurrently exercising
+        // AgentLoop while this one happens to be registered (xUnit parallelizes across
+        // test classes by default, and AgentTelemetry.Source is one process-wide
+        // static). ActivityStopped previously fed a plain List<Activity>, whose Add is
+        // not thread-safe -- concurrent callbacks from another class's unrelated
+        // activities could corrupt/drop entries, intermittently failing an
+        // Assert.Single that filters down to this test's own uniquely-tagged ones.
         var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == AgentTelemetry.SourceName,
@@ -66,7 +75,7 @@ public class AgentLoopTelemetryTests
     [Fact]
     public async Task RunTurnNonStreamingAsync_EmitsTurnAndLlmRequestActivities()
     {
-        var activities = new List<Activity>();
+        var activities = new ConcurrentBag<Activity>();
         using var listener = StartListening(activities);
 
         const int inputTokens = 987651;
@@ -95,7 +104,7 @@ public class AgentLoopTelemetryTests
     [Fact]
     public async Task RunTurnNonStreamingAsync_EmitsToolActivityWithStatus()
     {
-        var activities = new List<Activity>();
+        var activities = new ConcurrentBag<Activity>();
         using var listener = StartListening(activities);
 
         const string toolCallId = "call_otel_test_987652";
@@ -123,7 +132,7 @@ public class AgentLoopTelemetryTests
     [Fact]
     public async Task RunTurnNonStreamingAsync_ToolError_SetsErrorStatus()
     {
-        var activities = new List<Activity>();
+        var activities = new ConcurrentBag<Activity>();
         using var listener = StartListening(activities);
 
         const string toolCallId = "call_otel_test_987653";
@@ -150,7 +159,7 @@ public class AgentLoopTelemetryTests
     [Fact]
     public async Task RunTurnNonStreamingAsync_MultipleToolCalls_CountsExecutionsPerTurnAndTotal()
     {
-        var activities = new List<Activity>();
+        var activities = new ConcurrentBag<Activity>();
         using var listener = StartListening(activities);
 
         const string callId1 = "call_count_test_1_987654";
@@ -202,7 +211,7 @@ public class AgentLoopTelemetryTests
     [Fact]
     public async Task RunTurnNonStreamingAsync_SecondTurn_ResetsPerTurnCountButKeepsAccumulatingTotal()
     {
-        var activities = new List<Activity>();
+        var activities = new ConcurrentBag<Activity>();
         using var listener = StartListening(activities);
 
         const string turn1CallId = "call_count_test_turn1_987655";
@@ -237,7 +246,7 @@ public class AgentLoopTelemetryTests
     [Fact]
     public async Task RunTurnStreamingAsync_MultipleToolUseBlocksInOneResponse_ProjectsExecutionCountsOnToolUseEndEvent()
     {
-        var activities = new List<Activity>();
+        var activities = new ConcurrentBag<Activity>();
         using var listener = StartListening(activities);
 
         const string callId1 = "call_stream_count_test_1_987656";
