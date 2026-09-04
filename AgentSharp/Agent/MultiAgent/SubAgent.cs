@@ -83,6 +83,18 @@ public class SubAgent
             Status = SubAgentStatus.Completed;
             return Result;
         }
+        // linkedCts fires for two different reasons that need different handling:
+        // parentCt cancelled means the *whole parent turn* was interrupted (e.g.
+        // Ctrl+C) and must propagate as a real exception so the parent agent loop
+        // aborts the turn -- SubAgentTool.ExecuteAsync's own catch already assumes
+        // this happens. _cts cancelled (via Cancel(), e.g. AgentOrchestrator.CancelAll
+        // stopping siblings after one fails) is a deliberate, scoped cancellation and
+        // should report gracefully instead, without disrupting the caller.
+        catch (OperationCanceledException) when (parentCt.IsCancellationRequested)
+        {
+            Status = SubAgentStatus.Cancelled;
+            throw;
+        }
         catch (OperationCanceledException)
         {
             Status = SubAgentStatus.Cancelled;
