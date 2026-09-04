@@ -231,8 +231,22 @@ public class AgentLoop
                                     Name = currentToolName,
                                     Input = inputJson
                                 });
+                                // ExecuteToolCallsAsync hasn't run yet for this iteration's tool
+                                // calls -- _turnToolExecutions/_totalToolExecutions still reflect
+                                // only prior iterations of this turn. Project what count this
+                                // block will get once executed: prior count plus how many
+                                // ToolUseBlocks this streamed response has produced so far
+                                // (including this one, just added above).
+                                var toolUseOrdinal = contentBlocks.Count(cb => cb is ToolUseBlock);
                                 llmActivity?.AddEvent(new ActivityEvent("tool_use_end",
-                                    tags: new ActivityTagsCollection { { "tool.id", currentToolId }, { "tool.name", currentToolName }, { "tool.input", inputJson.GetRawText() } }));
+                                    tags: new ActivityTagsCollection
+                                    {
+                                        { "tool.id", currentToolId },
+                                        { "tool.name", currentToolName },
+                                        { "tool.input", inputJson.GetRawText() },
+                                        { "tool.execution.turn_count", _turnToolExecutions + toolUseOrdinal },
+                                        { "tool.execution.total_count", _totalToolExecutions + toolUseOrdinal }
+                                    }));
                             }
                             currentToolId = null;
                             currentToolName = null;

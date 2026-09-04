@@ -233,4 +233,61 @@ public class AgentLoopTelemetryTests
         Assert.Equal(2, turn2Tool.GetTagItem("tool.execution.total_count"));
         Assert.Equal(2, loop.TotalToolExecutions);
     }
+
+    [Fact]
+    public async Task RunTurnStreamingAsync_MultipleToolUseBlocksInOneResponse_ProjectsExecutionCountsOnToolUseEndEvent()
+    {
+        var activities = new List<Activity>();
+        using var listener = StartListening(activities);
+
+        const string callId1 = "call_stream_count_test_1_987656";
+        const string callId2 = "call_stream_count_test_2_987656";
+        var tool = new FakeTool("stream_count_test_tool", ToolRiskLevel.ReadOnly, _ => ToolResult.Success("ok"));
+        var tools = new ToolRegistry();
+        tools.Register(tool);
+
+        // Both tool_use blocks arrive in the same streamed response, so neither has
+        // been executed (and _turnToolExecutions/_totalToolExecutions haven't been
+        // incremented) by the time either tool_use_end event fires -- the tags must
+        // still reflect each block's eventual ordinal position once executed.
+        var llm = new FakeStreamingLlmClient()
+            .Enqueue(
+                new ToolUseStart(callId1, tool.Name),
+                new ToolInputDelta("{}"),
+                new ToolUseEnd(),
+                new ToolUseStart(callId2, tool.Name),
+                new ToolInputDelta("{}"),
+                new ToolUseEnd(),
+                new StreamDone("tool_use"))
+            .Enqueue(
+                new TextDelta("Done"),
+                new StreamDone("end_turn"));
+
+        var loop = new AgentLoop(llm, tools, new ApprovalGate(), "system prompt");
+
+        await loop.RunTurnStreamingAsync("do two things");
+
+        var llmActivity = Assert.Single(activities, a =>
+            a.OperationName == "llm.request" && a.Events.Any(e => e.Name == "tool_use_end"));
+        var toolUseEndEvents = llmActivity.Events.Where(e => e.Name == "tool_use_end").ToList();
+        Assert.Equal(2, toolUseEndEvents.Count);
+
+        var first = toolUseEndEvents[0].Tags.ToDictionary(t => t.Key, t => t.Value);
+        var second = toolUseEndEvents[1].Tags.ToDictionary(t => t.Key, t => t.Value);
+
+        Assert.Equal(callId1, first["tool.id"]);
+        Assert.Equal(1, first["tool.execution.turn_count"]);
+        Assert.Equal(1, first["tool.execution.total_count"]);
+
+        Assert.Equal(callId2, second["tool.id"]);
+        Assert.Equal(2, second["tool.execution.turn_count"]);
+        Assert.Equal(2, second["tool.execution.total_count"]);
+
+        // The values projected during streaming must match what ExecuteToolCallsAsync
+        // actually assigns once these tool calls run.
+        var toolActivity1 = Assert.Single(activities, a => callId1.Equals(a.GetTagItem("tool.id")));
+        var toolActivity2 = Assert.Single(activities, a => callId2.Equals(a.GetTagItem("tool.id")));
+        Assert.Equal(1, toolActivity1.GetTagItem("tool.execution.turn_count"));
+        Assert.Equal(2, toolActivity2.GetTagItem("tool.execution.turn_count"));
+    }
 }
