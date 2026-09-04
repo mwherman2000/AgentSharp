@@ -98,6 +98,15 @@ public class AgentLoop
     /// reaches a final answer.</summary>
     public const int DefaultMaxIterations = 100;
 
+    /// <summary>Timeout budget for a retry attempt (the 2nd/3rd try after a failure
+    /// within the same turn iteration's retry loop), overriding the LLM client's own
+    /// much longer per-request timeout for that attempt only. The first attempt always
+    /// gets the client's full configured timeout (10 min default, or --timeout/
+    /// AGENT_TIMEOUT_MINUTES) -- this only shortens *retries*, so a persistently dead
+    /// connection is discovered in well under maxStreamRetries/maxRetries full
+    /// timeouts rather than that many multiplied together.</summary>
+    private static readonly TimeSpan RetryAttemptTimeout = TimeSpan.FromMinutes(2);
+
     private readonly int _maxIterations;
 
     public AgentLoop(
@@ -165,9 +174,22 @@ public class AgentLoop
             int lastCacheCreationTokens = 0;
             int lastCacheReadTokens = 0;
 
+            // The client's own per-request timeout (10 min default, or --timeout/
+            // AGENT_TIMEOUT_MINUTES) is sized to give a first attempt every chance to
+            // complete. A retry after a failure (including that same timeout firing on
+            // a stalled connection) doesn't need that long to reveal whether this
+            // attempt is going to work either -- capping it at RetryAttemptTimeout
+            // means a persistently dead connection fails in well under
+            // maxStreamRetries full timeouts instead of multiplying them out.
+            using var attemptCts = consecutiveStreamErrors > 0
+                ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+                : null;
+            attemptCts?.CancelAfter(RetryAttemptTimeout);
+            var attemptCt = attemptCts?.Token ?? ct;
+
             try
             {
-                await foreach (var evt in _llm.StreamAsync(request, ct))
+                await foreach (var evt in _llm.StreamAsync(request, attemptCt))
                 {
                     switch (evt)
                     {
@@ -427,10 +449,21 @@ public class AgentLoop
             if (Program.ToolsTrace)   Console.WriteLine($"\n >>request.Tools: {System.Text.Json.JsonSerializer.Serialize(request.Tools)}");
             if (Program.HistoryTrace) Console.WriteLine($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(request.Messages)}");
 
+            // See the matching comment in RunTurnStreamingAsync: only the first
+            // attempt gets the client's full configured timeout; retries after a
+            // failure (including that same timeout firing on a stalled connection)
+            // are capped much shorter so a persistently dead connection fails fast
+            // instead of multiplying the full timeout by maxRetries.
+            using var attemptCts = consecutiveErrors > 0
+                ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+                : null;
+            attemptCts?.CancelAfter(RetryAttemptTimeout);
+            var attemptCt = attemptCts?.Token ?? ct;
+
             LlmResponse response;
             try
             {
-                response = await _llm.SendAsync(request, ct);
+                response = await _llm.SendAsync(request, attemptCt);
             }
             // Both AnthropicClient.SendAsync/StreamAsync enforce their own per-request
             // timeout via a CancellationTokenSource linked to (but distinct from) this

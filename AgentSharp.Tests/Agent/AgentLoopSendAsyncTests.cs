@@ -172,6 +172,27 @@ public class AgentLoopSendAsyncTests
     }
 
     [Fact]
+    public async Task RunTurnNonStreamingAsync_RetryAttempt_GetsAShorterCancellationBudgetThanFirstAttempt()
+    {
+        // The first attempt must use the caller's own token unmodified -- it should
+        // get the LLM client's full configured timeout, not a wrapped/shortened one.
+        // Only a *retry* (after a failure) should be capped by RetryAttemptTimeout, so
+        // a persistently dead connection is discovered fast instead of waiting out the
+        // full timeout on every one of maxRetries attempts.
+        var llm = new FakeLlmClient()
+            .EnqueueThrow(new InvalidOperationException("transient hiccup"))
+            .Enqueue(TextResponse("recovered"));
+
+        var loop = new AgentLoop(llm, new ToolRegistry(), new ApprovalGate(), "system prompt");
+
+        await loop.RunTurnNonStreamingAsync("hi", CancellationToken.None);
+
+        Assert.Equal(2, llm.ReceivedTokens.Count);
+        Assert.Equal(CancellationToken.None, llm.ReceivedTokens[0]);
+        Assert.NotEqual(CancellationToken.None, llm.ReceivedTokens[1]);
+    }
+
+    [Fact]
     public async Task RunTurnNonStreamingAsync_AccumulatesUsageAcrossIterations()
     {
         var tool = new FakeTool("test_tool", ToolRiskLevel.ReadOnly, _ => ToolResult.Success("ok"));

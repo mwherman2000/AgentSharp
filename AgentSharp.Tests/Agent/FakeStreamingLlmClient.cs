@@ -20,6 +20,7 @@ internal class FakeStreamingLlmClient : ILlmClient
     public TimeSpan StreamingTimeout => TimeSpan.FromSeconds(100);
     public TimeSpan NonStreamingTimeout => TimeSpan.FromSeconds(1000);
     public int CallCount { get; private set; }
+    public List<CancellationToken> ReceivedTokens { get; } = new();
 
     public FakeStreamingLlmClient Enqueue(params StreamEvent[] events)
     {
@@ -39,6 +40,7 @@ internal class FakeStreamingLlmClient : ILlmClient
     public async IAsyncEnumerable<StreamEvent> StreamAsync(LlmRequest request, [EnumeratorCancellation] CancellationToken ct = default)
     {
         CallCount++;
+        ReceivedTokens.Add(ct);
         if (_responses.Count == 0)
             throw new InvalidOperationException("FakeStreamingLlmClient: no more scripted responses.");
 

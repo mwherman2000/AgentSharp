@@ -313,4 +313,24 @@ public class AgentLoopTelemetryTests
         Assert.Equal("Recovered", result);
         Assert.Equal(2, llm.CallCount);
     }
+
+    [Fact]
+    public async Task RunTurnStreamingAsync_RetryAttempt_GetsAShorterCancellationBudgetThanFirstAttempt()
+    {
+        // Same policy as the non-streaming path (see the equivalent SendAsync test):
+        // only a retry after a failure gets wrapped in a shorter, RetryAttemptTimeout-
+        // bounded token -- the first attempt uses the caller's token unmodified so it
+        // still gets the LLM client's full configured timeout.
+        var llm = new FakeStreamingLlmClient()
+            .EnqueueThrow(new OperationCanceledException("simulated per-request timeout"))
+            .Enqueue(new TextDelta("Recovered"), new StreamDone("end_turn"));
+
+        var loop = new AgentLoop(llm, new ToolRegistry(), new ApprovalGate(), "system prompt");
+
+        await loop.RunTurnStreamingAsync("hi", CancellationToken.None);
+
+        Assert.Equal(2, llm.ReceivedTokens.Count);
+        Assert.Equal(CancellationToken.None, llm.ReceivedTokens[0]);
+        Assert.NotEqual(CancellationToken.None, llm.ReceivedTokens[1]);
+    }
 }

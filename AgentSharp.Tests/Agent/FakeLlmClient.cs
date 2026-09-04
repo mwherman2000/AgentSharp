@@ -18,6 +18,7 @@ internal class FakeLlmClient : ILlmClient
     public TimeSpan NonStreamingTimeout => TimeSpan.FromSeconds(1000);
     public int CallCount { get; private set; }
     public List<LlmRequest> Requests { get; } = new();
+    public List<CancellationToken> ReceivedTokens { get; } = new();
 
     public FakeLlmClient Enqueue(LlmResponse response)
     {
@@ -35,6 +36,7 @@ internal class FakeLlmClient : ILlmClient
     {
         CallCount++;
         Requests.Add(request);
+        ReceivedTokens.Add(ct);
         if (_responses.Count == 0)
             throw new InvalidOperationException("FakeLlmClient: no more scripted responses.");
         return Task.FromResult(_responses.Dequeue()());
