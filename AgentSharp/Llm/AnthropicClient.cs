@@ -30,10 +30,14 @@ public class AnthropicClient : ILlmClient
     public TimeSpan StreamingTimeout => _streamingTimeout;
     public TimeSpan NonStreamingTimeout => _streamingTimeout * NonStreamingTimeoutMultiplier;
 
-    /// <summary>Default streaming timeout when the caller doesn't configure one via
-    /// --timeout/AGENT_TIMEOUT_MINUTES. HttpClient's own 100s default is tight enough
-    /// that a single large tool call (e.g. a long write_file input) can get cut off
-    /// mid-stream before the model finishes emitting it.</summary>
+    /// <summary>Default timeout when the caller doesn't configure one via
+    /// --timeout/AGENT_TIMEOUT_MINUTES. In StreamAsync this is an *idle* timeout --
+    /// the max gap between received chunks, reset on every one -- not a cap on total
+    /// call duration, so a slow-but-still-streaming response (large output, extended
+    /// thinking) is never killed just for taking a long time; only a stalled
+    /// connection with no new data for this long is. In SendAsync (non-streaming,
+    /// see NonStreamingTimeout) it's still a fixed total-duration cap, since there's
+    /// no partial progress to observe there.</summary>
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(10);
 
     public AnthropicClient(string apiKey, string model = "claude-sonnet-4-20250514", TimeSpan? timeout = null)
@@ -125,9 +129,18 @@ public class AnthropicClient : ILlmClient
         LlmRequest request,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(_streamingTimeout);
-        ct = timeoutCts.Token;
+        // Two layers, not one fixed deadline: idleCts bounds the GAP between received
+        // chunks (reset on every line below), so a connection that's still actively
+        // streaming -- however slowly (large output, extended thinking) -- is never
+        // killed just for taking a long time. absoluteCts is a fixed backstop (reusing
+        // the same overall per-call budget non-streaming gets) against a stream that
+        // never finishes even though it keeps trickling data, e.g. a runaway/looping
+        // response -- it's never reset, only idleCts is.
+        using var absoluteCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        absoluteCts.CancelAfter(NonStreamingTimeout);
+        using var idleCts = CancellationTokenSource.CreateLinkedTokenSource(absoluteCts.Token);
+        idleCts.CancelAfter(_streamingTimeout);
+        ct = idleCts.Token;
 
         var body = BuildRequestBody(request, stream: true);
         var content = new StringContent(body, Encoding.UTF8, "application/json");
@@ -138,6 +151,7 @@ public class AnthropicClient : ILlmClient
 
         using var response = await _http.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
         await EnsureSuccessAsync(response, ct);
+        idleCts.CancelAfter(_streamingTimeout); // headers arrived -- restart the idle clock for the body
 
         using var stream = await response.Content.ReadAsStreamAsync(ct);
         using var reader = new StreamReader(stream);
@@ -153,6 +167,7 @@ public class AnthropicClient : ILlmClient
             ct.ThrowIfCancellationRequested();
             var line = await reader.ReadLineAsync(ct);
             if (line is null) break;
+            idleCts.CancelAfter(_streamingTimeout); // data arrived -- push the idle deadline back out
 
             if (line.StartsWith("event: "))
             {
