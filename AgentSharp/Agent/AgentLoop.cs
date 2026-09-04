@@ -271,7 +271,15 @@ public class AgentLoop
                     }
                 }
             }
-            catch (OperationCanceledException) { throw; }
+            // Both AnthropicClient.SendAsync/StreamAsync enforce their own per-request
+            // timeout via a CancellationTokenSource linked to (but distinct from) this
+            // ct -- a stalled/hung connection throws the exact same
+            // OperationCanceledException type as a real user Ctrl+C. Only rethrow (and
+            // so abort the whole turn) when ct itself -- the turn's own token -- was
+            // what got cancelled; a request-level timeout with ct still live is a
+            // transient failure and must fall through to the retry-with-backoff catch
+            // below, same as any other failed request.
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (HttpRequestException ex) when (ex.StatusCode is
                 System.Net.HttpStatusCode.Unauthorized or
                 System.Net.HttpStatusCode.Forbidden or
@@ -424,7 +432,15 @@ public class AgentLoop
             {
                 response = await _llm.SendAsync(request, ct);
             }
-            catch (OperationCanceledException) { throw; }
+            // Both AnthropicClient.SendAsync/StreamAsync enforce their own per-request
+            // timeout via a CancellationTokenSource linked to (but distinct from) this
+            // ct -- a stalled/hung connection throws the exact same
+            // OperationCanceledException type as a real user Ctrl+C. Only rethrow (and
+            // so abort the whole turn) when ct itself -- the turn's own token -- was
+            // what got cancelled; a request-level timeout with ct still live is a
+            // transient failure and must fall through to the retry-with-backoff catch
+            // below, same as any other failed request.
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (HttpRequestException ex) when (ex.StatusCode is
                 System.Net.HttpStatusCode.Unauthorized or
                 System.Net.HttpStatusCode.Forbidden or

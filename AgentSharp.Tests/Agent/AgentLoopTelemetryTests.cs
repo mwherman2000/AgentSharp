@@ -290,4 +290,27 @@ public class AgentLoopTelemetryTests
         Assert.Equal(1, toolActivity1.GetTagItem("tool.execution.turn_count"));
         Assert.Equal(2, toolActivity2.GetTagItem("tool.execution.turn_count"));
     }
+
+    [Fact]
+    public async Task RunTurnStreamingAsync_OperationCanceledExceptionNotFromCallerToken_RetriesInsteadOfAbortingTurn()
+    {
+        // Regression test for a real production hang: AnthropicClient.StreamAsync
+        // enforces its own per-request timeout via a CancellationTokenSource linked to
+        // (but distinct from) the token passed in here -- a stalled connection (as
+        // observed: a tool_use_start with no further events for the full 10-minute
+        // timeout) throws the exact same OperationCanceledException type a real Ctrl+C
+        // does. The caller's own token (ct, defaulted to None below) is never
+        // cancelled, so this must retry like any other transient failure instead of
+        // aborting the whole turn -- which is what actually happened before the fix.
+        var llm = new FakeStreamingLlmClient()
+            .EnqueueThrow(new OperationCanceledException("simulated per-request timeout"))
+            .Enqueue(new TextDelta("Recovered"), new StreamDone("end_turn"));
+
+        var loop = new AgentLoop(llm, new ToolRegistry(), new ApprovalGate(), "system prompt");
+
+        var result = await loop.RunTurnStreamingAsync("hi", CancellationToken.None);
+
+        Assert.Equal("Recovered", result);
+        Assert.Equal(2, llm.CallCount);
+    }
 }

@@ -151,6 +151,27 @@ public class AgentLoopSendAsyncTests
     }
 
     [Fact]
+    public async Task RunTurnNonStreamingAsync_OperationCanceledExceptionNotFromCallerToken_RetriesInsteadOfAbortingTurn()
+    {
+        // AnthropicClient enforces its own per-request timeout via a CancellationTokenSource
+        // linked to (but distinct from) the token passed into SendAsync/StreamAsync -- a
+        // stalled connection throws the exact same OperationCanceledException type a real
+        // Ctrl+C does. The caller's own token (ct, passed to RunTurnNonStreamingAsync below)
+        // is never cancelled here, so this must be treated as a retryable transient failure,
+        // not an immediate turn abort -- regression test for that misclassification.
+        var llm = new FakeLlmClient()
+            .EnqueueThrow(new OperationCanceledException("simulated per-request timeout"))
+            .Enqueue(TextResponse("recovered"));
+
+        var loop = new AgentLoop(llm, new ToolRegistry(), new ApprovalGate(), "system prompt");
+
+        var result = await loop.RunTurnNonStreamingAsync("hi", CancellationToken.None);
+
+        Assert.Equal("recovered", result);
+        Assert.Equal(2, llm.CallCount);
+    }
+
+    [Fact]
     public async Task RunTurnNonStreamingAsync_AccumulatesUsageAcrossIterations()
     {
         var tool = new FakeTool("test_tool", ToolRiskLevel.ReadOnly, _ => ToolResult.Success("ok"));
