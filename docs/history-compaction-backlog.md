@@ -83,3 +83,10 @@ is explicitly **not** what we want here:
 
 Design the compaction algorithm/prompt deliberately before implementing —
 this is tracked as a backlog item, not scheduled work.
+
+2026-09-06: reconfirmed as backlog during a stuck-agent triage. That pass
+added a `repeated_tool_calls` stop in `AgentLoop` and made the file/search
+tools resilient to path / working-directory confusion, but nothing there
+bounds the *input* side of a request — a long enough session still marches
+into a context-length 400 and hard-stops. Still needs the deliberate design
+above, not a quick truncator.

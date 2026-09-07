@@ -81,6 +81,23 @@ public class GrepToolTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchesRecursively_IntoSubdirectories()
+    {
+        var nested = Path.Combine(_tempDir, "deep", "deeper");
+        Directory.CreateDirectory(nested);
+        File.WriteAllText(Path.Combine(nested, "buried.cs"), "// UNIQUE_NEEDLE here");
+
+        var input = JsonDocument.Parse($$$"""
+            {"pattern": "UNIQUE_NEEDLE", "path": "{{{_tempDir.Replace("\\", "\\\\")}}}"}
+            """).RootElement;
+
+        var result = await _tool.ExecuteAsync(input);
+
+        Assert.False(result.IsError);
+        Assert.Contains("buried.cs", result.Output);
+    }
+
+    [Fact]
     public async Task SearchesFiles_WhenTargetDirLivesUnderABinPath()
     {
         // Same regression as ListFilesTool: a search rooted inside bin/obj (where

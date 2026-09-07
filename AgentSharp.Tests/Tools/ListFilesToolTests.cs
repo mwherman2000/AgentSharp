@@ -55,6 +55,32 @@ public class ListFilesToolTests : IDisposable
     }
 
     [Fact]
+    public async Task ListsRecursively_WhenRecursiveIsTrue()
+    {
+        var input = JsonDocument.Parse($$$"""
+            {"path": "{{{_tempDir.Replace("\\", "\\\\")}}}", "recursive": true}
+            """).RootElement;
+
+        var result = await _tool.ExecuteAsync(input);
+
+        Assert.False(result.IsError);
+        Assert.Contains("nested.cs", result.Output);
+    }
+
+    [Fact]
+    public async Task DoesNotRecurse_ByDefault()
+    {
+        var input = JsonDocument.Parse($$$"""
+            {"path": "{{{_tempDir.Replace("\\", "\\\\")}}}"}
+            """).RootElement;
+
+        var result = await _tool.ExecuteAsync(input);
+
+        Assert.False(result.IsError);
+        Assert.DoesNotContain("nested.cs", result.Output);
+    }
+
+    [Fact]
     public async Task ListsFiles_WhenTargetDirLivesUnderABinPath()
     {
         // Regression: AgentSharp normally runs from its own bin/Debug/netX.0, so the

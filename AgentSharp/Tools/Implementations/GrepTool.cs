@@ -60,7 +60,19 @@ public class GrepTool : ToolBase
             int filesMatched = 0;
             const int maxResults = 200;
 
-            foreach (var file in Directory.EnumerateFiles(searchPath, filePattern, SearchOption.AllDirectories))
+            // IgnoreInaccessible (default true on this overload) so one unreadable
+            // directory in the tree doesn't throw out of the enumerator and fail
+            // the whole search -- the per-file try/catch below only covers files
+            // already yielded, not the walk itself. AttributesToSkip cleared to
+            // keep searching hidden/system files as before.
+            var enumOptions = new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                AttributesToSkip = 0
+            };
+
+            foreach (var file in Directory.EnumerateFiles(searchPath, filePattern, enumOptions))
             {
                 ct.ThrowIfCancellationRequested();
 

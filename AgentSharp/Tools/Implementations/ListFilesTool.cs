@@ -53,11 +53,23 @@ public class ListFilesTool : ToolBase
 
         try
         {
-            var searchOption = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+            // EnumerationOptions rather than the SearchOption overload: a single
+            // unreadable directory deep in a recursive walk otherwise throws
+            // UnauthorizedAccessException from Directory.GetDirectories/GetFiles and
+            // aborts the entire listing, returning only an error instead of the
+            // files that *are* readable. IgnoreInaccessible (on by default here)
+            // skips the offending entry and keeps walking. AttributesToSkip is
+            // cleared so hidden/system files still show, matching the old behavior.
+            var enumOptions = new EnumerationOptions
+            {
+                RecurseSubdirectories = recursive,
+                IgnoreInaccessible = true,
+                AttributesToSkip = 0
+            };
             var entries = new List<string>();
 
             // Directories
-            foreach (var dir in Directory.GetDirectories(path, "*", searchOption))
+            foreach (var dir in Directory.GetDirectories(path, "*", enumOptions))
             {
                 if (PathFilter.ShouldSkip(dir, path))
                     continue;
@@ -65,7 +77,7 @@ public class ListFilesTool : ToolBase
             }
 
             // Files matching pattern
-            foreach (var file in Directory.GetFiles(path, pattern, searchOption))
+            foreach (var file in Directory.GetFiles(path, pattern, enumOptions))
             {
                 if (PathFilter.ShouldSkip(file, path))
                     continue;
