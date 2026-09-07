@@ -41,3 +41,6 @@ nul
 
 # Ad-hoc debug/log output
 *.log
+
+# Generated GTM report run output (docx/pdf/build scripts)
+gtm_report/
