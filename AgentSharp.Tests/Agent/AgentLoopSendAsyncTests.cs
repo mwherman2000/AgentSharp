@@ -239,6 +239,61 @@ public class AgentLoopSendAsyncTests
     }
 
     [Fact]
+    public async Task RunTurnNonStreamingAsync_RepeatedFileWrite_InterleavedWithProbes_NudgesThenStops()
+    {
+        // Follow-up stuck-agent report: write_file "content_wwi.py" -> list_files
+        // can't see it -> "must not have persisted" -> write_file again, for dozens
+        // of turns. The batch signature never repeats (the list_files probe varies
+        // each time), so the identical-batch guard never fires -- this needs the
+        // per-file-path guard.
+        var write = new FakeTool("write_file", ToolRiskLevel.Write, _ => ToolResult.Success("Successfully wrote 5 lines"));
+        var list = new FakeTool("list_files", ToolRiskLevel.ReadOnly, _ => ToolResult.Error("No files found"));
+        var tools = new ToolRegistry();
+        tools.Register(write);
+        tools.Register(list);
+
+        var llm = new FakeLlmClient();
+        for (int i = 0; i < 30; i++)
+        {
+            llm.Enqueue(ToolUseResponse("w" + i, "write_file", new { path = "gtm_report/content_wwi.py", content = "x" }));
+            llm.Enqueue(ToolUseResponse("l" + i, "list_files", new { path = "gtm_report", probe = i }));
+        }
+
+        var loop = new AgentLoop(llm, tools, new ApprovalGate(), "system prompt", maxIterations: 100);
+
+        await loop.RunTurnNonStreamingAsync("go");
+
+        Assert.True(llm.CallCount is >= 4 and <= 16,
+            $"expected an early stop once the same file was rewritten repeatedly, got {llm.CallCount} LLM calls");
+        Assert.Contains(loop.History.Messages,
+            m => m.Role == MessageRole.User && m.GetText().Contains("Stop rewriting this file"));
+        Assert.True(write.Calls.Count < 10,
+            $"write_file should have been stopped early, ran {write.Calls.Count} times");
+    }
+
+    [Fact]
+    public async Task RunTurnNonStreamingAsync_WritesToDifferentPaths_AreNotTreatedAsRepeatedWrite()
+    {
+        var write = new FakeTool("write_file", ToolRiskLevel.Write, _ => ToolResult.Success("Successfully wrote 5 lines"));
+        var tools = new ToolRegistry();
+        tools.Register(write);
+
+        var llm = new FakeLlmClient();
+        for (int i = 0; i < 6; i++)
+            llm.Enqueue(ToolUseResponse("w" + i, "write_file", new { path = $"gtm_report/file_{i}.py", content = "x" }));
+        llm.Enqueue(TextResponse("all done"));
+
+        var loop = new AgentLoop(llm, tools, new ApprovalGate(), "system prompt", maxIterations: 100);
+
+        var result = await loop.RunTurnNonStreamingAsync("go");
+
+        Assert.Equal("all done", result);
+        Assert.Equal(7, llm.CallCount);
+        Assert.DoesNotContain(loop.History.Messages,
+            m => m.Role == MessageRole.User && m.GetText().Contains("Stop rewriting this file"));
+    }
+
+    [Fact]
     public async Task RunTurnNonStreamingAsync_AccumulatesUsageAcrossIterations()
     {
         var tool = new FakeTool("test_tool", ToolRiskLevel.ReadOnly, _ => ToolResult.Success("ok"));

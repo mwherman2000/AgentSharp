@@ -128,6 +128,20 @@ public class AgentLoop
     /// so every tool_use still gets its matching tool_result per the API contract.</summary>
     private const int MaxRepeatedToolBatches = 3;
 
+    /// <summary>How many times one file path may be handed to write_file within a
+    /// single turn before the loop intervenes. Catches the "wrote a file, a later
+    /// search/script can't see it, so it must not have persisted -- rewrite it"
+    /// spin, which <see cref="_lastToolBatchSignature"/> misses because the
+    /// interleaved list_files/grep/read_file calls keep the batch from being
+    /// byte-identical two iterations running. write_file only -- it writes whole
+    /// files idempotently, so a 3rd rewrite of one path in a turn is almost always
+    /// the spin; edit_file legitimately touches one file many times per turn and
+    /// has its own no-op / not-found guards. Per resolved absolute path, reset each
+    /// turn.</summary>
+    private const int MaxRepeatedFileWrites = 3;
+    private readonly Dictionary<string, int> _fileWriteCounts = new(StringComparer.OrdinalIgnoreCase);
+    private bool _fileWriteNudged;
+
     public AgentLoop(
         ILlmClient llm,
         ToolRegistry tools,
@@ -629,6 +643,8 @@ public class AgentLoop
         _lastToolBatchSignature = null;
         _repeatedToolBatchCount = 0;
         _stallNudged = false;
+        _fileWriteCounts.Clear();
+        _fileWriteNudged = false;
     }
 
     /// <summary>
@@ -655,6 +671,13 @@ public class AgentLoop
     /// </summary>
     private bool ShouldBreakForRepeatedToolCalls(IReadOnlyList<ToolUseBlock> toolUses, Activity? turnActivity)
     {
+        // Checked first and independently of the batch signature: the file-rewrite
+        // spin is usually interleaved with varying list_files/grep/read_file calls,
+        // so no two consecutive batches are identical and the signature guard below
+        // never trips.
+        if (ShouldBreakForRepeatedFileWrites(toolUses, turnActivity))
+            return true;
+
         var signature = ToolBatchSignature(toolUses);
         if (signature != _lastToolBatchSignature)
         {
@@ -686,6 +709,79 @@ public class AgentLoop
         turnActivity?.SetTag("turn.stop_reason", "repeated_tool_calls");
         AnsiConsole.MarkupLine(
             "[yellow]Stopping the turn: the model kept repeating the same tool call and the earlier nudge didn't help.[/]");
+        return true;
+    }
+
+    /// <summary>
+    /// Detects the model calling write_file for the same path over and over within
+    /// one turn -- the "write_file X -> a later search or cd'd script can't see X ->
+    /// it must not have persisted -> write_file X again" spin. Unlike
+    /// <see cref="ShouldBreakForRepeatedToolCalls"/> this does not require the batches
+    /// to be identical: the rewrites are typically separated by varying list_files /
+    /// grep / read_file probes. Counts per resolved absolute path; the first path to
+    /// hit <see cref="MaxRepeatedFileWrites"/> gets one corrective nudge carrying the
+    /// file's real on-disk state and the working directory, and a second offence
+    /// (this turn, any path) ends the turn. Called after the batch has executed, so
+    /// the caller only needs to honor the return value.
+    /// </summary>
+    private bool ShouldBreakForRepeatedFileWrites(IReadOnlyList<ToolUseBlock> toolUses, Activity? turnActivity)
+    {
+        string? tripped = null;
+        foreach (var t in toolUses)
+        {
+            if (t.Name != "write_file")
+                continue;
+            if (t.Input.ValueKind != JsonValueKind.Object ||
+                !t.Input.TryGetProperty("path", out var pathProp) ||
+                pathProp.ValueKind != JsonValueKind.String)
+                continue;
+
+            string abs;
+            try { abs = Path.GetFullPath(pathProp.GetString()!); }
+            catch { continue; }
+
+            var n = (_fileWriteCounts.TryGetValue(abs, out var c) ? c : 0) + 1;
+            _fileWriteCounts[abs] = n;
+            if (n >= MaxRepeatedFileWrites)
+                tripped = abs;
+        }
+
+        if (tripped is null)
+            return false;
+
+        var count = _fileWriteCounts[tripped];
+
+        if (!_fileWriteNudged)
+        {
+            _fileWriteNudged = true;
+            _fileWriteCounts[tripped] = 0;
+
+            string diskState;
+            try
+            {
+                diskState = File.Exists(tripped)
+                    ? $"It is on disk right now ({new FileInfo(tripped).Length} bytes), so the write is working."
+                    : "It is not on disk -- if the write itself were failing the tool result would have said so, not \"Successfully wrote\"; re-read that result.";
+            }
+            catch
+            {
+                diskState = "Its on-disk state could not be checked.";
+            }
+
+            AnsiConsole.MarkupLine(
+                $"[yellow]The model has written the same file {count} times this turn -- nudging it to stop and verify.[/]");
+            _history.AddUserMessage(
+                $"You have called write_file for \"{tripped}\" {count} times this turn. {diskState} " +
+                $"The file tools resolve a relative path against the working directory {Directory.GetCurrentDirectory()}; " +
+                "a `cd` inside a run_shell command does not move them, so a cd'd script can look somewhere other than " +
+                "where the file actually is. Stop rewriting this file. Confirm it with read_file or list_files on the " +
+                "absolute path above; if a script cannot see it, fix the path the script uses.");
+            return false;
+        }
+
+        turnActivity?.SetTag("turn.stop_reason", "repeated_file_write");
+        AnsiConsole.MarkupLine(
+            "[yellow]Stopping the turn: the model kept rewriting the same file after being told it had already persisted.[/]");
         return true;
     }
 
