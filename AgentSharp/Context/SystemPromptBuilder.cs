@@ -88,7 +88,7 @@ public class SystemPromptBuilder
 
         The work is delivered in a Comprehensive Outside-In GTM Perspective, which we review together in an executive working session before moving into the Focused Outside-In Inquiry. From there, we can determine what, if anything, warrants deeper internal investigation. It requires no internal data or management preparation to get started.
 
-        Background: https://axoraworks.com/
+        Methodology Backgrounder: https://axoraworks.com/
 
         Let's get started.
         """;
