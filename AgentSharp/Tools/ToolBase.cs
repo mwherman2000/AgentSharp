@@ -101,4 +101,68 @@ public abstract class ToolBase : ITool
                $"{Directory.GetCurrentDirectory()}; a shell command that cd's into a " +
                "subdirectory resolves the same relative path to a different location)";
     }
+
+    /// <summary>
+    /// The trailing note for a file-tool "file not found" result on a *relative*
+    /// path. Counterpart to <see cref="RelativePathNote"/>, but for a miss, and
+    /// with the opposite job: keep the model from concluding it looked in the
+    /// wrong place and retrying with `cd`/path-prefix guesswork when the file is
+    /// simply absent. The unconditional RelativePathNote text is actively
+    /// misleading on a miss whose parent directory *does* resolve -- e.g. a
+    /// read_file("dir/missing.md") right after a successful read_file("dir/x")
+    /// against the same base.
+    ///
+    /// - Absolute path: nothing to add (the caller chose the exact location).
+    /// - Relative path whose resolved parent directory exists: the working
+    ///   directory resolved fine, so this is a plain missing file. Say that, and
+    ///   list what the directory actually holds so the model fixes the name, not
+    ///   the base.
+    /// - Relative path whose parent is missing too: now the relative base really
+    ///   did not land where expected, so fall back to the cwd-vs-cd'd-shell
+    ///   resolution note (same text as <see cref="RelativePathNote"/>).
+    /// </summary>
+    protected static string FileNotFoundNote(string requestedPath, string resolvedPath)
+    {
+        if (Path.IsPathRooted(requestedPath))
+            return string.Empty;
+
+        var cwd = Directory.GetCurrentDirectory();
+        var parent = Path.GetDirectoryName(resolvedPath);
+
+        if (parent is not null && Directory.Exists(parent))
+            return $"\n(\"{requestedPath}\" resolved to \"{resolvedPath}\" -- relative " +
+                   $"paths resolve against {cwd}. That directory exists but has no such " +
+                   "entry, so the working directory is fine and this is a missing file. " +
+                   $"It contains: {ListDirectoryBrief(parent, limit: 30)})";
+
+        return $"\n(\"{requestedPath}\" was resolved against the working directory " +
+               $"{cwd}; a shell command that cd's into a subdirectory resolves the " +
+               "same relative path to a different location)";
+    }
+
+    /// <summary>
+    /// Comma-joined names of the entries directly in <paramref name="dir"/>,
+    /// directories first with a trailing "/", capped at <paramref name="limit"/>
+    /// with a trailing ", ..." when there are more. "(empty)" for an empty
+    /// directory, "(unreadable)" if enumeration throws.
+    /// </summary>
+    private static string ListDirectoryBrief(string dir, int limit)
+    {
+        try
+        {
+            var names = Directory.EnumerateDirectories(dir).Select(d => Path.GetFileName(d) + "/")
+                .Concat(Directory.EnumerateFiles(dir).Select(Path.GetFileName))
+                .Take(limit + 1)
+                .ToList();
+            if (names.Count == 0)
+                return "(empty)";
+            if (names.Count > limit)
+                return string.Join(", ", names.Take(limit)) + ", ...";
+            return string.Join(", ", names);
+        }
+        catch
+        {
+            return "(unreadable)";
+        }
+    }
 }

@@ -37,7 +37,7 @@ public class EditFileTool : ToolBase
         var path = Path.GetFullPath(requestedPath);
 
         if (!File.Exists(path))
-            return ToolResult.Error($"File not found: {path}" + RelativePathNote(requestedPath));
+            return ToolResult.Error($"File not found: {path}" + FileNotFoundNote(requestedPath, path));
 
         // An empty old_string makes CountOccurrences loop forever: IndexOf("", index)
         // always returns index unchanged, so the scan position never advances. Reject

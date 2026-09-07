@@ -47,6 +47,56 @@ public class ReadFileToolTests : IDisposable
     }
 
     [Fact]
+    public async Task NotFound_OnRelativePathWhoseParentExists_ListsContents_AndOmitsCdWarning()
+    {
+        // A relative miss whose directory *does* resolve is a wrong filename, not a
+        // wrong working directory -- the "a shell command that cd's..." note would
+        // just send the model chasing path prefixes it doesn't need to.
+        var subName = "agentsharp_fnf_" + Guid.NewGuid().ToString("N")[..8];
+        var subDir = Path.Combine(Directory.GetCurrentDirectory(), subName);
+        Directory.CreateDirectory(subDir);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(subDir, "sibling.txt"), "x");
+
+            var input = JsonDocument.Parse($$"""{"path": "{{subName}}/missing.md"}""").RootElement;
+            var result = await _tool.ExecuteAsync(input);
+
+            Assert.True(result.IsError);
+            Assert.Contains("File not found", result.Output);
+            Assert.DoesNotContain("cd's into a subdirectory", result.Output);
+            Assert.Contains("sibling.txt", result.Output);
+            Assert.Contains("missing file", result.Output);
+        }
+        finally
+        {
+            Directory.Delete(subDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task NotFound_OnRelativePathWhoseParentIsAlsoMissing_KeepsCdWarning()
+    {
+        var missing = "agentsharp_nope_" + Guid.NewGuid().ToString("N")[..8] + "/missing.md";
+        var input = JsonDocument.Parse($$"""{"path": "{{missing}}"}""").RootElement;
+        var result = await _tool.ExecuteAsync(input);
+
+        Assert.True(result.IsError);
+        Assert.Contains("cd's into a subdirectory", result.Output);
+    }
+
+    [Fact]
+    public async Task NotFound_OnAbsolutePath_AddsNoResolutionNote()
+    {
+        var input = JsonDocument.Parse($$"""{"path": "{{Path.Combine(_tempDir, "missing.txt").Replace("\\", "\\\\")}}"}""").RootElement;
+        var result = await _tool.ExecuteAsync(input);
+
+        Assert.True(result.IsError);
+        Assert.DoesNotContain("cd's into a subdirectory", result.Output);
+        Assert.DoesNotContain("resolved to", result.Output);
+    }
+
+    [Fact]
     public async Task RespectsOffset_AndLimit()
     {
         var filePath = Path.Combine(_tempDir, "big.txt");

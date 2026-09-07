@@ -35,7 +35,7 @@ public class ReadFileTool : ToolBase
         var path = Path.GetFullPath(requestedPath);
 
         if (!File.Exists(path))
-            return Task.FromResult(ToolResult.Error($"File not found: {path}" + RelativePathNote(requestedPath)));
+            return Task.FromResult(ToolResult.Error($"File not found: {path}" + FileNotFoundNote(requestedPath, path)));
 
         try
         {
