@@ -28,14 +28,14 @@ public class ReadFileTool : ToolBase
 
     public override Task<ToolResult> ExecuteAsync(JsonElement input, CancellationToken ct = default)
     {
-        var path = GetRequiredString(input, "path");
+        var requestedPath = GetRequiredString(input, "path");
         var offset = GetOptionalInt(input, "offset", 0);
         var limit = GetOptionalInt(input, "limit", 2000);
 
-        path = Path.GetFullPath(path);
+        var path = Path.GetFullPath(requestedPath);
 
         if (!File.Exists(path))
-            return Task.FromResult(ToolResult.Error($"File not found: {path}"));
+            return Task.FromResult(ToolResult.Error($"File not found: {path}" + RelativePathNote(requestedPath)));
 
         try
         {

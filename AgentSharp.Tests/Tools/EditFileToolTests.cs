@@ -82,6 +82,25 @@ public class EditFileToolTests : IDisposable
     }
 
     [Fact]
+    public async Task ReturnsError_WhenOldAndNewStringAreIdentical()
+    {
+        var filePath = Path.Combine(_tempDir, "noop.cs");
+        await File.WriteAllTextAsync(filePath, "keep me");
+
+        var input = JsonDocument.Parse($$$"""
+            {
+                "path": "{{{filePath.Replace("\\", "\\\\")}}}",
+                "old_string": "keep me",
+                "new_string": "keep me"
+            }
+            """).RootElement;
+
+        var result = await _tool.ExecuteAsync(input);
+        Assert.True(result.IsError);
+        Assert.Contains("identical", result.Output);
+    }
+
+    [Fact]
     public async Task ReturnsError_WhenFileNotFound()
     {
         var input = JsonDocument.Parse("""

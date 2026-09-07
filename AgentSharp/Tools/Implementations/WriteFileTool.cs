@@ -27,10 +27,10 @@ public class WriteFileTool : ToolBase
 
     public override async Task<ToolResult> ExecuteAsync(JsonElement input, CancellationToken ct = default)
     {
-        var path = GetRequiredString(input, "path");
+        var requestedPath = GetRequiredString(input, "path");
         var content = GetRequiredString(input, "content");
 
-        path = Path.GetFullPath(path);
+        var path = Path.GetFullPath(requestedPath);
 
         // Write to a unique temp file and rename into place -- matching
         // SessionManager.SaveAsync's own pattern -- so a cancellation mid-write or a
@@ -47,7 +47,8 @@ public class WriteFileTool : ToolBase
             await File.WriteAllTextAsync(tempPath, content, ct);
             File.Move(tempPath, path, overwrite: true);
             var lines = content.Split('\n').Length;
-            return ToolResult.Success($"Successfully wrote {lines} lines to {path}");
+            return ToolResult.Success(
+                $"Successfully wrote {lines} lines to {path}" + RelativePathNote(requestedPath));
         }
         catch (OperationCanceledException)
         {

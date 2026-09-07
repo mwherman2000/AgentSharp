@@ -86,6 +86,22 @@ public class ApprovalGate
 
     private async Task<bool> PromptForApproval(ITool tool, string inputSummary, string? dangerReason, CancellationToken ct)
     {
+        // No interactive console to answer with a/d/s (one-shot or autonomous run,
+        // or stdin redirected): the KeyAvailable poll below would otherwise either
+        // throw InvalidOperationException or spin forever on a keypress that can
+        // never arrive -- and run_shell is always Destructive, so every un-babysat
+        // run that needs a shell would hang here with no iteration cap to save it.
+        // Deny cleanly instead: a denied result feeds back to the model as an
+        // ordinary tool error it can adapt to, and the user can re-run
+        // interactively or grant "always allow" up front.
+        if (Console.IsInputRedirected)
+        {
+            AnsiConsole.MarkupLine(
+                $"[yellow]Auto-denied[/] [bold]{Markup.Escape(tool.Name)}[/] " +
+                $"[dim]-- {Markup.Escape(tool.RiskLevel.ToString())} tool needs approval but no interactive console is attached.[/]");
+            return false;
+        }
+
         await _promptLock.WaitAsync();
         try
         {
@@ -114,7 +130,21 @@ public class ApprovalGate
             ConsoleKey key;
             while (true)
             {
-                if (Console.KeyAvailable)
+                bool keyAvailable;
+                try
+                {
+                    keyAvailable = Console.KeyAvailable;
+                }
+                catch (InvalidOperationException)
+                {
+                    // The console became unreadable after the IsInputRedirected
+                    // check above (e.g. stdin closed mid-run). Treat it the same
+                    // way -- deny rather than throw out of the approval gate.
+                    AnsiConsole.MarkupLine("[yellow]  Denied -- console input is no longer available.[/]");
+                    return false;
+                }
+
+                if (keyAvailable)
                 {
                     key = Console.ReadKey(intercept: true).Key;
                     if (key == ConsoleKey.A || key == ConsoleKey.D || key == ConsoleKey.S)

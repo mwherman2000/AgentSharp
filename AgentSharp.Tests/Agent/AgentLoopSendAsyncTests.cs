@@ -193,6 +193,52 @@ public class AgentLoopSendAsyncTests
     }
 
     [Fact]
+    public async Task RunTurnNonStreamingAsync_RepeatedIdenticalToolCall_NudgesThenStopsWellBeforeMaxIterations()
+    {
+        // The stuck-agent report: the model re-issued the same call ~90 times,
+        // spinning to the iteration cap with no new information. Detection must
+        // stop it early (after one corrective nudge).
+        var tool = new FakeTool("test_tool", ToolRiskLevel.ReadOnly, _ => ToolResult.Error("still not there"));
+        var tools = new ToolRegistry();
+        tools.Register(tool);
+
+        var llm = new FakeLlmClient();
+        for (int i = 0; i < 30; i++)
+            llm.Enqueue(ToolUseResponse("call_1", "test_tool", new { path = "x.json" }));
+
+        var loop = new AgentLoop(llm, tools, new ApprovalGate(), "system prompt", maxIterations: 100);
+
+        await loop.RunTurnNonStreamingAsync("go");
+
+        Assert.True(llm.CallCount is >= 4 and <= 12,
+            $"expected an early stop after tolerating a few repeats, got {llm.CallCount} LLM calls");
+        Assert.Contains(loop.History.Messages,
+            m => m.Role == MessageRole.User && m.GetText().Contains("Stop repeating it"));
+    }
+
+    [Fact]
+    public async Task RunTurnNonStreamingAsync_VaryingToolCalls_AreNotTreatedAsAStall()
+    {
+        var tool = new FakeTool("test_tool", ToolRiskLevel.ReadOnly, _ => ToolResult.Success("ok"));
+        var tools = new ToolRegistry();
+        tools.Register(tool);
+
+        var llm = new FakeLlmClient();
+        for (int i = 0; i < 8; i++)
+            llm.Enqueue(ToolUseResponse("call_" + i, "test_tool", new { step = i }));
+        llm.Enqueue(TextResponse("all done"));
+
+        var loop = new AgentLoop(llm, tools, new ApprovalGate(), "system prompt", maxIterations: 100);
+
+        var result = await loop.RunTurnNonStreamingAsync("go");
+
+        Assert.Equal("all done", result);
+        Assert.Equal(9, llm.CallCount);
+        Assert.DoesNotContain(loop.History.Messages,
+            m => m.Role == MessageRole.User && m.GetText().Contains("Stop repeating it"));
+    }
+
+    [Fact]
     public async Task RunTurnNonStreamingAsync_AccumulatesUsageAcrossIterations()
     {
         var tool = new FakeTool("test_tool", ToolRiskLevel.ReadOnly, _ => ToolResult.Success("ok"));

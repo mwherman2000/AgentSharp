@@ -30,14 +30,14 @@ public class EditFileTool : ToolBase
 
     public override async Task<ToolResult> ExecuteAsync(JsonElement input, CancellationToken ct = default)
     {
-        var path = GetRequiredString(input, "path");
+        var requestedPath = GetRequiredString(input, "path");
         var oldString = GetRequiredString(input, "old_string");
         var newString = GetRequiredString(input, "new_string");
 
-        path = Path.GetFullPath(path);
+        var path = Path.GetFullPath(requestedPath);
 
         if (!File.Exists(path))
-            return ToolResult.Error($"File not found: {path}");
+            return ToolResult.Error($"File not found: {path}" + RelativePathNote(requestedPath));
 
         // An empty old_string makes CountOccurrences loop forever: IndexOf("", index)
         // always returns index unchanged, so the scan position never advances. Reject
@@ -45,6 +45,15 @@ public class EditFileTool : ToolBase
         // property, not an empty string, so this can genuinely reach here.
         if (oldString.Length == 0)
             return ToolResult.Error("old_string cannot be empty.");
+
+        // Without this, an edit where old == new writes the file back byte-for-byte
+        // and still reports "Successfully edited" -- a model that believes a change
+        // hasn't taken effect yet can then re-issue the identical no-op edit, see
+        // success again, re-read, still see the old text, and loop.
+        if (oldString == newString)
+            return ToolResult.Error(
+                "old_string and new_string are identical, so this edit would change nothing. " +
+                "If the file already contains the intended text, no edit is needed.");
 
         try
         {
@@ -66,7 +75,7 @@ public class EditFileTool : ToolBase
             var newContent = content.Replace(oldString, newString);
             await File.WriteAllTextAsync(path, newContent, ct);
 
-            return ToolResult.Success($"Successfully edited {path}");
+            return ToolResult.Success($"Successfully edited {path}" + RelativePathNote(requestedPath));
         }
         catch (Exception ex)
         {

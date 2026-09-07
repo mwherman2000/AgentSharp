@@ -35,6 +35,14 @@ public partial class RunShellTool : ToolBase
     {
         var command = GetRequiredString(input, "command");
         var workingDir = GetOptionalString(input, "working_directory") ?? Directory.GetCurrentDirectory();
+        // Reported back in every result so a model can see the shell's actual
+        // starting directory. The file tools resolve relative paths against this
+        // same directory -- but a `cd` *inside* the command string moves the shell
+        // somewhere else for the rest of the command, so a file written by
+        // write_file("x") and then looked for by a cd'd script won't line up.
+        // Surfacing both halves lets the model spot that instead of concluding the
+        // write silently failed and retrying it forever.
+        var workingDirDisplay = Path.GetFullPath(workingDir);
         // Clamped to a sane minimum so a bad/negative timeout_ms from the model can't
         // reach CancellationTokenSource.CancelAfter, which throws ArgumentOutOfRangeException
         // for any value < -1 -- previously that exception fell into the generic catch
@@ -85,13 +93,15 @@ public partial class RunShellTool : ToolBase
                 if (ct.IsCancellationRequested)
                     throw;
 
-                return ToolResult.Error($"Command timed out after {timeoutMs}ms");
+                return ToolResult.Error(
+                    $"Working directory: {workingDirDisplay}\nCommand timed out after {timeoutMs}ms");
             }
 
             var stdout = await stdoutTask;
             var stderr = await stderrTask;
 
             var output = new System.Text.StringBuilder();
+            output.AppendLine($"Working directory: {workingDirDisplay}");
             output.AppendLine($"Exit code: {process.ExitCode}");
 
             if (!string.IsNullOrWhiteSpace(stdout))
@@ -202,10 +212,24 @@ public partial class RunShellTool : ToolBase
         return candidates.FirstOrDefault(File.Exists);
     }
 
-    private static string TruncateOutput(string output, int maxLength = 10_000)
+    /// <summary>
+    /// Keeps the head *and* the tail of over-long output rather than just the head.
+    /// Build errors, failing test summaries and stack traces put the line that
+    /// actually explains the failure at the very end -- a head-only cut hands the
+    /// model a wall of progress noise with the real error dropped, and it can't ask
+    /// for the rest. Splitting the budget keeps both the start and that trailing
+    /// diagnostic.
+    /// </summary>
+    internal static string TruncateOutput(string output, int maxLength = 10_000)
     {
         if (output.Length <= maxLength)
             return output;
-        return output[..maxLength] + $"\n\n[Output truncated at {maxLength} characters]";
+
+        var headLen = maxLength * 3 / 5;
+        var tailLen = maxLength - headLen;
+        var omitted = output.Length - headLen - tailLen;
+        return output[..headLen]
+            + $"\n\n[... {omitted} characters omitted -- showing first {headLen} and last {tailLen} ...]\n\n"
+            + output[^tailLen..];
     }
 }

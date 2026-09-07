@@ -59,20 +59,18 @@ public class ListFilesTool : ToolBase
             // Directories
             foreach (var dir in Directory.GetDirectories(path, "*", searchOption))
             {
-                var relative = Path.GetRelativePath(path, dir);
-                if (!ShouldSkip(relative))
-                    entries.Add($"[DIR] {relative}/");
+                if (PathFilter.ShouldSkip(dir, path))
+                    continue;
+                entries.Add($"[DIR] {Path.GetRelativePath(path, dir)}/");
             }
 
             // Files matching pattern
             foreach (var file in Directory.GetFiles(path, pattern, searchOption))
             {
-                var relative = Path.GetRelativePath(path, file);
-                if (!ShouldSkip(relative))
-                {
-                    var size = new FileInfo(file).Length;
-                    entries.Add($"      {relative} ({FormatSize(size)})");
-                }
+                if (PathFilter.ShouldSkip(file, path))
+                    continue;
+                var size = new FileInfo(file).Length;
+                entries.Add($"      {Path.GetRelativePath(path, file)} ({FormatSize(size)})");
             }
 
             if (entries.Count == 0)
@@ -88,12 +86,6 @@ public class ListFilesTool : ToolBase
         {
             return Task.FromResult(ToolResult.Error($"Error listing files: {ex.Message}"));
         }
-    }
-
-    private static bool ShouldSkip(string relativePath)
-    {
-        var parts = relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return parts.Any(p => p is ".git" or "node_modules" or "bin" or "obj" or ".vs" or ".idea");
     }
 
     private static string FormatSize(long bytes) => bytes switch

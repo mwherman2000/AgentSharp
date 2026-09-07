@@ -64,7 +64,7 @@ public class GrepTool : ToolBase
             {
                 ct.ThrowIfCancellationRequested();
 
-                if (ShouldSkip(file, searchPath))
+                if (PathFilter.ShouldSkip(file, searchPath))
                     continue;
 
                 if (IsBinaryFile(file))
@@ -144,13 +144,6 @@ public class GrepTool : ToolBase
         {
             return Task.FromResult(ToolResult.Error($"Error searching: {ex.Message}"));
         }
-    }
-
-    private static bool ShouldSkip(string filePath, string basePath)
-    {
-        var relative = Path.GetRelativePath(basePath, filePath);
-        var parts = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return parts.Any(p => p is ".git" or "node_modules" or "bin" or "obj" or ".vs" or ".idea");
     }
 
     private static bool IsBinaryFile(string path)

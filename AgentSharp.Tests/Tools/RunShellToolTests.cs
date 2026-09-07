@@ -28,6 +28,29 @@ public class RunShellToolTests
     }
 
     [Fact]
+    public void TruncateOutput_ShortOutput_ReturnedUnchanged()
+    {
+        var s = new string('x', 500);
+        Assert.Equal(s, RunShellTool.TruncateOutput(s, maxLength: 1000));
+    }
+
+    [Fact]
+    public void TruncateOutput_LongOutput_KeepsBothHeadAndTail()
+    {
+        // The line that explains a build/test failure is at the very end -- a
+        // head-only cut drops it and the model can't ask for the rest.
+        var body = new string('.', 50_000);
+        var output = "START_OF_OUTPUT" + body + "REAL_ERROR_AT_THE_END";
+
+        var truncated = RunShellTool.TruncateOutput(output, maxLength: 10_000);
+
+        Assert.True(truncated.Length < output.Length);
+        Assert.Contains("START_OF_OUTPUT", truncated);
+        Assert.Contains("REAL_ERROR_AT_THE_END", truncated);
+        Assert.Contains("omitted", truncated);
+    }
+
+    [Fact]
     public void GetShellCommand_AppliesNormalization_RegardlessOfWhichShellIsSelected()
     {
         var (shell, args) = RunShellTool.GetShellCommand("dotnet build > nul 2>&1");

@@ -55,6 +55,27 @@ public class ListFilesToolTests : IDisposable
     }
 
     [Fact]
+    public async Task ListsFiles_WhenTargetDirLivesUnderABinPath()
+    {
+        // Regression: AgentSharp normally runs from its own bin/Debug/netX.0, so the
+        // agent's scratch files sit under a "bin" segment. list_files must not treat
+        // that as build output to hide -- otherwise a file the agent just wrote is
+        // invisible to it and it spins re-writing it.
+        var work = Path.Combine(_tempDir, "bin", "Debug", "net8.0", "gtm_report_assets");
+        Directory.CreateDirectory(work);
+        File.WriteAllText(Path.Combine(work, "build_report.py"), "print('hi')");
+
+        var input = JsonDocument.Parse($$$"""
+            {"path": "{{{work.Replace("\\", "\\\\")}}}", "pattern": "build*"}
+            """).RootElement;
+
+        var result = await _tool.ExecuteAsync(input);
+
+        Assert.False(result.IsError);
+        Assert.Contains("build_report.py", result.Output);
+    }
+
+    [Fact]
     public async Task ReturnsError_WhenDirNotFound()
     {
         var input = JsonDocument.Parse("""{"path": "/nonexistent/dir"}""").RootElement;

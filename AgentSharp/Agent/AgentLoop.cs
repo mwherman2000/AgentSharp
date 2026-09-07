@@ -109,6 +109,25 @@ public class AgentLoop
 
     private readonly int _maxIterations;
 
+    /// <summary>Signature (tool names + raw input JSON) of the previous loop
+    /// iteration's tool-call batch, and how many iterations in a row an identical
+    /// batch has repeated. A model that keeps re-issuing the same failing call --
+    /// re-writing a file it can't see, then re-running the same failing command --
+    /// would otherwise spin until <see cref="_maxIterations"/> with no new
+    /// information. Reset at the start of every turn.</summary>
+    private string? _lastToolBatchSignature;
+    private int _repeatedToolBatchCount;
+
+    /// <summary>Whether this turn has already spent its one "you're repeating
+    /// yourself" nudge. The first stall queues a corrective hint and lets the model
+    /// try again; a second stall ends the turn.</summary>
+    private bool _stallNudged;
+
+    /// <summary>Identical consecutive tool-call batches tolerated before the loop
+    /// intervenes (nudge, then stop). The batch that trips this is still executed,
+    /// so every tool_use still gets its matching tool_result per the API contract.</summary>
+    private const int MaxRepeatedToolBatches = 3;
+
     public AgentLoop(
         ILlmClient llm,
         ToolRegistry tools,
@@ -136,6 +155,7 @@ public class AgentLoop
     {
         _turnNumber++;
         _turnToolExecutions = 0;
+        ResetStallTracking();
         using var turnActivity = AgentTelemetry.Source.StartActivity("agent.turn");
         turnActivity?.SetTag("turn.number", _turnNumber);
         turnActivity?.SetTag("turn.mode", "streaming");
@@ -404,6 +424,9 @@ public class AgentLoop
             // --- OBSERVE: Feed results back to the LLM ---
             _history.AddToolResults(toolResults);
 
+            if (ShouldBreakForRepeatedToolCalls(toolUses, turnActivity))
+                break;
+
             // Loop continues -- the LLM will see the tool results and decide next steps
         }
 
@@ -426,6 +449,7 @@ public class AgentLoop
     {
         _turnNumber++;
         _turnToolExecutions = 0;
+        ResetStallTracking();
         using var turnActivity = AgentTelemetry.Source.StartActivity("agent.turn");
         turnActivity?.SetTag("turn.number", _turnNumber);
         turnActivity?.SetTag("turn.mode", "non-streaming");
@@ -568,6 +592,9 @@ public class AgentLoop
             // --- OBSERVE: Feed results back to the LLM ---
             _history.AddToolResults(toolResults);
 
+            if (ShouldBreakForRepeatedToolCalls(toolUses, turnActivity))
+                break;
+
             // Loop continues -- the LLM will see the tool results and decide next steps
         }
 
@@ -596,6 +623,71 @@ public class AgentLoop
     /// </summary>
     private static TimeSpan ComputeBackoffDelay(int attempt) =>
         TimeSpan.FromMilliseconds(500 * Math.Pow(2, attempt - 1));
+
+    private void ResetStallTracking()
+    {
+        _lastToolBatchSignature = null;
+        _repeatedToolBatchCount = 0;
+        _stallNudged = false;
+    }
+
+    /// <summary>
+    /// Order-sensitive fingerprint of a tool-call batch: each block's name plus its
+    /// raw input JSON. Two consecutive iterations with the same fingerprint mean the
+    /// model asked for exactly the same thing again and got the same result.
+    /// The separators are ASCII unit/record-separator control chars, which cannot
+    /// occur in a tool name and are escaped inside JSON string values.
+    /// </summary>
+    private static string ToolBatchSignature(IEnumerable<ToolUseBlock> toolUses)
+        => string.Join("\u001E", toolUses.Select(t => t.Name + "\u001F" + t.Input.GetRawText()));
+
+    /// <summary>
+    /// Detects the model re-issuing an identical tool-call batch over and over -- a
+    /// file it can't see, re-written; the same failing command, re-run -- and stops
+    /// the runaway long before it burns the whole <see cref="_maxIterations"/>
+    /// budget. The first stall queues one corrective hint and lets the model try
+    /// again (returns false); a second stall ends the turn (returns true). A batch
+    /// that merely repeats a legitimate poll a few times is tolerated -- the
+    /// threshold plus the one-nudge grace period keep a real poll loop working
+    /// while still catching a genuine dead spin within a handful of iterations.
+    /// Called after the batch has executed and its results are in history, so the
+    /// caller only needs to honor the return value.
+    /// </summary>
+    private bool ShouldBreakForRepeatedToolCalls(IReadOnlyList<ToolUseBlock> toolUses, Activity? turnActivity)
+    {
+        var signature = ToolBatchSignature(toolUses);
+        if (signature != _lastToolBatchSignature)
+        {
+            _lastToolBatchSignature = signature;
+            _repeatedToolBatchCount = 0;
+            return false;
+        }
+
+        if (++_repeatedToolBatchCount < MaxRepeatedToolBatches)
+            return false;
+
+        var timesInARow = _repeatedToolBatchCount + 1;
+
+        if (!_stallNudged)
+        {
+            _stallNudged = true;
+            _repeatedToolBatchCount = 0;
+            AnsiConsole.MarkupLine(
+                $"[yellow]The model has issued the same tool call {timesInARow} times in a row -- nudging it to change approach.[/]");
+            _history.AddUserMessage(
+                "You have issued the same tool call several times in a row and gotten the same result " +
+                "each time. Stop repeating it. Re-check the actual paths and the working directory: " +
+                "write_file, read_file and edit_file resolve a relative path against the process working " +
+                "directory, and a `cd` inside a run_shell command does not change that. Take a genuinely " +
+                "different approach, or explain what is blocking you.");
+            return false;
+        }
+
+        turnActivity?.SetTag("turn.stop_reason", "repeated_tool_calls");
+        AnsiConsole.MarkupLine(
+            "[yellow]Stopping the turn: the model kept repeating the same tool call and the earlier nudge didn't help.[/]");
+        return true;
+    }
 
     /// <summary>
     /// Anthropic and OpenAI both report a too-long conversation as a plain 400 --

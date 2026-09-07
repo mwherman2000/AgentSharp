@@ -81,6 +81,25 @@ public class GrepToolTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchesFiles_WhenTargetDirLivesUnderABinPath()
+    {
+        // Same regression as ListFilesTool: a search rooted inside bin/obj (where
+        // AgentSharp runs from) must still see the files there.
+        var work = Path.Combine(_tempDir, "bin", "Debug", "net8.0", "assets");
+        Directory.CreateDirectory(work);
+        File.WriteAllText(Path.Combine(work, "gen.py"), "TOKEN_MARKER = 1");
+
+        var input = JsonDocument.Parse($$$"""
+            {"pattern": "TOKEN_MARKER", "path": "{{{work.Replace("\\", "\\\\")}}}"}
+            """).RootElement;
+
+        var result = await _tool.ExecuteAsync(input);
+
+        Assert.False(result.IsError);
+        Assert.Contains("gen.py", result.Output);
+    }
+
+    [Fact]
     public async Task ReturnsError_ForInvalidRegex()
     {
         var input = JsonDocument.Parse($$$"""

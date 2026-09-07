@@ -81,4 +81,24 @@ public abstract class ToolBase : ITool
             return prop.GetBoolean();
         return defaultValue;
     }
+
+    /// <summary>
+    /// A trailing note for a file-tool result when the model passed a *relative*
+    /// path: it spells out the absolute location the path resolved to and that a
+    /// shell command which cd's into a subdirectory resolves the same relative
+    /// path somewhere else. Empty for an already-absolute path. This is the
+    /// diagnostic that breaks the "write_file reported success but my cd'd build
+    /// script can't find the file, so the write must have silently failed --
+    /// let me retry it" loop: the file tools resolve relative paths against the
+    /// AgentSharp process working directory, which run_shell's own default
+    /// matches, but a `cd` *inside* a run_shell command string does not.
+    /// </summary>
+    protected static string RelativePathNote(string requestedPath)
+    {
+        if (Path.IsPathRooted(requestedPath))
+            return string.Empty;
+        return $"\n(\"{requestedPath}\" was resolved against the working directory " +
+               $"{Directory.GetCurrentDirectory()}; a shell command that cd's into a " +
+               "subdirectory resolves the same relative path to a different location)";
+    }
 }
