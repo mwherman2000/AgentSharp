@@ -86,7 +86,7 @@ internal class Program
             // (must be done after tool discovery since both require constructor args)
             var maxTokens = config.MaxTokens ?? AgentSharp.Agent.AgentLoop.DefaultMaxTokens;
             var maxIterations = config.MaxIterations ?? AgentSharp.Agent.AgentLoop.DefaultMaxIterations;
-            var promptBuilder = new SystemPromptBuilder(new ProjectContext(), memory);
+            var promptBuilder = new SystemPromptBuilder(new ProjectContext(), memory, config.SuperPrompt);
             var orchestrator = new AgentOrchestrator(llm, tools, approval, promptBuilder.Build(), maxTokens, maxIterations);
             tools.Register(new SubAgentTool(orchestrator));
             tools.Register(new MemoryTool(memory));
@@ -106,7 +106,7 @@ internal class Program
             if (promptArg is not null)
             {
                 // One-shot mode: run a single turn and exit
-                var oneShotPromptBuilder = new SystemPromptBuilder(project, memory);
+                var oneShotPromptBuilder = new SystemPromptBuilder(project, memory, config.SuperPrompt);
                 var agentLoop = new AgentSharp.Agent.AgentLoop(llm, tools, approval, oneShotPromptBuilder.Build(), maxTokens: maxTokens, maxIterations: maxIterations);
                 __Mark("about to call RunTurnAsync");
                 if (SyncMode)
@@ -118,7 +118,7 @@ internal class Program
             }
 
             // --- Interactive REPL ---
-            var repl = new ReplHost(llm, tools, approval, project, sessions, memory, maxTokens, maxIterations);
+            var repl = new ReplHost(llm, tools, approval, project, sessions, memory, maxTokens, maxIterations, config.SuperPrompt);
             await repl.RunAsync();
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("API key"))
@@ -166,7 +166,8 @@ internal class Program
             if (index == 0) return false;
             var prev = args[index - 1];
             return prev is "--provider" or "-p" or "--model" or "-m"
-                or "--api-key" or "-k" or "--base-url" or "--prompt" or "--timeout" or "--max-tokens" or "--dir";
+                or "--api-key" or "-k" or "--base-url" or "--prompt" or "--timeout" or "--max-tokens" or "--dir"
+                || string.Equals(prev, "--Superprompt", StringComparison.OrdinalIgnoreCase);
         }
 
         static void PrintUsage()
@@ -185,6 +186,7 @@ internal class Program
             AnsiConsole.MarkupLine("      --timeout <minutes>  Request timeout, e.g. for slow local Ollama models (default: 60)");
             AnsiConsole.MarkupLine("      --max-tokens <n>     Max output tokens per request (default: 128000; lower this for small-context local models)");
             AnsiConsole.MarkupLine("      --dir <path>         Project directory to run in (default: current directory)");
+            AnsiConsole.MarkupLine("      --Superprompt <name> Base persona/prompt: andy, angie, connie (default), donald, fed, code");
             AnsiConsole.MarkupLine("  -h, --help               Show this help");
             AnsiConsole.MarkupLine("  -v, --version            Show version\n");
             AnsiConsole.MarkupLine("[bold]ENVIRONMENT VARIABLES:[/]");

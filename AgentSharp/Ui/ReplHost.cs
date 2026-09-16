@@ -25,6 +25,7 @@ public class ReplHost
     private AgentLoop _agent;
     private readonly int _maxTokens;
     private readonly int _maxIterations;
+    private readonly string? _superPrompt;
     private int _turnCount;
     private readonly List<string> _inputHistory = new();
     private CancellationTokenSource? _turnCts;
@@ -37,7 +38,8 @@ public class ReplHost
         SessionManager sessions,
         MemoryManager memory,
         int maxTokens = AgentLoop.DefaultMaxTokens,
-        int maxIterations = AgentLoop.DefaultMaxIterations)
+        int maxIterations = AgentLoop.DefaultMaxIterations,
+        string? superPrompt = null)
     {
         _llm = llm;
         _tools = tools;
@@ -47,8 +49,9 @@ public class ReplHost
         _memory = memory;
         _maxTokens = maxTokens;
         _maxIterations = maxIterations;
+        _superPrompt = superPrompt;
 
-        var promptBuilder = new SystemPromptBuilder(_project, _memory);
+        var promptBuilder = new SystemPromptBuilder(_project, _memory, _superPrompt);
         _agent = new AgentLoop(_llm, _tools, _approval, promptBuilder.Build(), maxTokens: _maxTokens, maxIterations: _maxIterations);
         WireEvents(_agent);
     }
@@ -215,7 +218,7 @@ public class ReplHost
 
             case CommandType.Clear:
                 _agent = new AgentLoop(_llm, _tools, _approval,
-                    new SystemPromptBuilder(_project, _memory).Build(), maxTokens: _maxTokens, maxIterations: _maxIterations);
+                    new SystemPromptBuilder(_project, _memory, _superPrompt).Build(), maxTokens: _maxTokens, maxIterations: _maxIterations);
                 WireEvents(_agent);
                 _turnCount = 0;
                 AnsiConsole.Clear();
@@ -244,7 +247,7 @@ public class ReplHost
                     break;
                 }
                 _agent = new AgentLoop(_llm, _tools, _approval,
-                    new SystemPromptBuilder(_project, _memory).Build(), history, _maxTokens, _maxIterations);
+                    new SystemPromptBuilder(_project, _memory, _superPrompt).Build(), history, _maxTokens, _maxIterations);
                 WireEvents(_agent);
                 AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages)");
                 break;
@@ -256,6 +259,7 @@ public class ReplHost
             case CommandType.Status:
                 AnsiConsole.MarkupLine($"[bold]Provider:[/] {_llm.ProviderName}");
                 AnsiConsole.MarkupLine($"[bold]Model:[/] {_llm.ModelId}");
+                AnsiConsole.MarkupLine($"[bold]Superprompt:[/] {_superPrompt ?? "connie (default)"}");
                 AnsiConsole.MarkupLine($"[bold]Sync mode:[/] {(Program.SyncMode ? "on (SendAsync, non-streaming)" : "off (StreamAsync, default)")}");
                 AnsiConsole.MarkupLine($"[bold]Timeout (streaming):[/] {FormatTimeout(_llm.StreamingTimeout)}");
                 AnsiConsole.MarkupLine($"[bold]Timeout (non-streaming):[/] {FormatTimeout(_llm.NonStreamingTimeout)}");

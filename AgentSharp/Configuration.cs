@@ -38,6 +38,11 @@ public class Configuration
     /// what every path resolution already falls back to on its own.</summary>
     public string? WorkingDirectory { get; set; }
 
+    /// <summary>Selects which base persona/prompt <see cref="Context.SystemPromptBuilder"/>
+    /// uses (see --Superprompt). Null means "use the default" -- Connie/Consort, i.e.
+    /// <see cref="Context.SystemPromptBuilder.ResolveSuperPrompt"/> with a null argument.</summary>
+    public string? SuperPrompt { get; set; }
+
     /// <summary>
     /// Returns the effective model, using a provider-specific default if none was explicitly set.
     /// </summary>
@@ -128,6 +133,9 @@ public class Configuration
                     break;
                 case "--dir" when i + 1 < args.Length:
                     config.WorkingDirectory = args[++i];
+                    break;
+                case var arg when string.Equals(arg, "--Superprompt", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length:
+                    config.SuperPrompt = args[++i];
                     break;
             }
         }
