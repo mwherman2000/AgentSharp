@@ -244,7 +244,12 @@ public class ReplHost
             case CommandType.Save:
                 var sessionId = await _sessions.SaveAsync(_agent.History, command.Argument);
                 if (sessionId is not null)
+                {
                     AnsiConsole.MarkupLine($"[green]Session saved:[/] {sessionId}");
+                    var savedTranscriptPath = WriteTranscript($"{sessionId}.docx");
+                    if (savedTranscriptPath is not null)
+                        AnsiConsole.MarkupLine($"[green]Transcript written:[/] {savedTranscriptPath}");
+                }
                 else
                     AnsiConsole.MarkupLine($"[red]Error:[/] Could not save session '{Markup.Escape(command.Argument ?? "")}'.");
                 break;
