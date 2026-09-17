@@ -120,7 +120,8 @@ public class SystemPromptBuilder
 
         Methodology Backgrounder: https://axoraworks.com/
 
-        Let's get started.
+        Let's get started. Here's my process and detailed specifications for the report 
+        to be produced. Ask the user for the [TARGET].
         """;
 
     private const string BasePromptAngie = """
