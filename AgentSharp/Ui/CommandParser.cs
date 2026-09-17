@@ -49,7 +49,7 @@ public static class CommandParser
         {
             "help" or "h" or "?" => new ParsedCommand(CommandType.Help),
             "exit" or "quit" or "q" => new ParsedCommand(CommandType.Exit),
-            "clear" or "cls" => new ParsedCommand(CommandType.Clear),
+            "clear" or "cls" => new ParsedCommand(CommandType.Clear, argument),
             "save" => new ParsedCommand(CommandType.Save, argument),
             "load" or "resume" => new ParsedCommand(CommandType.Load, argument),
             "sessions" or "ls" => new ParsedCommand(CommandType.Sessions),

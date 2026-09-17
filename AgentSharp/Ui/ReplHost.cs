@@ -25,7 +25,7 @@ public class ReplHost
     private AgentLoop _agent;
     private readonly int _maxTokens;
     private readonly int _maxIterations;
-    private readonly string? _superPrompt;
+    private string? _superPrompt;
     private int _turnCount;
     private readonly List<string> _inputHistory = new();
     private CancellationTokenSource? _turnCts;
@@ -217,6 +217,19 @@ public class ReplHost
                 break;
 
             case CommandType.Clear:
+                if (!string.IsNullOrWhiteSpace(command.Argument))
+                {
+                    try
+                    {
+                        SystemPromptBuilder.ResolveSuperPrompt(command.Argument);
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
+                        break;
+                    }
+                    _superPrompt = command.Argument;
+                }
                 _agent = new AgentLoop(_llm, _tools, _approval,
                     new SystemPromptBuilder(_project, _memory, _superPrompt).Build(), maxTokens: _maxTokens, maxIterations: _maxIterations);
                 WireEvents(_agent);
@@ -224,6 +237,8 @@ public class ReplHost
                 AnsiConsole.Clear();
                 PrintWelcome();
                 AnsiConsole.MarkupLine("[green]Conversation cleared.[/]");
+                if (!string.IsNullOrWhiteSpace(command.Argument))
+                    AnsiConsole.MarkupLine($"[green]Superprompt switched to:[/] {Markup.Escape(_superPrompt!)}");
                 break;
 
             case CommandType.Save:
@@ -566,7 +581,7 @@ public class ReplHost
             .AddColumn("Description")
             .AddRow("/help", "Show this help message")
             .AddRow("/exit", "Exit the agent")
-            .AddRow("/clear", "Clear conversation and start fresh")
+            .AddRow("/clear [[superprompt]]", "Clear conversation and start fresh; optionally switch superprompt (andy, angie, connie, donald, fed, code)")
             .AddRow("/save [[id]]", "Save current session")
             .AddRow("/load <id>", "Load a saved session")
             .AddRow("/sessions", "List saved sessions")
