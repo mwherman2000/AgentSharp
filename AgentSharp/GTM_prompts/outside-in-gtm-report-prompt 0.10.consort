@@ -1,0 +1,572 @@
+# Outside-In GTM Perspective — Consort Report Prompt (measured, self-contained)
+Copyright © 2026 Michael Herman (Bindloss, Alberta, Canada) – Creative Commons Attribution-ShareAlike 4.0 International Public License
+
+A reusable Consort prompt (shttps://github.com/mwherman2000/Consort) that
+generates a "Comprehensive Outside-In GTM Perspective" report — an executive-publication-
+series GTM analysis for any target company. Every value in the `%` block below was
+measured directly from the reference edition's PDF — extracted fill colors, font names,
+point sizes, box/graphic geometry, padding, border rules, and link structure from its
+vector, text, image, and annotation data, not eyeballed from a rendering — so this prompt
+reproduces that look without needing the source file again.
+
+**To use it:** replace the bracketed placeholders below, then feed the whole block to a
+Consort-aware model as its user/system turn.
+
+| Placeholder | Description | Default |
+|---|---|---|
+| `[TARGET]` | The company being analyzed | — |
+| `[ANALYST NAME]` | Name of the analyst/byline | Michael W. Herman |
+| `[TITLE]` | Analyst's title | Chief Digital Officer |
+| `[FIRM NAME]` | Advisory firm/wordmark name | Web 7.0 Foundation |
+| `[ANALYST EMAIL]` | Contact email for the closing CTA | mwherman@parallelspace.net |
+| `[ANALYST LINKEDIN]` | Contact LinkedIn handle for the closing CTA | https://www.linkedin.com/in/mwherman/ |
+| `[PUBLICATION DATE]` | Report publication date | [TODAY] |
+
+**One deliberate deviation:** the reference edition's masthead includes a photographic
+headshot of the named analyst. This prompt specifies a plain initials-in-circle avatar,
+sized and positioned identically to where that photo sits, instead of a photo —
+reproducing an unnamed placeholder person's likeness isn't something to generate. Swap in
+a real photo yourself, at the geometry given in §5, if you have rights to one.
+
+---
+
+```
+! research [TARGET] using only public evidence and produce a "[TARGET]
+  Comprehensive Outside-In GTM Perspective" report in the Executive Publication Series
+  format fully specified in # and % below — populated with [TARGET]-specific
+  findings
+
+# This is one entry in a recurring executive publication series. Each edition is a
+  single-company "Outside-In" GTM perspective: an external analyst's public-evidence
+  hypothesis of the subject company's ideal customer profile (ICP), and an assessment of
+  how the company's visible go-to-market appears to serve that ICP.
+  Evidence discipline (the series' defining voice): the report is explicit at every level
+  about what public evidence supports, what it only suggests, and what it cannot
+  establish at all (internal performance, win rates, retention, support attainment, root
+  commercial causality). Every finding and theme is written as a claim paired with its
+  own counter-reading, not as an unqualified verdict.
+
+$ evidence basis is public sources only — do not use or imply access to non-public,
+  internal, or confidential information about [TARGET]
+$ every substantive claim must be traceable to a named, plausible public-source category
+  (company site/product pages, SEC or equivalent regulatory filings, named customer case
+  studies, named industry/analyst publications, named independent review platforms,
+  named competitors, named trade press, named third-party data/market sources) — never
+  fabricate a quote, statistic, or named source that was not actually reasoned from
+  real, findable evidence
+$ every entry in the Material Sources table (§19c) must be a REAL, working hyperlink to
+  the actual URL of the source it names — the reference edition's source list is built
+  from genuine clickable links, not styled text with no destination; do not fabricate a
+  URL for a source you didn't actually find
+$ distinguish, in every finding and theme, what is (a) directly evidenced, (b) a
+  reasonable interpretation, and (c) a bounded credible alternative/counter-reading —
+  never collapse an inference into a stated fact
+$ do not claim knowledge of win rates, retention, NRR/GRR, support-ticket resolution,
+  deployment success rates, or any other internal metric — explicitly flag these as
+  unknowable from public evidence wherever they would otherwise be assumed
+$ tone is senior-advisor-to-executive: declarative, unhedged in structure but carefully
+  hedged in substance, no marketing enthusiasm, no filler adjectives, no bullet-point
+  padding
+$ target roughly 10-11 letter-page-equivalents of dense executive content once rendered
+  under §4's type scale — if the rendering surface paginates differently, prioritize
+  correct section-start behavior (§21) over hitting an exact page count
+$ do not disparage [TARGET] gratuitously and do not promote it — the register is
+  neutral, analytical, and consultative throughout, including in the negative-fit /
+  exclusions material
+$ cite between 20 and 40 named source pages by the end of Section VI's Material Sources
+  table, spanning at minimum: company-controlled materials; customer/partner evidence;
+  analyst and market context; independent reviews and third-party validation;
+  competitors and alternatives; other independent third-party evidence
+$ use no italic text anywhere in the document — every emphasis need is met with bold
+  weight, color, or a background fill instead; this is a hard rule, not a default
+$ use no vertical rules inside any table — every table in this design separates rows
+  with a thin horizontal line only (§8); a vertical column divider is a deviation from
+  the source, not a stylistic choice
+
+% ============================================================================
+  1. PAGE SETUP
+  ============================================================================
+  US Letter, portrait (612 x 792pt). Margins are asymmetric and tight, not a default
+  1in: ~40pt (0.55in) left and right; on interior pages, the running-header text sits
+  only ~11pt (0.15in) below the top edge, with its rule at ~23pt; the footer sits
+  ~15pt (0.2in) above the bottom edge. The cover page uses the same ~40pt left/right
+  margin but starts its masthead band essentially flush with the top edge (~30pt).
+
+  ============================================================================
+  2. FONT
+  ============================================================================
+  Arial throughout (the reference edition uses Liberation Sans, which is
+  metric-compatible with Arial — Arial is the safe substitute on any system). Regular
+  weight for body and table content; bold for every heading, label, and table header;
+  NO italics anywhere (see the $ rule above) and no other font family mixed in.
+
+  ============================================================================
+  3. COLOR PALETTE (exact hex, measured from the source file's fill/text color data —
+     use these, not near equivalents)
+  ============================================================================
+  - navy-text     #102A43   — H1/H2 titles, Roman numerals (on gold), header-left
+                              byline, all table-cell text in data tables (§16, §19),
+                              and the closing CTA band's fill (the source uses this
+                              same value for that fill, not a separate near-navy)
+  - navy-fill     #071F4D   — section-heading box fill, every table's header-row fill
+  - gold          #D8A542   — Roman-numeral square fill, the 5.65pt left accent bar
+                              on every callout box (§9), wordmark second half,
+                              masthead's small rule and bottom-edge rule (§5)
+  - blue-mid      #3C78A8   — kicker/eyebrow text, header-right company name, every
+                              bold inline label on a light background (EVIDENCE AND
+                              INTERPRETATION., WHY IT MATTERS., CREDIBLE ALTERNATIVE.,
+                              GOVERNING COMMERCIAL TENSION, MATERIAL UNCERTAINTY,
+                              COMMERCIAL QUESTION, INTERNAL VALIDATION NEEDED, theme
+                              table column labels), source-list link text, the 1.25pt
+                              rule under the running header
+  - blue-light    #78A9CC   — text sitting ON a navy-fill/navy-text background that
+                              is secondary to a white headline on the same fill:
+                              "SECTION N |", the CTA page's "CONTINUE THE
+                              CONVERSATION" kicker and its email/LinkedIn line
+  - arc-line      #3D5A78   — the masthead's decorative concentric arcs only (§22);
+                              approximate — the source renders these as a raster
+                              blend, this is its sampled average
+  - ink           #111111   — all body prose (paragraphs under COMPANY CONTEXT,
+                              PURPOSE, findings, theme summaries, inquiry blocks),
+                              including bold labels that are NOT blue-mid ("Executive
+                              implication."), and the footer's page-number digit only
+                              (§7 — the rest of the footer line is grey)
+  - tint-blue     #E8F1F7   — first alternating table/box background tint
+  - tint-pale     #F4F6F7   — second alternating table/box background tint
+  - border        #C6D9E5   — the thin (0.5pt) horizontal rule between table rows
+                              (§8) — never used as a vertical rule
+  - grey          #687681   — footer text (except the page number itself), cover
+                              descriptor line, section-to-section transition
+                              sentences (e.g. "Detailed ICP analysis follows...")
+  - white         #FFFFFF   — text on navy-fill/navy-text where it's the primary
+                              headline (section titles, guiding questions, CTA
+                              invitational sentence), wordmark first half, the
+                              masthead avatar's ring border
+
+  ============================================================================
+  4. TYPE SCALE (exact points, exact colors — pair every size below with its color
+     from §3; nothing here is italic)
+  ============================================================================
+  - Running header (left byline)          8pt bold, navy-text
+  - Running header (right company name)   8pt bold, blue-mid
+  - Header underline rule                 1.25pt, blue-mid, full text width
+  - Footer line (label portion)           8pt regular, grey, centered
+  - Footer page-number digit(s)           8.5pt regular, ink (NOT grey, NOT bold —
+                                           just slightly larger and darker than the
+                                           rest of the footer line it's embedded in)
+  - Cover H1 (company name)               23.5pt bold, navy-text
+  - Cover H2 (report subtitle)            21.5pt bold, navy-text
+  - Cover descriptor line                 10.5pt regular, grey
+  - Kicker/eyebrow lines (cover date-line,
+    "COMPANY CONTEXT"/"PURPOSE"/"HOW TO
+    READ THIS REPORT"/"PREPARED FOR" etc.) 9pt bold, blue-mid, uppercase
+  - Body prose paragraphs                 8pt regular, ink
+  - Table-cell text (all tables)          8pt regular, navy-text (bold for the label
+                                           column(s): first column in a 2-column
+                                           table, first two in a 3-column table)
+  - Plain section sub-headings (no box:
+    "EXECUTIVE SUMMARY", "Targetable ICP",
+    "AI DISCOVERABILITY", etc.)           16pt bold, navy-text
+  - Roman numeral (on gold square)        18pt bold, navy-text
+  - "SECTION N |" (on navy-fill)          8.5pt bold, blue-light
+  - Section title (on navy-fill)          17pt bold, white
+  - Guiding question (on navy-fill)       8.5pt regular, white — NOT italic
+  - Callout-box bold inline labels        8pt bold, blue-mid, followed inline by 8pt
+    (APPARENT ICP, MATERIAL BOUNDARY,     regular ink body text in the same paragraph
+    GOVERNING COMMERCIAL TENSION,
+    MATERIAL UNCERTAINTY, COMMERCIAL
+    QUESTION, INTERNAL VALIDATION NEEDED)
+  - "EXECUTIVE ICP SUMMARY" caption       9pt bold, navy-text (plain, not a label pair)
+  - Its 5 labeled lines (BEST-FIT
+    ACCOUNTS, BUYER ROLES, BUYING
+    SIGNALS, WHO YOU SAY.../WHO NOT TO
+    TARGET)                               label 8pt bold blue-mid + body 8pt regular
+                                           ink, inline in one paragraph per line
+  - Finding number (on blue-mid sidebar)  16pt bold, white
+  - Finding headline                      13pt bold, navy-text
+  - Finding labels (EVIDENCE AND
+    INTERPRETATION. / WHY IT MATTERS. /
+    CREDIBLE ALTERNATIVE.)                8pt bold, blue-mid, inline + 8pt regular ink
+  - Finding's "Executive implication."    8pt bold, ink (not blue-mid) + 8pt regular
+    label                                 ink — this one label breaks the blue-mid
+                                           pattern; keep it ink to match the source
+  - Theme headline                        16pt bold, navy-text
+  - Theme summary line                    8pt regular, ink
+  - Theme/inquiry table label row         8pt bold, blue-mid, on tint-blue fill
+  - Theme/inquiry table content row       8pt regular, ink, on tint-pale fill
+  - Inquiry headline                      16pt bold, navy-text (no number/box)
+  - Inquiry "Why it may matter. <text>"   8pt regular, ink — entirely plain, not bold
+  - "SOURCES REVIEWED" / "EVIDENCE
+    CATEGORIES" left-column labels        8.5pt bold, white, on navy-fill
+  - Their value text                      8.5pt regular, navy-text, on white
+  - "Material Sources" table header       8pt bold, white, on navy-fill — column 1
+                                           reads "Sources"; column 2's header cell is
+                                           navy-fill with NO text (blank on purpose)
+  - Source-list entries                   8pt regular, blue-mid, styled as hyperlinks
+                                           (underlined) AND functioning as real links
+                                           to their source URL (see the $ rule above)
+  - CTA "CONTINUE THE CONVERSATION"       9pt regular, blue-light
+  - CTA invitational sentence             10pt bold, white
+  - CTA email / LinkedIn line             8pt bold, blue-light
+
+  ============================================================================
+  5. COVER PAGE LAYOUT (top to bottom; no running header/footer on this page)
+  ============================================================================
+  a. Masthead band: navy-fill, full text width (~40pt to ~581pt, i.e. essentially
+     edge-to-edge with the body margins, bleeding ~8pt past the right margin), height
+     ~126pt, positioned flush against the top of the page (~30pt inset). Contents:
+       - Avatar: a circle ~92pt in diameter (radius 46pt), centered ~117pt from the
+         page's left edge and ~95pt from the page's top edge (i.e. roughly centered
+         in the band's left third, vertically centered in the band). Ring border:
+         white, ~1.25pt. Fill: initials of [ANALYST NAME] in navy-text, centered, on
+         a light neutral background — see the file-level note above on why this
+         replaces a photo.
+       - Decorative arcs: per §22, confined to the band's upper-right region, behind
+         the wordmark/title text.
+       - Right-aligned text block, starting roughly a third of the way across the
+         band and extending to ~15pt from its right edge:
+           - The two-tone wordmark (§6), top-right.
+           - Below it, "[TITLE]" bold white ~11pt.
+           - A short ~30pt gold horizontal rule, ~1.5pt thick.
+           - Below the rule, 3-4 capability tags separated by "  •  ", bold gold
+             ~9pt, e.g. "Enterprise SaaS  •  GTM Systems  •  AI-Enabled Strategy  •
+             Revenue Growth".
+       - A gold rule, ~1.5pt, spans the full band width along its bottom edge.
+  b. Vertical space (~15-20pt).
+  c. Kicker line: "[TARGET]  |  [PUBLICATION DATE]" (§4 kicker style).
+  d. Cover H1: "[TARGET]".
+  e. Cover H2: "Comprehensive Outside-In GTM Perspective".
+  f. One descriptor line (§4 descriptor style), under 25 words.
+  g. A 4-row x 2-column metadata table, label column bold navy-text ~28% width, NO
+     header row — just the four rows: PREPARED FOR / PREPARED BY / PUBLICATION DATE /
+     EVIDENCE BASIS, each value in table-cell style (§4), ~4pt cell padding (§8).
+  h. "COMPANY CONTEXT" kicker-style label + one 8pt ink paragraph.
+  i. "PURPOSE" kicker-style label + one 8pt ink paragraph.
+  j. "HOW TO READ THIS REPORT" kicker-style label + one 8pt ink paragraph, then a
+     2-column table (SECTION / WHAT IT CONTAINS) with alternating tint-blue/tint-pale
+     rows (§8) listing all SEVEN section names in order — EXECUTIVE SUMMARY, ICP
+     SUMMARY, PRINCIPAL VISIBLE GTM FINDINGS, UNDERLYING THEMES, DETAILED ICP
+     ANALYSIS, AREAS FOR FOCUSED INQUIRY, RESEARCH SCOPE AND SOURCES — each with a
+     one-line description.
+  k. Page break.
+
+  ============================================================================
+  6. TWO-TONE WORDMARK
+  ============================================================================
+  "[FIRM-NAME-FIRST-PART]" bold white immediately followed, no space, by
+  "[FIRM-NAME-REMAINDER]" bold gold (#D8A542) — one word rendered in two colors, e.g.
+  the two halves of the firm name, set in the same sans-serif as the rest of the
+  document. On the cover masthead it renders at roughly the same cap-height as the
+  "[TITLE]" line beneath it (~11pt). On the closing CTA page (§20) it is reused at a
+  smaller scale — roughly 8pt cap-height, ~85pt wide at that scale (an ~11:1
+  width-to-height wordmark lockup) — right-aligned within its column.
+
+  ============================================================================
+  7. RUNNING HEADER AND FOOTER (every page from "EXECUTIVE SUMMARY" onward — NOT the
+     cover)
+  ============================================================================
+  Header: one line, "[ANALYST NAME] | EXECUTIVE PUBLICATION SERIES" left-aligned
+  (§4 header-left style) and "[TARGET, UPPERCASE]" right-aligned (§4
+  header-right style) on the SAME line via a right tab stop / positional tab — not
+  two lines, not centered. A 1.25pt blue-mid rule spans the full text width directly
+  beneath it, ~12pt below the header text.
+  Footer: one centered line: "[ANALYST NAME] | [TITLE] | Comprehensive Outside-In
+  GTM Perspective | Page {live page-number field}" — all of it 8pt regular grey
+  (§4 footer style) EXCEPT the page-number digit(s) themselves, which render 8.5pt
+  regular ink (§4) — a small, deliberate typographic emphasis on the number alone.
+
+  ============================================================================
+  8. TABLE STYLE (default — applies unless a specific section below overrides it)
+  ============================================================================
+  - Header row: navy-fill background, white bold 8pt text.
+  - Body rows: alternate tint-blue / tint-pale, starting with tint-blue on the first
+    body row.
+  - Borders: a single 0.5pt horizontal rule (border color) between every row,
+    including under the header row, plus one at the very top and bottom of the
+    table. NO vertical rules between columns, ever — columns are separated by
+    whitespace and alternating fill only.
+  - Cell padding: ~4pt from each cell's top and left edge to its text.
+  - Label column(s) bold; remaining column(s) regular — both navy-text (§4).
+  - 2-column tables: ~30/70 width split (or ~24/76 for long label pairs).
+  - 3-column tables: ~24/22/54 width split.
+
+  ============================================================================
+  9. CALLOUT BOX STYLE ("gold-bar box" — the document's single reusable emphasis
+     pattern, used for APPARENT ICP, MATERIAL BOUNDARY, GOVERNING COMMERCIAL
+     TENSION, and MATERIAL UNCERTAINTY)
+  ============================================================================
+  A solid gold (#D8A542) vertical bar, exactly 5.65pt wide, on the left edge, flush
+  against a content area filled tint-blue or tint-pale (alternate between the two
+  across consecutive gold-bar boxes on the same page, tint-blue first), ~5pt internal
+  padding on every side. Content is a single paragraph: "LABEL | " in bold blue-mid
+  8pt immediately followed by regular ink 8pt body text — label and body share one
+  paragraph, not separate lines. No box border beyond the gold bar itself — no top,
+  bottom, or right border of any kind.
+
+  ============================================================================
+  10. LABEL-COLUMN TABLE STYLE (SOURCES REVIEWED / EVIDENCE CATEGORIES only)
+  ============================================================================
+  A 2-column table with NO header row: left column ~22% width, navy-fill background,
+  white bold 8.5pt label; right column white background, regular navy-text 8.5pt
+  value. Same horizontal-only border rule and ~4pt padding as §8.
+
+  ============================================================================
+  11. PAIRED-COLUMN TABLE STYLE (theme blocks in §17, inquiry blocks in §18)
+  ============================================================================
+  A 2-column, 2-row table: row 1 holds the two sub-labels for that block, bold
+  blue-mid 8pt text on tint-blue fill; row 2 holds the matching content, regular ink
+  8pt text on tint-pale fill. Same horizontal-only border rule and ~4pt padding as
+  §8. Column split ~50/50.
+
+  ============================================================================
+  12. SECTION HEADING BLOCK (opens "EXECUTIVE SUMMARY" and each of Sections I-VI)
+  ============================================================================
+  For "EXECUTIVE SUMMARY" only: a plain 16pt bold navy-text heading, no box, no
+  numeral, followed directly by its body paragraphs.
+  For Sections I-VI: a single visual unit, full text width, fixed height ~58pt,
+  sitting directly beneath the running header on whichever page it opens on:
+    - A gold-fill square on the left, exactly 45pt wide and the same ~58pt height as
+      the navy box beside it, containing the section's Roman numeral, centered, 18pt
+      bold navy-text.
+    - Immediately adjacent (no gap), a navy-fill rectangle spanning the remaining
+      text width, ~9pt left padding and ~8pt top padding, containing three stacked
+      lines with normal (single) line spacing between them: "SECTION N |" (8.5pt
+      bold blue-light), the section title in full caps (17pt bold white), and the
+      one-line guiding question (8.5pt regular white, NOT italic).
+
+  ============================================================================
+  13. EXECUTIVE SUMMARY (unnumbered, precedes Section I)
+  ============================================================================
+  Heading per §12, then two 8pt ink paragraphs synthesizing the report's top-level
+  judgment — no box, no table.
+
+  ============================================================================
+  14. SECTION I — ICP SUMMARY
+  ============================================================================
+  After the heading block (§12), in order:
+    a. A gold-bar box (§9) captioned inline "APPARENT ICP | " with the framing
+       paragraph — tint-blue fill.
+    b. "EXECUTIVE ICP SUMMARY" as its own plain caption (§4, no box, no fill),
+       followed immediately by exactly five labeled lines, each its own paragraph in
+       the §9 label-pair style but with NO gold bar and NO fill (plain white
+       background) — this whole block (caption + 5 lines) sits inside ONE gold-bar
+       box using tint-pale fill, i.e., the gold bar and tint-pale fill wrap the
+       caption and all five lines together as a single visual unit. Lines, in order:
+       BEST-FIT ACCOUNTS, BUYER ROLES, BUYING SIGNALS, WHO YOU SAY YOU TARGET VS WHO
+       APPEARS TO FIT BEST, WHO NOT TO TARGET.
+    c. A second, separate gold-bar box (§9), tint-blue fill, captioned inline
+       "MATERIAL BOUNDARY | " with its own paragraph.
+    d. One transition sentence in grey 8pt regular (§4 grey style), e.g. pointing the
+       reader to the detailed analysis ahead.
+
+  ============================================================================
+  15. SECTION II — PRINCIPAL VISIBLE GTM FINDINGS
+  ============================================================================
+  After the heading block: exactly five findings, numbered 1-5. Each finding is a
+  full-width row with NO gap from the row above/below (they visually stack):
+    - Left: a ~31pt-wide blue-mid (#3C78A8) sidebar block, full row height, holding
+      the large white bold number (16pt), centered.
+    - Right: the remaining width, filled tint-blue, ~5pt padding (matching §9),
+      containing: the bold navy-text 13pt headline; then three inline label+body
+      paragraphs in order — EVIDENCE AND INTERPRETATION., WHY IT MATTERS., CREDIBLE
+      ALTERNATIVE. (each: 8pt bold blue-mid label + 8pt regular ink body, same
+      paragraph); then a fourth inline paragraph, "Executive implication. <text>",
+      where BOTH the label and the body are 8pt — the label bold ink (not
+      blue-mid), the body regular ink.
+  After finding 5: one gold-bar box (§9), tint-blue fill, captioned inline
+  "GOVERNING COMMERCIAL TENSION | " with its synthesizing paragraph.
+
+  ============================================================================
+  16. SECTION III — UNDERLYING THEMES
+  ============================================================================
+  After the heading block: 4-5 theme blocks, each: a plain 16pt bold navy-text
+  headline (no box, no number); one 8pt regular ink summary line; then a
+  paired-column table (§11) whose two labels are either "EVIDENCE AND
+  INTERPRETATION" / "COMMERCIAL IMPLICATION / MEANINGFUL UNKNOWN", or "EVIDENCE AND
+  INTERPRETATION" / "QUALIFICATION" for lighter themes.
+  Exactly one theme must address AI/answer-engine discoverability: state the test
+  date (= [PUBLICATION DATE]), name the engine(s) queried, characterize how the
+  subject surfaced, and explicitly name what could not be established (ranking
+  stability, share of voice, a second independently queried engine).
+
+  ============================================================================
+  17. SECTION IV — DETAILED ICP ANALYSIS
+  ============================================================================
+  After the heading block, five tables in this fixed order, each preceded by its own
+  plain 16pt bold navy-text sub-heading (§4, no box):
+    a. "Targetable ICP" — default table style (§8), 2 columns (TARGETING DIMENSION /
+       BEST-SUPPORTED OUTSIDE-IN VIEW), covering at minimum: company/account
+       profile, directional size, proof-led priority clusters, mechanism-led
+       adjacent clusters, geography, operating characteristics, technographic
+       context, primary functional center, likely buying/influencing roles,
+       high-value triggers, externally observable account cues, what requires
+       discovery.
+    b. "Structural ICP" — default table style, 3 columns (CLASSIFICATION / ICP
+       JUDGMENT / WHAT IT MEANS), using only these four classification values, each
+       appearing at least once: Filter, Strong Fit Indicator, Contextual
+       Characteristic, Weak Proxy.
+    c. "Priority and Actionability" — default table style, 2 columns (PRIORITY
+       SIGNAL / OUTSIDE-IN IMPLICATION).
+    d. "Buying System" — default table style, 2 columns (BUYING-SYSTEM DIMENSION /
+       BEST-SUPPORTED OUTSIDE-IN VIEW), covering at minimum: problem owner, economic
+       role, operational participants, technical/integration participants, likely
+       first-contact roles, urgency drivers, buying posture, discovery boundary.
+    e. "Negative Fit / Exclusions" — default table style, 2 columns (NEGATIVE-FIT
+       TYPE / OUTSIDE-IN IMPLICATION), using only these classification values, each
+       appearing at least once: Strong Exclusion, Soft Disqualifier, Timing
+       Exclusion, Adoption/Implementation Barrier, Superficially Attractive Weak
+       Fit, Capability-Dependent Risk.
+  After table (e): one gold-bar box (§9), tint-blue fill, captioned inline "MATERIAL
+  UNCERTAINTY | " with its closing paragraph.
+
+  ============================================================================
+  18. SECTION V — AREAS FOR FOCUSED INQUIRY
+  ============================================================================
+  After the heading block: exactly five inquiry blocks, each: a plain 16pt bold
+  navy-text headline (no box, no number); one fully plain 8pt regular ink line
+  reading "Why it may matter. <text>" (no bold anywhere in this line); then a
+  paired-column table (§11) labeled COMMERCIAL QUESTION / INTERNAL VALIDATION
+  NEEDED.
+
+  ============================================================================
+  19. SECTION VI — RESEARCH SCOPE AND SOURCES
+  ============================================================================
+  After the heading block, in order:
+    a. A label-column table (§10), two rows: SOURCES REVIEWED (value = the count of
+       unique source pages reviewed) and EVIDENCE CATEGORIES (value = the six
+       category names, semicolon-separated: company-controlled materials;
+       customer/partner evidence; analyst and market context; independent reviews
+       and third-party validation; competitors and alternatives; other independent
+       third-party evidence).
+    b. A 3-column, single content-row table: each cell holds one bold blue-mid 8pt
+       label (RESEARCH SCOPE / EVIDENCE TREATMENT / IMPORTANT LIMITATIONS) followed
+       by its own regular ink 8pt paragraph in the same cell, tint-pale fill,
+       default borders (§8), ~24/38/38 width split.
+    c. A "Material Sources" plain 16pt bold navy-text sub-heading, then a 2-column
+       table: header row navy-fill with white bold 8pt "Sources" in column 1 and
+       NO text in column 2 (§4); body rows alternate tint-blue/tint-pale, each
+       cell's text styled as an 8pt regular blue-mid underlined hyperlink that
+       actually links to its source's real URL (see the $ rule above), grouped in
+       the same order as the six evidence categories, 20-40 rows total per the $
+       constraint above.
+    d. Page break.
+
+  ============================================================================
+  20. CLOSING CTA PAGE
+  ============================================================================
+  A navy-text-fill band, full text width, ~58.5pt total height, split into two
+  stacked rows:
+    - Row 1 (~36.25pt tall): left-aligned, ~6pt inset from the band's left edge —
+      "CONTINUE THE CONVERSATION" (9pt regular blue-light) directly above one bold
+      white 10pt invitational sentence.
+    - Row 2 (~22.25pt tall): divided into exactly THREE EQUAL-WIDTH columns (each
+      ~1/3 of the text width). Column 1: "[ANALYST EMAIL]" (8pt bold blue-light),
+      left-aligned. Column 2: "[ANALYST LINKEDIN]" (8pt bold blue-light),
+      left-aligned. Column 3: the two-tone wordmark (§6) at its smaller CTA scale,
+      right-aligned with a ~15pt trailing inset from the column's right edge.
+
+  ============================================================================
+  21. PAGE-BREAK / SECTION-START RULE
+  ============================================================================
+  Page break after the cover (§5k) and after Section VI's Material Sources table
+  (§19d). "EXECUTIVE SUMMARY" and Section I share page 2 in the reference edition,
+  as do "AI DISCOVERABILITY" and the rest of Section III with the end of Section II
+  on the page before it — sections may flow directly beneath one another if space
+  allows, but a §8/§9/§10/§11 table or box must never be split across a page
+  boundary; force a break rather than split one.
+
+  If rendering to plain text/markdown instead of a styled document, preserve every
+  structural element above (heading order, box captions, table column headers,
+  label sequences) using markdown headings/tables/bold in place of the color and
+  point-size instructions, which apply only when the output target is a styled
+  document (docx, PDF, HTML, etc.).
+
+  ============================================================================
+  22. DECORATIVE MASTHEAD GRAPHIC (cover only — optional but present in the
+      reference edition; omit if the rendering surface can't do vector arcs cleanly)
+  ============================================================================
+  A set of 5-6 concentric arcs in the masthead band's upper-right region, stroke
+  color arc-line (#3D5A78), stroke width ~0.75pt, no fill. The arcs share a common
+  center point positioned beyond the band's top-right corner (off-canvas, up and to
+  the right), so what's visible inside the band are large sweeping curves opening
+  toward the bottom-left — think ripples centered just outside that corner.
+  Consecutive rings are evenly spaced ~16pt apart in radius. The largest ring's
+  visible arc spans roughly the right third of the band's width and most of its
+  height; the smallest visible ring is a tight curve near the corner itself. Render
+  these behind the wordmark/title text (§5), not in front of it. This graphic never
+  appears anywhere else in the document — not on interior section-heading boxes, not
+  on the closing CTA band.
+
+  ============================================================================
+  23. SELF-CHECK BEFORE FINALIZING
+  ============================================================================
+  Before delivering the report, verify: zero italic text anywhere; zero vertical
+  rules inside any table; the footer's page number is the only ink-colored (not
+  grey) text in the footer line; the "EXECUTIVE SUMMARY" section exists, precedes
+  Section I, and is included as the first row of the HOW TO READ THIS REPORT table
+  (making it 7 rows, not 6); every gold-bar box (§9) uses the inline "LABEL | body"
+  paragraph form, never a separate label line; the "Executive implication." label is
+  ink-colored, not blue-mid; each of the five Section II findings has its own
+  blue-mid sidebar number and tint-blue content band; the Material Sources table's
+  links are real and resolve to the sources actually used; and the closing CTA row
+  of email/LinkedIn/wordmark is three equal columns, not a single spaced-out line.
+
+@ [ANALYST NAME], a senior B2B technology GTM and commercial-transformation advisor at
+  [FIRM NAME], writing in third person about the subject company for an executive
+  reader who has never seen this framework before
+
+* detailed — reason through the evidence carefully before committing to any finding,
+  theme, or table row, and make each credible-alternative genuinely load-bearing rather
+  than a token caveat; do not show this reasoning in the output, only its result
+
+| research: gather and organize public evidence on [TARGET] into the six
+  evidence categories, noting for each item what it is, what specifically it evidences,
+  and its real source URL — flagging anywhere evidence is thin, contradictory, or
+  purely company-originated
+  ^ co-controlled: company-controlled materials — homepage, product/platform pages,
+    pricing, support/onboarding docs, developer/API docs, regulatory filings (10-K/10-Q
+    or equivalent) if [TARGET] is public
+  ^ customer-partner: named customer case studies, partner integrations, and rollout/
+    win announcements that reveal account size, format, and use case
+  ^ analyst-market: analyst commentary, market-guide or category reports, and
+    third-party market-sizing or adoption-statistics sources
+  ^ independent-reviews: independent review platforms (e.g. G2, Capterra, TrustRadius,
+    Software Advice, NerdWallet-style comparison sites) for fit, cost, and friction
+    patterns
+  ^ competitors-alts: named competitors and alternative vendors, and how [TARGET]
+    is positioned against them in independent or comparison sources
+  ^ other-thirdparty: trade press, industry-association or macro data (labor, margin,
+    regulatory) relevant to the subject's buyers, and any answer-engine/AI-discoverability
+    testing of the subject company's category, problem, and comparison queries
+
+| icp-synthesis: from {research}, synthesize the strongest public-evidence hypothesis of
+  [TARGET]'s apparent ICP — best-fit accounts, buyer roles, buying signals, the
+  gap between stated and apparent targeting, who to deprioritize, and the material
+  boundary on what public evidence can and cannot establish /$ this becomes the
+  EXECUTIVE SUMMARY and Section I
+
+| findings: from {research} and {icp-synthesis}, draft the five Section II findings and
+  the closing governing-commercial-tension paragraph /$ each finding needs a genuine,
+  specific credible alternative, not a generic disclaimer
+
+| themes: from {research}, {icp-synthesis}, and {findings}, draft the four to five
+  Section III underlying themes, including the AI-discoverability theme
+
+| detailed-icp: from {research} and {icp-synthesis}, draft the five Section IV tables
+  and the closing material-uncertainty paragraph
+
+| inquiry: from {findings}, {themes}, and {detailed-icp}, draft the five Section V
+  focused-inquiry blocks, choosing the five internal-validation questions that would
+  most change the targeting, closability, or post-sale-quality judgments already made
+
+| sources: from {research}, compile the Section VI evidence-category summary, research
+  scope/treatment/limitations block, and the Material Sources table with real, working
+  links per the $ constraint above
+
+| assemble: combine {icp-synthesis}, {findings}, {themes}, {detailed-icp}, {inquiry},
+  and {sources} into the single continuous report specified in % and $, in the fixed
+  section order (EXECUTIVE SUMMARY, then Sections I-VI), with the cover block, running
+  headers/footers, and closing CTA page filled in from [ANALYST NAME] / [TITLE] /
+  [FIRM NAME] / [ANALYST EMAIL] / [ANALYST LINKEDIN] / [PUBLICATION DATE], then run the
+  §23 self-check before finalizing
+```
