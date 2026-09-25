@@ -22,7 +22,7 @@ public class SystemPromptBuilder
     /// </summary>
     /// <param name="superPrompt">Selects which base persona/prompt to use, matching the
     /// CLI's --Superprompt argument (case-insensitive). Null or empty uses the default
-    /// (Connie / Consort). Valid names: andy, angie, connie (or consort), donald (or trump),
+    /// (Andy). Valid names: andy, angie, connie (or consort), donald (or trump),
     /// fed (or powell), code.</param>
     public SystemPromptBuilder(ProjectContext project, MemoryManager? memory = null, string? superPrompt = null)
     {
@@ -38,7 +38,7 @@ public class SystemPromptBuilder
     public static string ResolveSuperPrompt(string? superPrompt)
     {
         if (string.IsNullOrWhiteSpace(superPrompt))
-            return BasePromptConnie;
+            return BasePromptAndy;
 
         return superPrompt.Trim().ToLowerInvariant() switch
         {

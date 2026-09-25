@@ -186,7 +186,7 @@ internal class Program
             AnsiConsole.MarkupLine("      --timeout <minutes>  Request timeout, e.g. for slow local Ollama models (default: 60)");
             AnsiConsole.MarkupLine("      --max-tokens <n>     Max output tokens per request (default: 128000; lower this for small-context local models)");
             AnsiConsole.MarkupLine("      --dir <path>         Project directory to run in (default: current directory)");
-            AnsiConsole.MarkupLine("      --Superprompt <name> Base persona/prompt: andy, angie, connie (default), donald, fed, code");
+            AnsiConsole.MarkupLine("      --Superprompt <name> Base persona/prompt: andy (default), angie, connie, donald, fed, code");
             AnsiConsole.MarkupLine("  -h, --help               Show this help");
             AnsiConsole.MarkupLine("  -v, --version            Show version\n");
             AnsiConsole.MarkupLine("[bold]ENVIRONMENT VARIABLES:[/]");

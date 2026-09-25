@@ -39,7 +39,7 @@ public class Configuration
     public string? WorkingDirectory { get; set; }
 
     /// <summary>Selects which base persona/prompt <see cref="Context.SystemPromptBuilder"/>
-    /// uses (see --Superprompt). Null means "use the default" -- Connie/Consort, i.e.
+    /// uses (see --Superprompt). Null means "use the default" -- Andy, i.e.
     /// <see cref="Context.SystemPromptBuilder.ResolveSuperPrompt"/> with a null argument.</summary>
     public string? SuperPrompt { get; set; }
 
