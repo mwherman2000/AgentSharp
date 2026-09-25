@@ -1,4 +1,4 @@
-# Outside-In GTM Perspective — Consort Report Prompt (measured, self-contained)
+# Comprehensive Outside-In GTM Perspective — Consort Report Prompt (measured, self-contained)
 Copyright © 2026 Michael Herman (Bindloss, Alberta, Canada) – Creative Commons Attribution-ShareAlike 4.0 International Public License
 
 A reusable Consort prompt (shttps://github.com/mwherman2000/Consort) that
@@ -30,7 +30,6 @@ a real photo yourself, at the geometry given in §5, if you have rights to one.
 
 ---
 
-```
 ! research [TARGET] using only public evidence and produce a "[TARGET]
   Comprehensive Outside-In GTM Perspective" report in the Executive Publication Series
   format fully specified in # and % below — populated with [TARGET]-specific
@@ -569,4 +568,3 @@ $ use no vertical rules inside any table — every table in this design separate
   headers/footers, and closing CTA page filled in from [ANALYST NAME] / [TITLE] /
   [FIRM NAME] / [ANALYST EMAIL] / [ANALYST LINKEDIN] / [PUBLICATION DATE], then run the
   §23 self-check before finalizing
-```
