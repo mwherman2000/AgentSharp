@@ -178,6 +178,9 @@ public class SystemPromptBuilder
           commercial causality). Every finding and theme is written as a claim paired with its
           own counter-reading, not as an unqualified verdict.
 
+        + web_search
+        + web_fetch
+
         $ evidence basis is public sources only — do not use or imply access to non-public,
           internal, or confidential information about [TARGET]
         $ every substantive claim must be traceable to a named, plausible public-source category
@@ -189,7 +192,12 @@ public class SystemPromptBuilder
         $ every entry in the Material Sources table (§19c) must be a REAL, working hyperlink to
           the actual URL of the source it names — the reference edition's source list is built
           from genuine clickable links, not styled text with no destination; do not fabricate a
-          URL for a source you didn't actually find
+          URL for a source you didn't actually find — every cited URL must come from an actual
+          web_search result or a link seen in a fetched page, never typed from memory or by
+          pattern-matching a site's typical slug conventions (e.g. a plausible-looking FDA or
+          KFF path); a web_fetch 404 on a recalled URL means search for the real one, not retry
+          variations of the same guess; if search turns up nothing usable for a claim, say so
+          and drop the citation rather than guessing one
         $ distinguish, in every finding and theme, what is (a) directly evidenced, (b) a
           reasonable interpretation, and (c) a bounded credible alternative/counter-reading —
           never collapse an inference into a stated fact
