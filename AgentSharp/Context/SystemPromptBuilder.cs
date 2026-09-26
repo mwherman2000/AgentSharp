@@ -22,7 +22,7 @@ public class SystemPromptBuilder
     /// </summary>
     /// <param name="superPrompt">Selects which base persona/prompt to use, matching the
     /// CLI's --Superprompt argument (case-insensitive). Null or empty uses the default
-    /// (Andy). Valid names: andy, angie, connie (or consort), donald (or trump),
+    /// (Connie / Consort). Valid names: andy, angie, connie (or consort), donald (or trump),
     /// fed (or powell), code.</param>
     public SystemPromptBuilder(ProjectContext project, MemoryManager? memory = null, string? superPrompt = null)
     {
@@ -38,7 +38,7 @@ public class SystemPromptBuilder
     public static string ResolveSuperPrompt(string? superPrompt)
     {
         if (string.IsNullOrWhiteSpace(superPrompt))
-            return BasePromptAndy;
+            return BasePromptConnie;
 
         return superPrompt.Trim().ToLowerInvariant() switch
         {
@@ -143,13 +143,15 @@ public class SystemPromptBuilder
         | `[FIRM NAME]` | Advisory firm/wordmark name | Web 7.0 Foundation |
         | `[ANALYST EMAIL]` | Contact email for the closing CTA | mwherman@parallelspace.net |
         | `[ANALYST LINKEDIN]` | Contact LinkedIn handle for the closing CTA | https://www.linkedin.com/in/mwherman/ |
+        | `[ANALYST PHOTO]` | Masthead headshot image, at the geometry given in §5 | mwherman-linkedin.jpeg |
         | `[PUBLICATION DATE]` | Report publication date | [TODAY] |
 
-        **One deliberate deviation:** the reference edition's masthead includes a photographic
-        headshot of the named analyst. This prompt specifies a plain initials-in-circle avatar,
-        sized and positioned identically to where that photo sits, instead of a photo —
-        reproducing an unnamed placeholder person's likeness isn't something to generate. Swap in
-        a real photo yourself, at the geometry given in §5, if you have rights to one.
+        **On the masthead avatar:** the reference edition's masthead includes a photographic
+        headshot of the named analyst. When [ANALYST PHOTO] names an image you actually have
+        rights to use, render it there, cropped to the circle given in §5. Fall back to a plain
+        initials-in-circle avatar, sized and positioned identically, only when no photo is
+        supplied — reproducing an unnamed placeholder person's likeness isn't something to
+        generate.
 
         ---
 
@@ -168,9 +170,6 @@ public class SystemPromptBuilder
           commercial causality). Every finding and theme is written as a claim paired with its
           own counter-reading, not as an unqualified verdict.
 
-        + web_search
-        + web_fetch
-
         $ evidence basis is public sources only — do not use or imply access to non-public,
           internal, or confidential information about [TARGET]
         $ every substantive claim must be traceable to a named, plausible public-source category
@@ -182,12 +181,7 @@ public class SystemPromptBuilder
         $ every entry in the Material Sources table (§19c) must be a REAL, working hyperlink to
           the actual URL of the source it names — the reference edition's source list is built
           from genuine clickable links, not styled text with no destination; do not fabricate a
-          URL for a source you didn't actually find — every cited URL must come from an actual
-          web_search result or a link seen in a fetched page, never typed from memory or by
-          pattern-matching a site's typical slug conventions (e.g. a plausible-looking FDA or
-          KFF path); a web_fetch 404 on a recalled URL means search for the real one, not retry
-          variations of the same guess; if search turns up nothing usable for a claim, say so
-          and drop the citation rather than guessing one
+          URL for a source you didn't actually find
         $ distinguish, in every finding and theme, what is (a) directly evidenced, (b) a
           reasonable interpretation, and (c) a bounded credible alternative/counter-reading —
           never collapse an inference into a stated fact
@@ -348,9 +342,9 @@ public class SystemPromptBuilder
                - Avatar: a circle ~92pt in diameter (radius 46pt), centered ~117pt from the
                  page's left edge and ~95pt from the page's top edge (i.e. roughly centered
                  in the band's left third, vertically centered in the band). Ring border:
-                 white, ~1.25pt. Fill: initials of [ANALYST NAME] in navy-text, centered, on
-                 a light neutral background — see the file-level note above on why this
-                 replaces a photo.
+                 white, ~1.25pt. Fill: [ANALYST PHOTO] cropped to the circle when supplied;
+                 otherwise initials of [ANALYST NAME] in navy-text, centered, on a light
+                 neutral background — see the file-level note above.
                - Decorative arcs: per §22, confined to the band's upper-right region, behind
                  the wordmark/title text.
                - Right-aligned text block, starting roughly a third of the way across the

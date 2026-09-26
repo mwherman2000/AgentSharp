@@ -20,13 +20,15 @@ Consort-aware model as its user/system turn.
 | `[FIRM NAME]` | Advisory firm/wordmark name | Web 7.0 Foundation |
 | `[ANALYST EMAIL]` | Contact email for the closing CTA | mwherman@parallelspace.net |
 | `[ANALYST LINKEDIN]` | Contact LinkedIn handle for the closing CTA | https://www.linkedin.com/in/mwherman/ |
+| `[ANALYST PHOTO]` | Masthead headshot image, at the geometry given in §5 | mwherman-linkedin.jpeg |
 | `[PUBLICATION DATE]` | Report publication date | [TODAY] |
 
-**One deliberate deviation:** the reference edition's masthead includes a photographic
-headshot of the named analyst. This prompt specifies a plain initials-in-circle avatar,
-sized and positioned identically to where that photo sits, instead of a photo —
-reproducing an unnamed placeholder person's likeness isn't something to generate. Swap in
-a real photo yourself, at the geometry given in §5, if you have rights to one.
+**On the masthead avatar:** the reference edition's masthead includes a photographic
+headshot of the named analyst. When [ANALYST PHOTO] names an image you actually have
+rights to use, render it there, cropped to the circle given in §5. Fall back to a plain
+initials-in-circle avatar, sized and positioned identically, only when no photo is
+supplied — reproducing an unnamed placeholder person's likeness isn't something to
+generate.
 
 ---
 
@@ -225,9 +227,9 @@ $ use no vertical rules inside any table — every table in this design separate
        - Avatar: a circle ~92pt in diameter (radius 46pt), centered ~117pt from the
          page's left edge and ~95pt from the page's top edge (i.e. roughly centered
          in the band's left third, vertically centered in the band). Ring border:
-         white, ~1.25pt. Fill: initials of [ANALYST NAME] in navy-text, centered, on
-         a light neutral background — see the file-level note above on why this
-         replaces a photo.
+         white, ~1.25pt. Fill: [ANALYST PHOTO] cropped to the circle when supplied;
+         otherwise initials of [ANALYST NAME] in navy-text, centered, on a light
+         neutral background — see the file-level note above.
        - Decorative arcs: per §22, confined to the band's upper-right region, behind
          the wordmark/title text.
        - Right-aligned text block, starting roughly a third of the way across the
