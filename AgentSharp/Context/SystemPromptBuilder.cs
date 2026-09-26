@@ -22,7 +22,7 @@ public class SystemPromptBuilder
     /// </summary>
     /// <param name="superPrompt">Selects which base persona/prompt to use, matching the
     /// CLI's --Superprompt argument (case-insensitive). Null or empty uses the default
-    /// (Connie / Consort). Valid names: andy, angie, connie (or consort), donald (or trump),
+    /// (Andy). Valid names: andy, angie, connie (or consort), donald (or trump),
     /// fed (or powell), code.</param>
     public SystemPromptBuilder(ProjectContext project, MemoryManager? memory = null, string? superPrompt = null)
     {
@@ -35,19 +35,27 @@ public class SystemPromptBuilder
     /// Resolves a --Superprompt name to its base prompt text. Unknown names throw so a
     /// typo on the command line is caught at startup rather than silently defaulting.
     /// </summary>
-    public static string ResolveSuperPrompt(string? superPrompt)
+    public static string ResolveSuperPrompt(string? superPrompt) => Resolve(superPrompt).Prompt;
+
+    /// <summary>
+    /// Resolves a --Superprompt name to the persona's display name (e.g. "Andy"),
+    /// for the welcome banner. Same defaulting and validation as <see cref="ResolveSuperPrompt"/>.
+    /// </summary>
+    public static string ResolveAgentName(string? superPrompt) => Resolve(superPrompt).Name;
+
+    private static (string Name, string Prompt) Resolve(string? superPrompt)
     {
         if (string.IsNullOrWhiteSpace(superPrompt))
-            return BasePromptConnie;
+            return ("Andy", BasePromptAndy);
 
         return superPrompt.Trim().ToLowerInvariant() switch
         {
-            "andy" => BasePromptAndy,
-            "angie" => BasePromptAngie,
-            "connie" or "consort" => BasePromptConnie,
-            "donald" or "trump" => BasePromptDonald,
-            "fed" or "powell" => BasePromptFed,
-            "code" or "coding" => BasePromptCode,
+            "andy" => ("Andy", BasePromptAndy),
+            "angie" => ("Angie", BasePromptAngie),
+            "connie" or "consort" => ("Connie", BasePromptConnie),
+            "donald" or "trump" => ("Donald", BasePromptDonald),
+            "fed" or "powell" => ("Fed Chair", BasePromptFed),
+            "code" or "coding" => ("AgentSharp", BasePromptCode),
             _ => throw new ArgumentException(
                 $"Unknown --Superprompt '{superPrompt}'. Valid options: andy, angie, connie, donald, fed, code.")
         };
