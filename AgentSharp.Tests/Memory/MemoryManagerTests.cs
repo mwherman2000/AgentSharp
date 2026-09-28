@@ -21,6 +21,17 @@ public class MemoryManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task Clear_DeletesMemory_AndReportsWhetherThereWasAny()
+    {
+        await _manager.AppendAsync("Remember me");
+
+        Assert.True(_manager.Clear());
+        Assert.Null(_manager.Read());
+        Assert.False(File.Exists(_manager.FilePath));
+        Assert.False(_manager.Clear());
+    }
+
+    [Fact]
     public void Read_ReturnsNull_WhenNoMemoryFileExists()
     {
         Assert.Null(_manager.Read());

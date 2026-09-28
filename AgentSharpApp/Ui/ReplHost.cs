@@ -263,7 +263,7 @@ public class ReplHost
             case CommandType.Memory:
                 if (command.Argument == "clear")
                 {
-                    File.Delete(Path.Combine(_session.Project.WorkingDirectory, "MEMORY.md"));
+                    _session.Memory?.Clear();
                     AnsiConsole.MarkupLine("[green]Memory cleared.[/]");
                 }
                 else

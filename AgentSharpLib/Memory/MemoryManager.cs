@@ -23,6 +23,28 @@ public class MemoryManager
         _memoryPath = Path.Combine(projectDir, "MEMORY.md");
     }
 
+    /// <summary>Full path of the MEMORY.md file (which may not exist yet).</summary>
+    public string FilePath => _memoryPath;
+
+    /// <summary>
+    /// Delete all memory. Returns false if there was nothing to delete.
+    /// </summary>
+    public bool Clear()
+    {
+        _writeLock.Wait();
+        try
+        {
+            if (!File.Exists(_memoryPath))
+                return false;
+            File.Delete(_memoryPath);
+            return true;
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
     /// <summary>
     /// Read the current memory contents.
     /// Returns null if no memory file exists.

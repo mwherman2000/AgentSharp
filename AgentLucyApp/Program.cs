@@ -91,6 +91,12 @@ while (true)
             case "/sessions":
                 PrintSessions();
                 break;
+            case "/status":
+                PrintStatus();
+                break;
+            case "/memory":
+                HandleMemory(argument);
+                break;
             case "/transcribe":
                 if (argument is null)
                     Console.WriteLine("Usage: /transcribe <name>   (.md by default, or <name>.docx)");
@@ -171,6 +177,51 @@ void PrintSessions()
         Console.WriteLine($"{s.Id,-24} {s.CreatedAt:yyyy-MM-dd HH:mm} {s.MessageCount,8}");
 }
 
+void PrintStatus()
+{
+    var loop = lucy.Loop;
+    var tools = string.Join(", ", lucy.Tools.All.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal));
+    var effectiveInput = loop.TotalInputTokens + loop.TotalCacheCreationTokens + loop.TotalCacheReadTokens;
+    var hitRate = effectiveInput == 0 ? "" : $" ({100.0 * loop.TotalCacheReadTokens / effectiveInput:F0}% hit rate)";
+
+    Console.WriteLine($"""
+        Agent:          {agentName}
+        Provider:       {lucy.Llm.ProviderName}
+        Model:          {lucy.Llm.ModelId}
+        Max tokens:     {lucy.MaxTokens}
+        Max iterations: {lucy.MaxIterations}
+        Tools:          {lucy.Tools.All.Count} ({tools})
+        Messages:       {lucy.History.Count}
+        Tokens:         {loop.TotalInputTokens} in / {loop.TotalOutputTokens} out (this conversation)
+        Cache:          {loop.TotalCacheCreationTokens} written / {loop.TotalCacheReadTokens} read{hitRate}
+        Directory:      {lucy.Project.WorkingDirectory}
+        Git branch:     {lucy.Project.GitBranch ?? "N/A"}
+        Memory:         {lucy.Memory?.FilePath ?? "off"}
+        """);
+}
+
+// /memory shows MEMORY.md; /memory clear deletes it.
+void HandleMemory(string? argument)
+{
+    if (lucy.Memory is not { } memory)
+    {
+        Console.WriteLine("Memory is turned off.");
+        return;
+    }
+    if (argument is null)
+    {
+        var content = memory.Read();
+        Console.WriteLine(content ?? $"No memory yet ({memory.FilePath}).");
+        return;
+    }
+    if (argument.Equals("clear", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.WriteLine(memory.Clear() ? "Memory cleared." : "No memory to clear.");
+        return;
+    }
+    Console.WriteLine("Usage: /memory [clear]");
+}
+
 string? TryWriteTranscript(string name)
 {
     try
@@ -193,6 +244,8 @@ static void PrintHelp(string agentName)
           /save [id]           Save this conversation (and a .docx transcript)
           /load <id>           Continue a saved conversation
           /sessions            List saved conversations
+          /status              Model, tools, token usage, directory
+          /memory [clear]      Show {agentName}'s MEMORY.md, or delete it
           /transcribe <name>   Write a Q&A transcript (<name>.md, or <name>.docx)
           /exit, /quit         Quit
           Ctrl+C               Interrupt {agentName} mid-reply (at the prompt: quit)
