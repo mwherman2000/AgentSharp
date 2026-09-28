@@ -1,12 +1,15 @@
 using AgentLucyApp;
 using AgentSharpLib;
+using AgentSharpLib.Context;
 using AgentSharpLib.Llm;
+using AgentSharpLib.Memory;
 
 // ============================================================================
 // AgentLucyApp - a minimal chat with Lucy, built only on AgentSharpLib.
 //
 // Everything agent-related (LLM client, tools, memory, sub-agents, the Lucy
-// persona) comes from AgentBuilder; this file only supplies the console I/O.
+// persona, saved sessions, transcripts) comes from the library; this file only
+// supplies the console I/O.
 // ============================================================================
 
 var options = ParseArgs(args);
@@ -28,8 +31,15 @@ catch (InvalidOperationException ex)
     return 1;
 }
 
+var agentName = SystemPromptBuilder.ResolveAgentName(lucy.SuperPrompt);
+
+// Lucy's saved conversations live apart from the main CLI's (~/.agentsharp/sessions),
+// so /load and /sessions only ever show Lucy conversations.
+var sessions = new SessionManager(Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agentsharp", "lucy"));
+
 Console.ForegroundColor = ConsoleColor.Magenta;
-Console.WriteLine($"Lucy  ({lucy.Llm.ProviderName} / {lucy.Llm.ModelId})");
+Console.WriteLine($"{agentName}  ({lucy.Llm.ProviderName} / {lucy.Llm.ModelId})");
 Console.ResetColor();
 Console.WriteLine("Type a message, or /help for commands.");
 
@@ -46,8 +56,8 @@ Console.CancelKeyPress += (_, e) =>
 
 while (true)
 {
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.Write("\nyou> ");
+    Console.ForegroundColor = ConsoleColor.Magenta;
+    Console.Write($"\n{agentName}> ");
     Console.ResetColor();
 
     var input = Console.ReadLine();
@@ -57,29 +67,43 @@ while (true)
     if (input.Length == 0)
         continue;
 
-    if (input is "/exit" or "/quit")
-        break;
-    if (input == "/clear")
-    {
-        lucy.Reset();
-        Console.WriteLine("(new conversation)");
-        continue;
-    }
-    if (input == "/help")
-    {
-        PrintHelp();
-        continue;
-    }
     if (input.StartsWith('/'))
     {
-        // Don't send a mistyped command to Lucy as a chat message.
-        Console.WriteLine($"Unknown command '{input.Split(' ')[0]}'. Type /help for commands.");
+        var parts = input.Split(' ', 2, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var argument = parts.Length > 1 ? parts[1] : null;
+        switch (parts[0].ToLowerInvariant())
+        {
+            case "/exit" or "/quit":
+                return 0;
+            case "/help":
+                PrintHelp(agentName);
+                break;
+            case "/clear":
+                lucy.Reset();
+                Console.WriteLine("(new conversation)");
+                break;
+            case "/save":
+                await SaveAsync(argument);
+                break;
+            case "/load":
+                await LoadAsync(argument);
+                break;
+            case "/sessions":
+                PrintSessions();
+                break;
+            case "/transcribe":
+                if (argument is null)
+                    Console.WriteLine("Usage: /transcribe <name>   (.md by default, or <name>.docx)");
+                else if (TryWriteTranscript(argument) is { } path)
+                    Console.WriteLine($"Transcript written: {path}");
+                break;
+            default:
+                // Don't send a mistyped command to Lucy as a chat message.
+                Console.WriteLine($"Unknown command '{parts[0]}'. Type /help for commands.");
+                break;
+        }
         continue;
     }
-
-    Console.ForegroundColor = ConsoleColor.Magenta;
-    Console.Write("lucy> ");
-    Console.ResetColor();
 
     var historyBeforeTurn = lucy.History.Count;
     turnCts = new CancellationTokenSource();
@@ -102,14 +126,76 @@ while (true)
 
 return 0;
 
-static void PrintHelp()
+// Saves the conversation, plus a .docx transcript of it next to the project (same
+// as the main CLI's /save).
+async Task SaveAsync(string? id)
 {
-    Console.WriteLine("""
+    var savedId = await sessions.SaveAsync(lucy.History, id);
+    if (savedId is null)
+    {
+        Console.WriteLine($"Could not save session '{id}'.");
+        return;
+    }
+    Console.WriteLine($"Session saved: {savedId}");
+    if (TryWriteTranscript($"{savedId}.docx") is { } path)
+        Console.WriteLine($"Transcript written: {path}");
+}
+
+async Task LoadAsync(string? id)
+{
+    if (id is null)
+    {
+        Console.WriteLine("Usage: /load <session-id>   (see /sessions)");
+        return;
+    }
+    var history = await sessions.LoadAsync(id);
+    if (history is null)
+    {
+        Console.WriteLine($"Session not found: {id}");
+        return;
+    }
+    lucy.Restore(history);
+    Console.WriteLine($"Session loaded: {id} ({history.Count} messages)");
+}
+
+void PrintSessions()
+{
+    var saved = sessions.ListSessions();
+    if (saved.Count == 0)
+    {
+        Console.WriteLine("No saved sessions.");
+        return;
+    }
+    Console.WriteLine($"{"ID",-24} {"Created",-16} Messages");
+    foreach (var s in saved)
+        Console.WriteLine($"{s.Id,-24} {s.CreatedAt:yyyy-MM-dd HH:mm} {s.MessageCount,8}");
+}
+
+string? TryWriteTranscript(string name)
+{
+    try
+    {
+        return lucy.WriteTranscript(name);
+    }
+    catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+    {
+        Console.WriteLine($"Could not write transcript: {ex.Message}");
+        return null;
+    }
+}
+
+static void PrintHelp(string agentName)
+{
+    Console.WriteLine($"""
         Commands:
-          /help          Show this help
-          /clear         Start a new conversation with Lucy
-          /exit, /quit   Quit
-          Ctrl+C         Interrupt Lucy mid-reply (at the prompt: quit)
+          /help                Show this help
+          /clear               Start a new conversation with {agentName}
+          /save [id]           Save this conversation (and a .docx transcript)
+          /load <id>           Continue a saved conversation
+          /sessions            List saved conversations
+          /transcribe <name>   Write a Q&A transcript (<name>.md, or <name>.docx)
+          /exit, /quit         Quit
+          Ctrl+C               Interrupt {agentName} mid-reply (at the prompt: quit)
         """);
 }
 

@@ -5,6 +5,7 @@ using AgentSharpLib.Memory;
 using AgentSharpLib.Output;
 using AgentSharpLib.Safety;
 using AgentSharpLib.Tools;
+using AgentSharpLib.Transcripts;
 
 namespace AgentSharpLib;
 
@@ -104,6 +105,14 @@ public sealed class AgentSession
 
     /// <summary>Continue a previously saved conversation (see SessionManager).</summary>
     public void Restore(ConversationHistory history) => Loop = CreateLoop(history);
+
+    /// <summary>
+    /// Write a Q&amp;A transcript of the current conversation into the project
+    /// directory and return its path. See <see cref="ConversationTranscript.Write"/>
+    /// for naming, format, and the exceptions it throws.
+    /// </summary>
+    public string WriteTranscript(string name) =>
+        ConversationTranscript.Write(History, SystemPrompt, Project.WorkingDirectory, name);
 
     private AgentLoop CreateLoop(ConversationHistory? history)
     {
