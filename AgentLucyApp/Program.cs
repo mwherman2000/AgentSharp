@@ -31,7 +31,7 @@ catch (InvalidOperationException ex)
 Console.ForegroundColor = ConsoleColor.Magenta;
 Console.WriteLine($"Lucy  ({lucy.Llm.ProviderName} / {lucy.Llm.ModelId})");
 Console.ResetColor();
-Console.WriteLine("Type a message. /clear starts over, /exit quits, Ctrl+C interrupts Lucy mid-reply.");
+Console.WriteLine("Type a message, or /help for commands.");
 
 // Ctrl+C during a reply cancels just that turn; at the prompt it exits as usual.
 CancellationTokenSource? turnCts = null;
@@ -65,6 +65,17 @@ while (true)
         Console.WriteLine("(new conversation)");
         continue;
     }
+    if (input == "/help")
+    {
+        PrintHelp();
+        continue;
+    }
+    if (input.StartsWith('/'))
+    {
+        // Don't send a mistyped command to Lucy as a chat message.
+        Console.WriteLine($"Unknown command '{input.Split(' ')[0]}'. Type /help for commands.");
+        continue;
+    }
 
     Console.ForegroundColor = ConsoleColor.Magenta;
     Console.Write("lucy> ");
@@ -90,6 +101,17 @@ while (true)
 }
 
 return 0;
+
+static void PrintHelp()
+{
+    Console.WriteLine("""
+        Commands:
+          /help          Show this help
+          /clear         Start a new conversation with Lucy
+          /exit, /quit   Quit
+          Ctrl+C         Interrupt Lucy mid-reply (at the prompt: quit)
+        """);
+}
 
 // Minimal flags; the provider's usual key variable (e.g. ANTHROPIC_API_KEY) is used
 // when --api-key isn't given.
