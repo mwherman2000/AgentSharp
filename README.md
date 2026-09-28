@@ -117,6 +117,7 @@ AgentSharpApp/     Interactive chat CLI (entry point)
   Cli/            Command-line / env / config-file parsing into AgentOptions
   Ui/             REPL host, command parsing, Spectre renderer, approval prompt
   *_prompts/      Prompt source material (GTM, Lucy, O*NET)
+AgentLucyApp/      Minimal chat with the Lucy persona -- a small AgentSharpLib sample
 AgentSharp.Tests/  xUnit test suite, mirrors the source layout
 docs/              Design notes (e.g. streaming vs. sync)
 ```
