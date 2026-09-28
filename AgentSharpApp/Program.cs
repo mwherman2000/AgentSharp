@@ -63,11 +63,14 @@ internal class Program
             __Mark("llm client created");
 
             // --- Tool Registry (auto-discover all ITool implementations) ---
+            // --- Output (how the library's progress/status events reach the terminal) ---
+            var output = new SpectreAgentOutput();
+
             var tools = new ToolRegistry();
-            tools.DiscoverTools();
+            tools.DiscoverTools(output: output);
 
             // --- Safety ---
-            var approval = new ApprovalGate();
+            var approval = new ApprovalGate(new ConsoleApprovalPrompt(), output);
 
             // --- Memory & Sessions ---
             var sessions = new SessionManager();
@@ -79,7 +82,7 @@ internal class Program
             var maxTokens = config.MaxTokens ?? AgentSharpLib.Agent.AgentLoop.DefaultMaxTokens;
             var maxIterations = config.MaxIterations ?? AgentSharpLib.Agent.AgentLoop.DefaultMaxIterations;
             var promptBuilder = new SystemPromptBuilder(new ProjectContext(), memory, config.SuperPrompt);
-            var orchestrator = new AgentOrchestrator(llm, tools, approval, promptBuilder.Build(), maxTokens, maxIterations);
+            var orchestrator = new AgentOrchestrator(llm, tools, approval, promptBuilder.Build(), maxTokens, maxIterations, output: output);
             tools.Register(new SubAgentTool(orchestrator));
             tools.Register(new MemoryTool(memory));
 
@@ -99,7 +102,7 @@ internal class Program
             {
                 // One-shot mode: run a single turn and exit
                 var oneShotPromptBuilder = new SystemPromptBuilder(project, memory, config.SuperPrompt);
-                var agentLoop = new AgentSharpLib.Agent.AgentLoop(llm, tools, approval, oneShotPromptBuilder.Build(), maxTokens: maxTokens, maxIterations: maxIterations);
+                var agentLoop = new AgentSharpLib.Agent.AgentLoop(llm, tools, approval, oneShotPromptBuilder.Build(), maxTokens: maxTokens, maxIterations: maxIterations, output: output);
                 __Mark("about to call RunTurnAsync");
                 if (AgentFlags.SyncMode)
                     await agentLoop.RunTurnNonStreamingAsync(promptArg);
@@ -110,7 +113,7 @@ internal class Program
             }
 
             // --- Interactive REPL ---
-            var repl = new ReplHost(llm, tools, approval, project, sessions, memory, maxTokens, maxIterations, config.SuperPrompt);
+            var repl = new ReplHost(llm, tools, approval, output, project, sessions, memory, maxTokens, maxIterations, config.SuperPrompt);
             await repl.RunAsync();
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("API key"))

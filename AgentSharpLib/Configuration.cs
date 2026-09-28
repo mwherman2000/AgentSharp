@@ -1,6 +1,5 @@
 using System.Text.Json;
 using AgentSharpLib.Llm;
-using Spectre.Console;
 
 namespace AgentSharpLib;
 

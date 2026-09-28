@@ -108,12 +108,13 @@ AgentSharpLib/     Reusable agent library
   Context/        Project context scanning, system prompt building
   Llm/            LLM clients (Anthropic, OpenAI-compatible)
   Memory/         Persistent memory and session management
+  Output/         IAgentOutput -- host-rendered progress/status events
   Safety/         Approval gate and shell command risk classification
   Telemetry/      OpenTelemetry tracing
   Tools/          Tool registry and built-in tool implementations
   Transcripts/    Markdown / .docx transcript rendering
 AgentSharpApp/     Interactive chat CLI (entry point)
-  Ui/             REPL host, command parsing
+  Ui/             REPL host, command parsing, Spectre renderer, approval prompt
   *_prompts/      Prompt source material (GTM, Lucy, O*NET)
 AgentSharp.Tests/  xUnit test suite, mirrors the source layout
 docs/              Design notes (e.g. streaming vs. sync)

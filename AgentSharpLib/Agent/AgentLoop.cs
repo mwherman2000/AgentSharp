@@ -1,8 +1,8 @@
 using AgentSharpLib.Llm;
+using AgentSharpLib.Output;
 using AgentSharpLib.Safety;
 using AgentSharpLib.Telemetry;
 using AgentSharpLib.Tools;
-using Spectre.Console;
 using System;
 using System.Diagnostics;
 using System.Text;
@@ -29,6 +29,7 @@ public class AgentLoop
     private readonly ConversationHistory _history;
     private readonly string _systemPrompt;
     private readonly int _maxTokens;
+    private readonly IAgentOutput _output;
     private int _totalInputTokens;
     private int _totalOutputTokens;
     private int _totalCacheCreationTokens;
@@ -149,7 +150,8 @@ public class AgentLoop
         string systemPrompt,
         ConversationHistory? history = null,
         int maxTokens = DefaultMaxTokens,
-        int maxIterations = DefaultMaxIterations)
+        int maxIterations = DefaultMaxIterations,
+        IAgentOutput? output = null)
     {
         _llm = llm;
         _tools = tools;
@@ -158,6 +160,7 @@ public class AgentLoop
         _history = history ?? new ConversationHistory();
         _maxTokens = maxTokens;
         _maxIterations = maxIterations;
+        _output = output ?? NullAgentOutput.Instance;
     }
 
     /// <summary>
@@ -189,9 +192,9 @@ public class AgentLoop
             using var llmActivity = AgentTelemetry.Source.StartActivity("llm.request");
             llmActivity?.SetTag("llm.messages.count", request.Messages.Count);
             llmActivity?.SetTag("llm.tools.count", request.Tools?.Count ?? 0);
-            if (AgentFlags.RequestTrace) Console.WriteLine($"\n{_turnNumber}>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
-            if (AgentFlags.ToolsTrace)   Console.WriteLine($"\n >>request.Tools: {System.Text.Json.JsonSerializer.Serialize(request.Tools)}");
-            if (AgentFlags.HistoryTrace) Console.WriteLine($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(request.Messages)}");
+            if (AgentFlags.RequestTrace) _output.Trace($"\n{_turnNumber}>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
+            if (AgentFlags.ToolsTrace)   _output.Trace($"\n >>request.Tools: {System.Text.Json.JsonSerializer.Serialize(request.Tools)}");
+            if (AgentFlags.HistoryTrace) _output.Trace($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(request.Messages)}");
 
             // Accumulate the streamed response
             var contentBlocks = new List<ContentBlock>();
@@ -229,7 +232,7 @@ public class AgentLoop
                     {
                         case TextDelta td:
                             currentText.Append(td.Text);
-                            WriteTextToConsole(td.Text);
+                            _output.Text(td.Text);
                             llmActivity?.AddEvent(new ActivityEvent("text_delta",
                                 tags: new ActivityTagsCollection { { "text.length", td.Text.Length }, { "text.content", td.Text } }));
                             break;
@@ -343,8 +346,8 @@ public class AgentLoop
             {
                 // Non-retryable auth/client errors — don't loop, just report
                 llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                AnsiConsole.MarkupLine($"\n[red]Error:[/] {Markup.Escape(ex.Message)}");
-                PrintAuthOrConfigHint(ex.Message);
+                _output.Error(ex.Message);
+                _output.Info(AuthOrConfigHint(ex.Message));
                 break;
             }
             catch (Exception ex)
@@ -353,20 +356,17 @@ public class AgentLoop
                 consecutiveStreamErrors++;
                 streamError = true;
                 llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                AnsiConsole.MarkupLine($"\n[red]Error:[/] [dim]{Markup.Escape(ex.GetType().FullName ?? ex.GetType().Name)}: {Markup.Escape(ex.Message)}[/]");
-                if (ex.InnerException is { } innerEx)
-                    AnsiConsole.MarkupLine($"[dim]  Inner: {Markup.Escape(innerEx.GetType().FullName ?? innerEx.GetType().Name)}: {Markup.Escape(innerEx.Message)}[/]");
-                AnsiConsole.MarkupLine($"[dim]{Markup.Escape(ex.StackTrace ?? "")}[/]");
+                _output.TransientError(ex);
 
                 if (consecutiveStreamErrors >= maxStreamRetries)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]Failed after {maxStreamRetries} consecutive errors. Stopping.[/]");
+                    _output.Warning($"Failed after {maxStreamRetries} consecutive errors. Stopping.");
                     break;
                 }
 
                 // Exponential backoff: 500ms, 1s, 2s, ...
                 var delay = ComputeBackoffDelay(consecutiveStreamErrors);
-                AnsiConsole.MarkupLine($"[dim]Retrying in {delay.TotalSeconds:F1}s...[/]");
+                _output.Info($"Retrying in {delay.TotalSeconds:F1}s...");
                 await Task.Delay(delay, ct);
 
                 // If we have no content at all, add the error as text so the
@@ -413,7 +413,7 @@ public class AgentLoop
             var toolUses = contentBlocks.OfType<ToolUseBlock>().ToList();
             if (toolUses.Count == 0)
             {
-                AnsiConsole.WriteLine();
+                _output.LineBreak();
                 turnActivity?.SetTag("turn.stop_reason", stopReason);
                 turnActivity?.SetTag("turn.tool_executions", _turnToolExecutions);
 
@@ -446,7 +446,7 @@ public class AgentLoop
 
         if (iterations >= _maxIterations)
         {
-            AnsiConsole.MarkupLine("[yellow]Warning: Agent loop reached maximum iterations. Stopping.[/]");
+            _output.Warning("Warning: Agent loop reached maximum iterations. Stopping.");
         }
 
         return fullResponseText.ToString();
@@ -483,9 +483,9 @@ public class AgentLoop
             using var llmActivity = AgentTelemetry.Source.StartActivity("llm.request");
             llmActivity?.SetTag("llm.messages.count", request.Messages.Count);
             llmActivity?.SetTag("llm.tools.count", request.Tools?.Count ?? 0);
-            if (AgentFlags.RequestTrace) Console.WriteLine($"\n{_turnNumber}>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
-            if (AgentFlags.ToolsTrace)   Console.WriteLine($"\n >>request.Tools: {System.Text.Json.JsonSerializer.Serialize(request.Tools)}");
-            if (AgentFlags.HistoryTrace) Console.WriteLine($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(request.Messages)}");
+            if (AgentFlags.RequestTrace) _output.Trace($"\n{_turnNumber}>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
+            if (AgentFlags.ToolsTrace)   _output.Trace($"\n >>request.Tools: {System.Text.Json.JsonSerializer.Serialize(request.Tools)}");
+            if (AgentFlags.HistoryTrace) _output.Trace($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(request.Messages)}");
 
             // See the matching comment in RunTurnStreamingAsync: only the first
             // attempt gets the client's full configured timeout; retries after a
@@ -519,8 +519,8 @@ public class AgentLoop
             {
                 // Non-retryable auth/client errors — don't loop, just report
                 llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                AnsiConsole.MarkupLine($"\n[red]Error:[/] {Markup.Escape(ex.Message)}");
-                PrintAuthOrConfigHint(ex.Message);
+                _output.Error(ex.Message);
+                _output.Info(AuthOrConfigHint(ex.Message));
                 break;
             }
             catch (Exception ex)
@@ -531,19 +531,16 @@ public class AgentLoop
                 // treatment as streaming's "no content at all" case.
                 consecutiveErrors++;
                 llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                AnsiConsole.MarkupLine($"\n[red]Error:[/] [dim]{Markup.Escape(ex.GetType().FullName ?? ex.GetType().Name)}: {Markup.Escape(ex.Message)}[/]");
-                if (ex.InnerException is { } innerEx)
-                    AnsiConsole.MarkupLine($"[dim]  Inner: {Markup.Escape(innerEx.GetType().FullName ?? innerEx.GetType().Name)}: {Markup.Escape(innerEx.Message)}[/]");
-                AnsiConsole.MarkupLine($"[dim]{Markup.Escape(ex.StackTrace ?? "")}[/]");
+                _output.TransientError(ex);
 
                 if (consecutiveErrors >= maxRetries)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]Failed after {maxRetries} consecutive errors. Stopping.[/]");
+                    _output.Warning($"Failed after {maxRetries} consecutive errors. Stopping.");
                     break;
                 }
 
                 var delay = ComputeBackoffDelay(consecutiveErrors);
-                AnsiConsole.MarkupLine($"[dim]Retrying in {delay.TotalSeconds:F1}s...[/]");
+                _output.Info($"Retrying in {delay.TotalSeconds:F1}s...");
                 await Task.Delay(delay, ct);
 
                 _history.AddAssistantMessage(new List<ContentBlock>
@@ -577,7 +574,7 @@ public class AgentLoop
             var text = response.Message.GetText();
             if (text.Length > 0)
             {
-                WriteTextToConsole(text);
+                _output.Text(text);
                 AppendResponseSegment(fullResponseText, text);
             }
 
@@ -587,7 +584,7 @@ public class AgentLoop
             var toolUses = response.Message.GetToolUses().ToList();
             if (toolUses.Count == 0)
             {
-                AnsiConsole.WriteLine();
+                _output.LineBreak();
                 turnActivity?.SetTag("turn.stop_reason", response.StopReason);
                 turnActivity?.SetTag("turn.tool_executions", _turnToolExecutions);
 
@@ -614,7 +611,7 @@ public class AgentLoop
 
         if (iterations >= _maxIterations)
         {
-            AnsiConsole.MarkupLine("[yellow]Warning: Agent loop reached maximum iterations. Stopping.[/]");
+            _output.Warning("Warning: Agent loop reached maximum iterations. Stopping.");
         }
 
         return fullResponseText.ToString();
@@ -695,8 +692,7 @@ public class AgentLoop
         {
             _stallNudged = true;
             _repeatedToolBatchCount = 0;
-            AnsiConsole.MarkupLine(
-                $"[yellow]The model has issued the same tool call {timesInARow} times in a row -- nudging it to change approach.[/]");
+            _output.Warning($"The model has issued the same tool call {timesInARow} times in a row -- nudging it to change approach.");
             _history.AddUserMessage(
                 "You have issued the same tool call several times in a row and gotten the same result " +
                 "each time. Stop repeating it. Re-check the actual paths and the working directory: " +
@@ -707,8 +703,7 @@ public class AgentLoop
         }
 
         turnActivity?.SetTag("turn.stop_reason", "repeated_tool_calls");
-        AnsiConsole.MarkupLine(
-            "[yellow]Stopping the turn: the model kept repeating the same tool call and the earlier nudge didn't help.[/]");
+        _output.Warning("Stopping the turn: the model kept repeating the same tool call and the earlier nudge didn't help.");
         return true;
     }
 
@@ -768,8 +763,7 @@ public class AgentLoop
                 diskState = "Its on-disk state could not be checked.";
             }
 
-            AnsiConsole.MarkupLine(
-                $"[yellow]The model has written the same file {count} times this turn -- nudging it to stop and verify.[/]");
+            _output.Warning($"The model has written the same file {count} times this turn -- nudging it to stop and verify.");
             _history.AddUserMessage(
                 $"You have called write_file for \"{tripped}\" {count} times this turn. {diskState} " +
                 $"The file tools resolve a relative path against the working directory {Directory.GetCurrentDirectory()}; " +
@@ -780,8 +774,7 @@ public class AgentLoop
         }
 
         turnActivity?.SetTag("turn.stop_reason", "repeated_file_write");
-        AnsiConsole.MarkupLine(
-            "[yellow]Stopping the turn: the model kept rewriting the same file after being told it had already persisted.[/]");
+        _output.Warning("Stopping the turn: the model kept rewriting the same file after being told it had already persisted.");
         return true;
     }
 
@@ -820,24 +813,21 @@ public class AgentLoop
     /// case -- ConversationHistory is a flat append-only list, so /clear or a fresh
     /// session are the only ways out.)
     /// </summary>
-    private static void PrintAuthOrConfigHint(string exceptionMessage)
+    private static string AuthOrConfigHint(string exceptionMessage)
     {
         if (IsContextLengthError(exceptionMessage))
         {
-            AnsiConsole.MarkupLine("[dim]This conversation has grown too large for the model's context window -- " +
+            return "This conversation has grown too large for the model's context window -- " +
                 "not an API key or config problem. Use /clear to start fresh (this discards history), or continue " +
-                "the remaining work in a new session.[/]");
+                "the remaining work in a new session.";
         }
-        else if (IsInsufficientCreditError(exceptionMessage))
+        if (IsInsufficientCreditError(exceptionMessage))
         {
-            AnsiConsole.MarkupLine("[dim]Your account has run out of credit/quota -- not an API key or config " +
+            return "Your account has run out of credit/quota -- not an API key or config " +
                 "problem. Add credits or check your plan at your provider's billing page (e.g. " +
-                "console.anthropic.com -> Plans & Billing for Anthropic), then retry.[/]");
+                "console.anthropic.com -> Plans & Billing for Anthropic), then retry.";
         }
-        else
-        {
-            AnsiConsole.MarkupLine("[dim]Check your API key and provider configuration.[/]");
-        }
+        return "Check your API key and provider configuration.";
     }
 
     /// <summary>
@@ -848,7 +838,7 @@ public class AgentLoop
     /// </summary>
     private void AddMaxTokensNudge()
     {
-        AnsiConsole.MarkupLine("[yellow]Response was cut off by the output token limit. Asking the model to continue...[/]");
+        _output.Warning("Response was cut off by the output token limit. Asking the model to continue...");
         _history.AddUserMessage("Your previous response was cut off because it reached the output token limit. Please continue where you left off.");
     }
 
@@ -873,24 +863,6 @@ public class AgentLoop
     }
 
     /// <summary>
-    /// AnsiConsole.Write(string) forwards to the composite-format overload, which
-    /// treats the text as a format string and throws FormatException the moment it
-    /// contains a brace (e.g. code deltas) -- Text() writes the content literally
-    /// instead. Embedding a raw '\n' inside a single Text segment also doesn't
-    /// reliably move the cursor to column 0 under VT processing, so this splits on
-    /// newlines and emits each break via AnsiConsole.WriteLine explicitly.
-    /// </summary>
-    private static void WriteTextToConsole(string text)
-    {
-        var lines = text.Split('\n');
-        for (int i = 0; i < lines.Length; i++)
-        {
-            if (i > 0) AnsiConsole.WriteLine();
-            if (lines[i].Length > 0) AnsiConsole.Write(new Text(lines[i]));
-        }
-    }
-
-    /// <summary>
     /// Runs every pending tool call (with approval-gate checks) and collects the
     /// results to feed back to the LLM. Shared by both the streaming and
     /// non-streaming turn loops -- tool execution doesn't depend on how the
@@ -899,7 +871,7 @@ public class AgentLoop
     private async Task<List<ToolResultBlock>> ExecuteToolCallsAsync(
         IReadOnlyList<ToolUseBlock> toolUses, CancellationToken ct)
     {
-        AnsiConsole.WriteLine(); // Separator before tool execution output
+        _output.LineBreak(); // Separator before tool execution output
         var toolResults = new List<ToolResultBlock>();
 
         foreach (var toolUse in toolUses)

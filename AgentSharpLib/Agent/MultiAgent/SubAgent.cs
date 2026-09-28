@@ -1,5 +1,6 @@
 using AgentSharpLib.Context;
 using AgentSharpLib.Llm;
+using AgentSharpLib.Output;
 using AgentSharpLib.Safety;
 using AgentSharpLib.Tools;
 
@@ -35,7 +36,8 @@ public class SubAgent
         ApprovalGate approval,
         string systemPrompt,
         int maxTokens = AgentLoop.DefaultMaxTokens,
-        int maxIterations = AgentLoop.DefaultMaxIterations)
+        int maxIterations = AgentLoop.DefaultMaxIterations,
+        IAgentOutput? output = null)
     {
         Id = Guid.NewGuid().ToString("N")[..8];
         Name = name;
@@ -64,7 +66,7 @@ public class SubAgent
                 isolatedTools.Register(tool);
         }
 
-        _loop = new AgentLoop(llm, isolatedTools, approval, subAgentPrompt, maxTokens: maxTokens, maxIterations: maxIterations);
+        _loop = new AgentLoop(llm, isolatedTools, approval, subAgentPrompt, maxTokens: maxTokens, maxIterations: maxIterations, output: output);
     }
 
     /// <summary>

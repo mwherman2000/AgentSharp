@@ -1,6 +1,6 @@
 using System.Reflection;
 using AgentSharpLib.Llm;
-using Spectre.Console;
+using AgentSharpLib.Output;
 
 namespace AgentSharpLib.Tools;
 
@@ -32,7 +32,7 @@ public class ToolRegistry
     /// Auto-discover and register all ITool implementations in the given assembly.
     /// Skips abstract classes and interfaces.
     /// </summary>
-    public void DiscoverTools(Assembly? assembly = null)
+    public void DiscoverTools(Assembly? assembly = null, IAgentOutput? output = null)
     {
         assembly ??= Assembly.GetExecutingAssembly();
 
@@ -60,8 +60,7 @@ public class ToolRegistry
                 // diagnostic, leaving neither the user nor the model any way to know
                 // it was ever supposed to exist. Surface it instead of hiding it.
                 var inner = ex is TargetInvocationException { InnerException: { } ie } ? ie : ex;
-                AnsiConsole.MarkupLine(
-                    $"[dim yellow]Skipped tool '{Markup.Escape(type.Name)}': {Markup.Escape(inner.Message)}[/]");
+                (output ?? NullAgentOutput.Instance).ToolSkipped(type.Name, inner.Message);
             }
         }
     }

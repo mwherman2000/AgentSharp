@@ -3,6 +3,7 @@ using AgentSharpLib.Agent;
 using AgentSharpLib.Context;
 using AgentSharpLib.Llm;
 using AgentSharpLib.Memory;
+using AgentSharpLib.Output;
 using AgentSharpLib.Safety;
 using AgentSharpLib.Telemetry;
 using AgentSharpLib.Tools;
@@ -21,6 +22,7 @@ public class ReplHost
     private readonly ILlmClient _llm;
     private readonly ToolRegistry _tools;
     private readonly ApprovalGate _approval;
+    private readonly IAgentOutput _output;
     private readonly ProjectContext _project;
     private readonly SessionManager _sessions;
     private readonly MemoryManager _memory;
@@ -36,6 +38,7 @@ public class ReplHost
         ILlmClient llm,
         ToolRegistry tools,
         ApprovalGate approval,
+        IAgentOutput output,
         ProjectContext project,
         SessionManager sessions,
         MemoryManager memory,
@@ -46,6 +49,7 @@ public class ReplHost
         _llm = llm;
         _tools = tools;
         _approval = approval;
+        _output = output;
         _project = project;
         _sessions = sessions;
         _memory = memory;
@@ -54,7 +58,7 @@ public class ReplHost
         _superPrompt = superPrompt;
 
         var promptBuilder = new SystemPromptBuilder(_project, _memory, _superPrompt);
-        _agent = new AgentLoop(_llm, _tools, _approval, promptBuilder.Build(), maxTokens: _maxTokens, maxIterations: _maxIterations);
+        _agent = new AgentLoop(_llm, _tools, _approval, promptBuilder.Build(), maxTokens: _maxTokens, maxIterations: _maxIterations, output: _output);
         WireEvents(_agent);
     }
 
@@ -233,7 +237,7 @@ public class ReplHost
                     _superPrompt = command.Argument;
                 }
                 _agent = new AgentLoop(_llm, _tools, _approval,
-                    new SystemPromptBuilder(_project, _memory, _superPrompt).Build(), maxTokens: _maxTokens, maxIterations: _maxIterations);
+                    new SystemPromptBuilder(_project, _memory, _superPrompt).Build(), maxTokens: _maxTokens, maxIterations: _maxIterations, output: _output);
                 WireEvents(_agent);
                 _turnCount = 0;
                 AnsiConsole.Clear();
@@ -269,7 +273,7 @@ public class ReplHost
                     break;
                 }
                 _agent = new AgentLoop(_llm, _tools, _approval,
-                    new SystemPromptBuilder(_project, _memory, _superPrompt).Build(), history, _maxTokens, _maxIterations);
+                    new SystemPromptBuilder(_project, _memory, _superPrompt).Build(), history, _maxTokens, _maxIterations, _output);
                 WireEvents(_agent);
                 AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages)");
                 break;

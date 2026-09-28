@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using AgentSharpLib.Output;
 using AgentSharpLib.Tools;
-using Spectre.Console;
 
 namespace AgentSharpLib.Safety;
 
@@ -33,6 +33,8 @@ public class ApprovalGate
     // plain HashSet.
     private readonly ConcurrentDictionary<string, byte> _alwaysAllowed = new(StringComparer.OrdinalIgnoreCase);
     private readonly ShellCommandClassifier _shellClassifier = new();
+    private readonly IApprovalPrompt? _prompt;
+    private readonly IAgentOutput _output;
 
     // Guards only the interactive prompt itself (console rendering + Console.ReadKey),
     // not the whole approval check -- so a call that's auto-approved or already in
@@ -43,6 +45,15 @@ public class ApprovalGate
     // on screen for one agent could actually approve a completely different pending
     // command from the other.
     private readonly SemaphoreSlim _promptLock = new(1, 1);
+
+    /// <param name="prompt">Asks a human about Destructive tool calls. Null means no
+    /// one can answer, so every Destructive call is denied.</param>
+    /// <param name="output">Where auto-approval/denial notices go.</param>
+    public ApprovalGate(IApprovalPrompt? prompt = null, IAgentOutput? output = null)
+    {
+        _prompt = prompt;
+        _output = output ?? NullAgentOutput.Instance;
+    }
 
     /// <summary>
     /// Check if a tool execution requires approval and, if so, prompt the user.
@@ -61,7 +72,7 @@ public class ApprovalGate
         // Write tools: auto-approve but log
         if (tool.RiskLevel == ToolRiskLevel.Write)
         {
-            AnsiConsole.MarkupLine($"[dim]  [[auto-approved]] {Markup.Escape(tool.Name)}[/]");
+            _output.ToolAutoApproved(tool.Name);
             return true;
         }
 
@@ -86,19 +97,13 @@ public class ApprovalGate
 
     private async Task<bool> PromptForApproval(ITool tool, string inputSummary, string? dangerReason, CancellationToken ct)
     {
-        // No interactive console to answer with a/d/s (one-shot or autonomous run,
-        // or stdin redirected): the KeyAvailable poll below would otherwise either
-        // throw InvalidOperationException or spin forever on a keypress that can
-        // never arrive -- and run_shell is always Destructive, so every un-babysat
-        // run that needs a shell would hang here with no iteration cap to save it.
-        // Deny cleanly instead: a denied result feeds back to the model as an
-        // ordinary tool error it can adapt to, and the user can re-run
-        // interactively or grant "always allow" up front.
-        if (Console.IsInputRedirected)
+        // No one to ask (one-shot/autonomous host, or a library consumer that didn't
+        // supply a prompt): deny cleanly. A denied result feeds back to the model as
+        // an ordinary tool error it can adapt to -- run_shell is always Destructive,
+        // so blocking here instead would hang every un-babysat run that needs a shell.
+        if (_prompt is null)
         {
-            AnsiConsole.MarkupLine(
-                $"[yellow]Auto-denied[/] [bold]{Markup.Escape(tool.Name)}[/] " +
-                $"[dim]-- {Markup.Escape(tool.RiskLevel.ToString())} tool needs approval but no interactive console is attached.[/]");
+            _output.Warning($"Auto-denied {tool.Name} -- {tool.RiskLevel} tool needs approval but no approval prompt is available.");
             return false;
         }
 
@@ -111,64 +116,13 @@ public class ApprovalGate
             if (_alwaysAllowed.ContainsKey(tool.Name))
                 return true;
 
-            AnsiConsole.WriteLine();
-            AnsiConsole.Write(new Rule($"[yellow]Approval Required[/]").RuleStyle("yellow"));
-            AnsiConsole.MarkupLine($"[yellow]Tool:[/] [bold]{Markup.Escape(tool.Name)}[/]");
-            AnsiConsole.MarkupLine($"[yellow]Risk:[/] [red]{tool.RiskLevel}[/]");
-            if (dangerReason is not null)
-                AnsiConsole.MarkupLine($"[red]Warning:[/] {Markup.Escape(dangerReason)}");
-            AnsiConsole.MarkupLine($"[yellow]Action:[/] {Markup.Escape(inputSummary)}");
-            AnsiConsole.WriteLine();
+            var answer = await _prompt.PromptAsync(
+                new ApprovalRequest(tool.Name, tool.RiskLevel, inputSummary, dangerReason), ct);
 
-            AnsiConsole.MarkupLine("[yellow]Allow this tool execution?[/] (a = allow, d = deny, s = always allow this session)");
+            if (answer == ApprovalResult.AlwaysAllow)
+                _alwaysAllowed[tool.Name] = 0;
 
-            // Console.ReadKey has no cancellable overload, so a plain blocking call
-            // here would swallow Ctrl+C: OnCancelKeyPress cancels the turn's token,
-            // but that has nothing to interrupt a synchronous ReadKey, leaving the
-            // prompt stuck until an actual a/d/s keypress. Polling KeyAvailable lets
-            // us observe cancellation between polls instead.
-            ConsoleKey key;
-            while (true)
-            {
-                bool keyAvailable;
-                try
-                {
-                    keyAvailable = Console.KeyAvailable;
-                }
-                catch (InvalidOperationException)
-                {
-                    // The console became unreadable after the IsInputRedirected
-                    // check above (e.g. stdin closed mid-run). Treat it the same
-                    // way -- deny rather than throw out of the approval gate.
-                    AnsiConsole.MarkupLine("[yellow]  Denied -- console input is no longer available.[/]");
-                    return false;
-                }
-
-                if (keyAvailable)
-                {
-                    key = Console.ReadKey(intercept: true).Key;
-                    if (key == ConsoleKey.A || key == ConsoleKey.D || key == ConsoleKey.S)
-                        break;
-                }
-                else
-                {
-                    await Task.Delay(50, ct);
-                }
-            }
-
-            switch (key)
-            {
-                case ConsoleKey.A:
-                    AnsiConsole.MarkupLine("[green]  Allowed.[/]");
-                    return true;
-                case ConsoleKey.S:
-                    _alwaysAllowed[tool.Name] = 0;
-                    AnsiConsole.MarkupLine($"[green]  {Markup.Escape(tool.Name)} will be auto-approved for this session.[/]");
-                    return true;
-                default:
-                    AnsiConsole.MarkupLine("[red]  Denied.[/]");
-                    return false;
-            }
+            return answer != ApprovalResult.Deny;
         }
         finally
         {

@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
 using AgentSharpLib.Llm;
+using AgentSharpLib.Output;
 using AgentSharpLib.Safety;
 using AgentSharpLib.Tools;
-using Spectre.Console;
 
 namespace AgentSharpLib.Agent.MultiAgent;
 
@@ -29,6 +29,7 @@ public class AgentOrchestrator
     private readonly int _maxTokens;
     private readonly int _maxIterations;
     private readonly int _maxConcurrentSubAgents;
+    private readonly IAgentOutput _output;
     private readonly ConcurrentDictionary<string, SubAgent> _agents = new();
 
     /// <summary>Default cap on how many sub-agents RunParallelAsync actually runs at
@@ -49,7 +50,8 @@ public class AgentOrchestrator
         string systemPrompt,
         int maxTokens = AgentLoop.DefaultMaxTokens,
         int maxIterations = AgentLoop.DefaultMaxIterations,
-        int maxConcurrentSubAgents = DefaultMaxConcurrentSubAgents)
+        int maxConcurrentSubAgents = DefaultMaxConcurrentSubAgents,
+        IAgentOutput? output = null)
     {
         _llm = llm;
         _tools = tools;
@@ -58,6 +60,7 @@ public class AgentOrchestrator
         _maxTokens = maxTokens;
         _maxIterations = maxIterations;
         _maxConcurrentSubAgents = maxConcurrentSubAgents;
+        _output = output ?? NullAgentOutput.Instance;
     }
 
     /// <summary>
@@ -66,7 +69,7 @@ public class AgentOrchestrator
     /// </summary>
     public SubAgent Spawn(string name, string task)
     {
-        var agent = new SubAgent(name, task, _llm, _tools, _approval, _systemPrompt, _maxTokens, _maxIterations);
+        var agent = new SubAgent(name, task, _llm, _tools, _approval, _systemPrompt, _maxTokens, _maxIterations, _output);
         _agents[agent.Id] = agent;
         return agent;
     }
@@ -89,14 +92,11 @@ public class AgentOrchestrator
     {
         var agent = Spawn(name, task);
 
-        AnsiConsole.MarkupLine($"[cyan]Spawning sub-agent:[/] [bold]{Markup.Escape(name)}[/]");
-        AnsiConsole.MarkupLine($"[dim]Task: {Markup.Escape(Truncate(task, 100))}[/]");
+        _output.SubAgentStarted(name, task, inBatch: false);
 
         var result = await agent.RunAsync(task, ct);
 
-        AnsiConsole.MarkupLine(agent.Status == SubAgentStatus.Completed
-            ? $"[green]Sub-agent '{Markup.Escape(name)}' completed.[/]"
-            : $"[red]Sub-agent '{Markup.Escape(name)}' {agent.Status}.[/]");
+        _output.SubAgentFinished(name, agent.Status, inBatch: false);
 
         return (result, agent);
     }
@@ -111,8 +111,7 @@ public class AgentOrchestrator
     {
         var taskList = tasks.ToList();
 
-        AnsiConsole.MarkupLine(
-            $"[cyan]Spawning {taskList.Count} sub-agents (max {_maxConcurrentSubAgents} running at once)...[/]");
+        _output.SubAgentBatchStarted(taskList.Count, _maxConcurrentSubAgents);
 
         var agents = taskList.Select(t => (agent: Spawn(t.name, t.task), t.task)).ToList();
 
@@ -127,11 +126,9 @@ public class AgentOrchestrator
             await throttle.WaitAsync(ct);
             try
             {
-                AnsiConsole.MarkupLine($"  [dim]Starting: {Markup.Escape(a.agent.Name)}[/]");
+                _output.SubAgentStarted(a.agent.Name, a.task, inBatch: true);
                 var result = await a.agent.RunAsync(a.task, ct);
-                AnsiConsole.MarkupLine(a.agent.Status == SubAgentStatus.Completed
-                    ? $"  [green]Done: {Markup.Escape(a.agent.Name)}[/]"
-                    : $"  [red]Failed: {Markup.Escape(a.agent.Name)}[/]");
+                _output.SubAgentFinished(a.agent.Name, a.agent.Status, inBatch: true);
                 return new SubAgentResult(a.agent.Name, a.agent.Id, result, a.agent.Status);
             }
             finally
@@ -142,7 +139,7 @@ public class AgentOrchestrator
 
         var results = await Task.WhenAll(runTasks);
 
-        AnsiConsole.MarkupLine($"[cyan]All {taskList.Count} sub-agents finished.[/]");
+        _output.SubAgentBatchFinished(taskList.Count);
         return results;
     }
 
@@ -185,9 +182,6 @@ public class AgentOrchestrator
     /// Get a sub-agent by ID.
     /// </summary>
     public SubAgent? Get(string id) => _agents.GetValueOrDefault(id);
-
-    private static string Truncate(string text, int maxLength) =>
-        text.Length <= maxLength ? text : text[..maxLength] + "...";
 }
 
 /// <summary>
