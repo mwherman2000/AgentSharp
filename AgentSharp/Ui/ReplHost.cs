@@ -586,7 +586,7 @@ public class ReplHost
             .AddColumn("Description")
             .AddRow("/help", "Show this help message")
             .AddRow("/exit", "Exit the agent")
-            .AddRow("/clear [[superprompt]]", "Clear conversation and start fresh; optionally switch superprompt (andy, angie, connie, donald, fed, code)")
+            .AddRow("/clear [[superprompt]]", "Clear conversation and start fresh; optionally switch superprompt (andy, angie, connie, donald, fed, lucy, code)")
             .AddRow("/save [[id]]", "Save current session")
             .AddRow("/load <id>", "Load a saved session")
             .AddRow("/sessions", "List saved sessions")
