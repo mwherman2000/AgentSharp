@@ -1,12 +1,8 @@
 using AgentSharpLib;
-using AgentSharpLib.Agent;
 using AgentSharpLib.Context;
 using AgentSharpLib.Llm;
 using AgentSharpLib.Memory;
-using AgentSharpLib.Output;
-using AgentSharpLib.Safety;
 using AgentSharpLib.Telemetry;
-using AgentSharpLib.Tools;
 using AgentSharpLib.Transcripts;
 using Spectre.Console;
 
@@ -19,47 +15,17 @@ namespace AgentSharpApp.Ui;
 /// </summary>
 public class ReplHost
 {
-    private readonly ILlmClient _llm;
-    private readonly ToolRegistry _tools;
-    private readonly ApprovalGate _approval;
-    private readonly IAgentOutput _output;
-    private readonly ProjectContext _project;
+    private readonly AgentSession _session;
     private readonly SessionManager _sessions;
-    private readonly MemoryManager _memory;
-    private AgentLoop _agent;
-    private readonly int _maxTokens;
-    private readonly int _maxIterations;
-    private string? _superPrompt;
     private int _turnCount;
     private readonly List<string> _inputHistory = new();
     private CancellationTokenSource? _turnCts;
 
-    public ReplHost(
-        ILlmClient llm,
-        ToolRegistry tools,
-        ApprovalGate approval,
-        IAgentOutput output,
-        ProjectContext project,
-        SessionManager sessions,
-        MemoryManager memory,
-        int maxTokens = AgentLoop.DefaultMaxTokens,
-        int maxIterations = AgentLoop.DefaultMaxIterations,
-        string? superPrompt = null)
+    public ReplHost(AgentSession session, SessionManager sessions)
     {
-        _llm = llm;
-        _tools = tools;
-        _approval = approval;
-        _output = output;
-        _project = project;
+        _session = session;
         _sessions = sessions;
-        _memory = memory;
-        _maxTokens = maxTokens;
-        _maxIterations = maxIterations;
-        _superPrompt = superPrompt;
-
-        var promptBuilder = new SystemPromptBuilder(_project, _memory, _superPrompt);
-        _agent = new AgentLoop(_llm, _tools, _approval, promptBuilder.Build(), maxTokens: _maxTokens, maxIterations: _maxIterations, output: _output);
-        WireEvents(_agent);
+        WireEvents();
     }
 
     /// <summary>
@@ -114,23 +80,20 @@ public class ReplHost
 
             // Regular message -- send to agent loop
             _turnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var historyCountBeforeTurn = _agent.History.Count;
+            var historyCountBeforeTurn = _session.History.Count;
             try
             {
                 _turnCount++;
                 AnsiConsole.Write(new Rule($"[dim]Turn {_turnCount}[/]").RuleStyle("dim"));
                 AnsiConsole.WriteLine();
 
-                if (AgentFlags.SyncMode)
-                    await _agent.RunTurnNonStreamingAsync(input, _turnCts.Token);
-                else
-                    await _agent.RunTurnStreamingAsync(input, _turnCts.Token);
+                await _session.SendAsync(input, _turnCts.Token);
             }
             catch (OperationCanceledException)
             {
                 // Roll back so the interrupted user message and any partial
                 // assistant/tool-result messages don't linger in history.
-                _agent.History.TruncateTo(historyCountBeforeTurn);
+                _session.History.TruncateTo(historyCountBeforeTurn);
                 AnsiConsole.MarkupLine(_turnCts.IsCancellationRequested && !ct.IsCancellationRequested
                     ? "\n[yellow]Interrupted (Ctrl+C). Returning to prompt.[/]"
                     : "\n[yellow]Cancelled. OperationCanceledException[/]");
@@ -223,32 +186,25 @@ public class ReplHost
                 break;
 
             case CommandType.Clear:
-                if (!string.IsNullOrWhiteSpace(command.Argument))
+                try
                 {
-                    try
-                    {
-                        SystemPromptBuilder.ResolveSuperPrompt(command.Argument);
-                    }
-                    catch (ArgumentException ex)
-                    {
-                        AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
-                        break;
-                    }
-                    _superPrompt = command.Argument;
+                    _session.Reset(string.IsNullOrWhiteSpace(command.Argument) ? null : command.Argument);
                 }
-                _agent = new AgentLoop(_llm, _tools, _approval,
-                    new SystemPromptBuilder(_project, _memory, _superPrompt).Build(), maxTokens: _maxTokens, maxIterations: _maxIterations, output: _output);
-                WireEvents(_agent);
+                catch (ArgumentException ex)
+                {
+                    AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
+                    break;
+                }
                 _turnCount = 0;
                 AnsiConsole.Clear();
                 PrintWelcome();
                 AnsiConsole.MarkupLine("[green]Conversation cleared.[/]");
                 if (!string.IsNullOrWhiteSpace(command.Argument))
-                    AnsiConsole.MarkupLine($"[green]Superprompt switched to:[/] {Markup.Escape(_superPrompt!)}");
+                    AnsiConsole.MarkupLine($"[green]Superprompt switched to:[/] {Markup.Escape(_session.SuperPrompt!)}");
                 break;
 
             case CommandType.Save:
-                var sessionId = await _sessions.SaveAsync(_agent.History, command.Argument);
+                var sessionId = await _sessions.SaveAsync(_session.History, command.Argument);
                 if (sessionId is not null)
                 {
                     AnsiConsole.MarkupLine($"[green]Session saved:[/] {sessionId}");
@@ -272,9 +228,7 @@ public class ReplHost
                     AnsiConsole.MarkupLine($"[red]Session not found:[/] {command.Argument}");
                     break;
                 }
-                _agent = new AgentLoop(_llm, _tools, _approval,
-                    new SystemPromptBuilder(_project, _memory, _superPrompt).Build(), history, _maxTokens, _maxIterations, _output);
-                WireEvents(_agent);
+                _session.Restore(history);
                 AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages)");
                 break;
 
@@ -283,38 +237,38 @@ public class ReplHost
                 break;
 
             case CommandType.Status:
-                AnsiConsole.MarkupLine($"[bold]Provider:[/] {_llm.ProviderName}");
-                AnsiConsole.MarkupLine($"[bold]Model:[/] {_llm.ModelId}");
-                AnsiConsole.MarkupLine($"[bold]Superprompt:[/] {_superPrompt ?? "andy (default)"}");
+                AnsiConsole.MarkupLine($"[bold]Provider:[/] {_session.Llm.ProviderName}");
+                AnsiConsole.MarkupLine($"[bold]Model:[/] {_session.Llm.ModelId}");
+                AnsiConsole.MarkupLine($"[bold]Superprompt:[/] {_session.SuperPrompt ?? "andy (default)"}");
                 AnsiConsole.MarkupLine($"[bold]Sync mode:[/] {(AgentFlags.SyncMode ? "on (SendAsync, non-streaming)" : "off (StreamAsync, default)")}");
-                AnsiConsole.MarkupLine($"[bold]Timeout (streaming):[/] {FormatTimeout(_llm.StreamingTimeout)}");
-                AnsiConsole.MarkupLine($"[bold]Timeout (non-streaming):[/] {FormatTimeout(_llm.NonStreamingTimeout)}");
-                AnsiConsole.MarkupLine($"[bold]Max tokens:[/] {_maxTokens}");
-                AnsiConsole.MarkupLine($"[bold]Max iterations:[/] {_maxIterations}");
-                var toolNames = string.Join(", ", _tools.All.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal));
-                AnsiConsole.MarkupLine($"[bold]Tools:[/] {_tools.All.Count} [dim]({Markup.Escape(toolNames)})[/]");
+                AnsiConsole.MarkupLine($"[bold]Timeout (streaming):[/] {FormatTimeout(_session.Llm.StreamingTimeout)}");
+                AnsiConsole.MarkupLine($"[bold]Timeout (non-streaming):[/] {FormatTimeout(_session.Llm.NonStreamingTimeout)}");
+                AnsiConsole.MarkupLine($"[bold]Max tokens:[/] {_session.MaxTokens}");
+                AnsiConsole.MarkupLine($"[bold]Max iterations:[/] {_session.MaxIterations}");
+                var toolNames = string.Join(", ", _session.Tools.All.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal));
+                AnsiConsole.MarkupLine($"[bold]Tools:[/] {_session.Tools.All.Count} [dim]({Markup.Escape(toolNames)})[/]");
                 AnsiConsole.MarkupLine($"[bold]Turns:[/] {_turnCount}");
-                AnsiConsole.MarkupLine($"[bold]Messages:[/] {_agent.History.Count}");
-                AnsiConsole.MarkupLine($"[bold]Tokens:[/] {_agent.TotalInputTokens} in / {_agent.TotalOutputTokens} out");
-                AnsiConsole.MarkupLine($"[bold]Cache:[/] {_agent.TotalCacheCreationTokens} written / {_agent.TotalCacheReadTokens} read{FormatCacheHitRate()}");
-                AnsiConsole.MarkupLine($"[bold]Directory:[/] {_project.WorkingDirectory}");
-                AnsiConsole.MarkupLine($"[bold]Git branch:[/] {_project.GitBranch ?? "N/A"}");
+                AnsiConsole.MarkupLine($"[bold]Messages:[/] {_session.History.Count}");
+                AnsiConsole.MarkupLine($"[bold]Tokens:[/] {_session.Loop.TotalInputTokens} in / {_session.Loop.TotalOutputTokens} out");
+                AnsiConsole.MarkupLine($"[bold]Cache:[/] {_session.Loop.TotalCacheCreationTokens} written / {_session.Loop.TotalCacheReadTokens} read{FormatCacheHitRate()}");
+                AnsiConsole.MarkupLine($"[bold]Directory:[/] {_session.Project.WorkingDirectory}");
+                AnsiConsole.MarkupLine($"[bold]Git branch:[/] {_session.Project.GitBranch ?? "N/A"}");
                 break;
 
             case CommandType.Model:
-                AnsiConsole.MarkupLine($"[bold]Current model:[/] {_llm.ProviderName} / {_llm.ModelId}");
+                AnsiConsole.MarkupLine($"[bold]Current model:[/] {_session.Llm.ProviderName} / {_session.Llm.ModelId}");
                 AnsiConsole.MarkupLine("[dim]To change the model, restart with --model <name>[/]");
                 break;
 
             case CommandType.Memory:
                 if (command.Argument == "clear")
                 {
-                    File.Delete(Path.Combine(_project.WorkingDirectory, "MEMORY.md"));
+                    File.Delete(Path.Combine(_session.Project.WorkingDirectory, "MEMORY.md"));
                     AnsiConsole.MarkupLine("[green]Memory cleared.[/]");
                 }
                 else
                 {
-                    var mem = _memory.Read();
+                    var mem = _session.Memory?.Read();
                     if (mem is null)
                         AnsiConsole.MarkupLine("[dim]No memory file found.[/]");
                     else
@@ -341,15 +295,15 @@ public class ReplHost
         return true;
     }
 
-    private void WireEvents(AgentLoop agent)
+    private void WireEvents()
     {
-        agent.OnToolStart += (name, summary) =>
+        _session.OnToolStart += (name, summary) =>
         {
             AnsiConsole.Write(new Rule($"[cyan]{Markup.Escape(name)}[/]").RuleStyle("dim"));
             AnsiConsole.MarkupLine($"[dim]{Markup.Escape(summary)}[/]");
         };
 
-        agent.OnToolEnd += (name, result) =>
+        _session.OnToolEnd += (name, result) =>
         {
             var output = SanitizeForTerminal(result.Output);
             if (result.IsError)
@@ -396,13 +350,13 @@ public class ReplHost
         var fileName = isDocx || safeName.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
             ? safeName
             : $"{safeName}.md";
-        var path = Path.Combine(_project.WorkingDirectory, fileName);
+        var path = Path.Combine(_session.Project.WorkingDirectory, fileName);
 
         var qaPairs = new List<(string Question, List<AnswerSegment> Segments)>();
         string? currentQuestion = null;
         var segments = new List<AnswerSegment>();
 
-        foreach (var message in _agent.History.Messages)
+        foreach (var message in _session.History.Messages)
         {
             if (message.Role == MessageRole.User)
             {
@@ -437,7 +391,7 @@ public class ReplHost
         if (currentQuestion is not null)
             qaPairs.Add((currentQuestion, segments));
 
-        var systemPromptIntro = GetFirstParagraph(_agent.SystemPrompt);
+        var systemPromptIntro = GetFirstParagraph(_session.SystemPrompt);
         var generatedAt = DateTime.Now;
 
         try
@@ -502,9 +456,9 @@ public class ReplHost
 
     private string FormatCacheHitRate()
     {
-        var effectiveInput = _agent.TotalInputTokens + _agent.TotalCacheCreationTokens + _agent.TotalCacheReadTokens;
+        var effectiveInput = _session.Loop.TotalInputTokens + _session.Loop.TotalCacheCreationTokens + _session.Loop.TotalCacheReadTokens;
         if (effectiveInput == 0) return "";
-        var hitRate = 100.0 * _agent.TotalCacheReadTokens / effectiveInput;
+        var hitRate = 100.0 * _session.Loop.TotalCacheReadTokens / effectiveInput;
         return $" ({hitRate:F0}% hit rate)";
     }
 
@@ -551,11 +505,11 @@ public class ReplHost
     private void PrintWelcome()
     {
         AnsiConsole.Write(new FigletText("AgentSharp").Color(Color.Blue));
-        AnsiConsole.MarkupLine($"[bold]AI Agent:[/] [green]{Markup.Escape(SystemPromptBuilder.ResolveAgentName(_superPrompt))}[/] - Built with patterns from Claude Code");
-        AnsiConsole.MarkupLine($"[dim]Provider: {_llm.ProviderName} | Model: {_llm.ModelId} | Max tokens: {_maxTokens} | Tools: {_tools.All.Count}[/]");
-        if (_project.IsGitRepo)
-            AnsiConsole.MarkupLine($"[dim]Git: {_project.GitBranch} | Dir: {_project.WorkingDirectory}[/]");
-        var systemPromptFirstLine = _agent.SystemPrompt.Split('\n', 2)[0].TrimEnd('\r');
+        AnsiConsole.MarkupLine($"[bold]AI Agent:[/] [green]{Markup.Escape(SystemPromptBuilder.ResolveAgentName(_session.SuperPrompt))}[/] - Built with patterns from Claude Code");
+        AnsiConsole.MarkupLine($"[dim]Provider: {_session.Llm.ProviderName} | Model: {_session.Llm.ModelId} | Max tokens: {_session.MaxTokens} | Tools: {_session.Tools.All.Count}[/]");
+        if (_session.Project.IsGitRepo)
+            AnsiConsole.MarkupLine($"[dim]Git: {_session.Project.GitBranch} | Dir: {_session.Project.WorkingDirectory}[/]");
+        var systemPromptFirstLine = _session.SystemPrompt.Split('\n', 2)[0].TrimEnd('\r');
         if (systemPromptFirstLine.Length > 0)
             AnsiConsole.MarkupLine($"[dim]{Markup.Escape(systemPromptFirstLine)}[/]");
         AnsiConsole.MarkupLine("[dim]Type /help for commands, or start chatting.[/]");

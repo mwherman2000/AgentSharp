@@ -114,11 +114,38 @@ AgentSharpLib/     Reusable agent library
   Tools/          Tool registry and built-in tool implementations
   Transcripts/    Markdown / .docx transcript rendering
 AgentSharpApp/     Interactive chat CLI (entry point)
+  Cli/            Command-line / env / config-file parsing into AgentOptions
   Ui/             REPL host, command parsing, Spectre renderer, approval prompt
   *_prompts/      Prompt source material (GTM, Lucy, O*NET)
 AgentSharp.Tests/  xUnit test suite, mirrors the source layout
 docs/              Design notes (e.g. streaming vs. sync)
 ```
+
+## Using the library
+
+Reference `AgentSharpLib` and build an agent with `AgentBuilder`:
+
+```csharp
+using AgentSharpLib;
+
+var agent = await new AgentBuilder()
+    .WithOptions(new AgentOptions { Provider = "anthropic", ApiKey = apiKey })
+    .WithSuperPrompt("lucy")          // optional persona
+    .BuildAsync();
+
+var answer = await agent.SendAsync("Summarize this repository.");
+```
+
+By default the agent gets all built-in tools, sub-agents, project memory (`MEMORY.md`), and a
+system prompt built from the persona plus a scan of the current directory. Output is discarded
+and Destructive tools (e.g. `run_shell`) are denied unless you plug in your own:
+
+- `WithOutput(IAgentOutput)` — receive streamed text and status events (the CLI's is `SpectreAgentOutput`)
+- `WithApprovalPrompt(IApprovalPrompt)` — decide on Destructive tool calls (the CLI's is `ConsoleApprovalPrompt`)
+- `WithTool`, `WithSystemPrompt`, `WithLlmClient`, `WithoutBuiltInTools`, `WithoutSubAgents`, `WithoutMemory`, `WithoutProjectScan`
+
+`AgentSession.Reset(persona?)` starts a new conversation and `Restore(history)` resumes a saved one.
+The library never changes the process working directory; tools resolve paths against it.
 
 ## Testing
 
