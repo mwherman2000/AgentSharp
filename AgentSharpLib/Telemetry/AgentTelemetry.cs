@@ -58,11 +58,26 @@ public static class AgentTelemetry
     /// it. Works even if AGENT_ENABLE_OTEL was never set: this both enables tracing
     /// and redirects it in one step, from that point in the session onward.
     /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="endpoint"/> isn't an absolute
+    /// http(s) URL (see <see cref="IsValidEndpoint"/>). The current provider is left
+    /// untouched, so tracing keeps working as before.</exception>
     public static void SwitchToJaeger(string endpoint = DefaultJaegerEndpoint)
     {
+        if (!IsValidEndpoint(endpoint))
+            throw new ArgumentException(
+                $"'{endpoint}' is not a valid OTLP endpoint; expected an http(s) URL such as {DefaultJaegerEndpoint}.",
+                nameof(endpoint));
+
         _provider?.Dispose();
         _provider = BuildProvider(useConsole: false, otlpEndpoint: endpoint);
     }
+
+    /// <summary>True if <paramref name="endpoint"/> is an absolute http or https URL.
+    /// (A bare "localhost:4317" parses as a URI with scheme "localhost", so the scheme
+    /// is checked explicitly.)</summary>
+    public static bool IsValidEndpoint(string? endpoint) =>
+        Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) &&
+        (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
     /// <summary>Flushes and disposes the active provider, if any. Call once at process exit.</summary>
     public static void Shutdown() => _provider?.Dispose();

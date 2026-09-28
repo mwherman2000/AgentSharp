@@ -180,6 +180,11 @@ public class ReplHost
                 var jaegerEndpoint = string.IsNullOrWhiteSpace(command.Argument)
                     ? AgentTelemetry.DefaultJaegerEndpoint
                     : command.Argument;
+                if (!AgentTelemetry.IsValidEndpoint(jaegerEndpoint))
+                {
+                    AnsiConsole.MarkupLine($"[red]Error:[/] Not a valid endpoint URL: {Markup.Escape(jaegerEndpoint)} [dim](expected e.g. {AgentTelemetry.DefaultJaegerEndpoint})[/]");
+                    break;
+                }
                 AgentTelemetry.SwitchToJaeger(jaegerEndpoint);
                 AnsiConsole.MarkupLine($"[green]OTel export switched to Jaeger[/] (OTLP @ {Markup.Escape(jaegerEndpoint)}).");
                 AnsiConsole.MarkupLine($"[dim]View traces at {AgentTelemetry.DefaultJaegerUiUrl} (assumes Jaeger is running locally).[/]");

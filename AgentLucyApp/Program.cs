@@ -127,9 +127,9 @@ while (running)
                 break;
             case "/jaeger":
                 var endpoint = argument ?? AgentTelemetry.DefaultJaegerEndpoint;
-                if (!Uri.TryCreate(endpoint, UriKind.Absolute, out _))
+                if (!AgentTelemetry.IsValidEndpoint(endpoint))
                 {
-                    Console.WriteLine($"Not a valid endpoint URL: {endpoint}");
+                    Console.WriteLine($"Not a valid endpoint URL: {endpoint} (expected e.g. {AgentTelemetry.DefaultJaegerEndpoint})");
                     break;
                 }
                 AgentTelemetry.SwitchToJaeger(endpoint);
