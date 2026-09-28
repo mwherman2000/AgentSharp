@@ -425,30 +425,41 @@ public class ReplHost
         AnsiConsole.Write(table);
     }
 
+    /// <summary>Shared by both /help tables so their columns line up.</summary>
+    private const int CommandColumnWidth = 24;
+
     private static void PrintHelp()
     {
-        var table = new Table()
+        // Same sections, order, and wording as AgentLucyApp's /help, so the two apps
+        // read alike; this one adds /clear's optional persona switch.
+        var commands = new Table()
             .Title("[bold]Commands[/]")
-            .AddColumn("Command")
+            .AddColumn(new TableColumn("Command").Width(CommandColumnWidth))
             .AddColumn("Description")
-            .AddRow("/help", "Show this help message")
-            .AddRow("/exit", "Exit the agent")
-            .AddRow("/clear [[superprompt]]", "Clear conversation and start fresh; optionally switch superprompt (andy, angie, connie, donald, fed, lucy, code)")
-            .AddRow("/save [[id]]", "Save current session")
-            .AddRow("/load <id>", "Load a saved session")
-            .AddRow("/sessions", "List saved sessions")
-            .AddRow("/status", "Show current agent status")
-            .AddRow("/model", "Show current model info")
-            .AddRow("/memory", "Show persistent memory")
-            .AddRow("/memory clear", "Clear persistent memory")
-            .AddRow("/transcribe <name>", "Write a Q&A transcript of this conversation to <name> (.md by default, or .docx)")
-            .AddRow("/request", "Toggle request trace")
-            .AddRow("/history", "Toggle history trace")
-            .AddRow("/tools", "Toggle tools trace")
-            .AddRow("/sync", "Toggle SendAsync (non-streaming) vs StreamAsync (default)")
-            .AddRow("/jaeger [[endpoint]]", $"Switch OTel export to Jaeger (OTLP, default {AgentTelemetry.DefaultJaegerEndpoint})");
+            .AddRow("/help, /h, /?", "Show this help")
+            .AddRow("/clear, /cls [[persona]]", "Start a new conversation; optionally switch persona (andy, angie, connie, donald, fed, lucy, code)")
+            .AddRow("/save [[id]]", "Save this conversation (and a .docx transcript)")
+            .AddRow("/load, /resume <id>", "Continue a saved conversation")
+            .AddRow("/sessions, /ls", "List saved conversations")
+            .AddRow("/status", "Model, tools, token usage, directory")
+            .AddRow("/model", "Show the current provider and model")
+            .AddRow("/memory, /mem [[clear]]", "Show MEMORY.md, or delete it")
+            .AddRow("/transcribe <name>", "Write a Q&A transcript (<name>.md, or <name>.docx)")
+            .AddRow("/exit, /quit, /q", "Quit")
+            .AddRow("Ctrl+C", "Interrupt the agent mid-reply (at the prompt: quit)");
 
-        AnsiConsole.Write(table);
+        var diagnostics = new Table()
+            .Title("[bold]Diagnostics[/]")
+            .AddColumn(new TableColumn("Command").Width(CommandColumnWidth))
+            .AddColumn("Description")
+            .AddRow("/sync", "Toggle streaming vs. non-streaming replies")
+            .AddRow("/request", "Toggle dumping each request sent to the model")
+            .AddRow("/history", "Toggle dumping the conversation history with each request")
+            .AddRow("/tools", "Toggle dumping the tool definitions with each request")
+            .AddRow("/jaeger [[endpoint]]", $"Send OpenTelemetry traces to Jaeger (default {AgentTelemetry.DefaultJaegerEndpoint})");
+
+        AnsiConsole.Write(commands);
+        AnsiConsole.Write(diagnostics);
     }
 
     /// <summary>
