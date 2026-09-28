@@ -1,7 +1,7 @@
-using AgentSharp.Agent.MultiAgent;
-using AgentSharp.Safety;
+using AgentSharpLib.Agent.MultiAgent;
+using AgentSharpLib.Safety;
 using AgentSharp.Tests.Agent;
-using AgentSharp.Tools;
+using AgentSharpLib.Tools;
 
 namespace AgentSharp.Tests.Agent.MultiAgent;
 

@@ -1,4 +1,4 @@
-using AgentSharp.Ui;
+using AgentSharpApp.Ui;
 
 namespace AgentSharp.Tests.Ui;
 

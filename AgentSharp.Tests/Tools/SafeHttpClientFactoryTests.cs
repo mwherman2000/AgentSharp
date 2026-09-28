@@ -1,5 +1,5 @@
 using System.Net;
-using AgentSharp.Tools;
+using AgentSharpLib.Tools;
 
 namespace AgentSharp.Tests.Tools;
 

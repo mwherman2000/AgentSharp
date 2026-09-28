@@ -1,5 +1,5 @@
 using System.Text.Json;
-using AgentSharp.Tools.Implementations;
+using AgentSharpLib.Tools.Implementations;
 
 namespace AgentSharp.Tests.Tools;
 
@@ -117,6 +117,6 @@ public class ReadFileToolTests : IDisposable
     public void HasCorrectMetadata()
     {
         Assert.Equal("read_file", _tool.Name);
-        Assert.Equal(AgentSharp.Tools.ToolRiskLevel.ReadOnly, _tool.RiskLevel);
+        Assert.Equal(AgentSharpLib.Tools.ToolRiskLevel.ReadOnly, _tool.RiskLevel);
     }
 }

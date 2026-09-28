@@ -1,6 +1,6 @@
 using System.Text.Json;
-using AgentSharp.Tools;
-using AgentSharp.Llm;
+using AgentSharpLib.Tools;
+using AgentSharpLib.Llm;
 
 namespace AgentSharp.Tests.Tools;
 
@@ -124,7 +124,7 @@ public class ToolRegistryTests
     public void DiscoverTools_FindsToolsInAssembly()
     {
         var registry = new ToolRegistry();
-        registry.DiscoverTools(typeof(AgentSharp.Tools.Implementations.ReadFileTool).Assembly);
+        registry.DiscoverTools(typeof(AgentSharpLib.Tools.Implementations.ReadFileTool).Assembly);
 
         // Should discover all parameterless tools (not SubAgentTool which requires constructor args)
         Assert.True(registry.All.Count >= 7, $"Expected at least 7 tools, found {registry.All.Count}");

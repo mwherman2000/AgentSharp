@@ -1,6 +1,6 @@
 using System.IO.Compression;
 using System.Xml.Linq;
-using AgentSharp.Ui;
+using AgentSharpLib.Transcripts;
 
 namespace AgentSharp.Tests.Ui;
 

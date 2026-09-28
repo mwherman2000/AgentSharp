@@ -1,5 +1,5 @@
 using System.Text.Json;
-using AgentSharp.Tools.Implementations;
+using AgentSharpLib.Tools.Implementations;
 
 namespace AgentSharp.Tests.Tools;
 
@@ -70,6 +70,6 @@ public class WriteFileToolTests : IDisposable
     public void HasCorrectMetadata()
     {
         Assert.Equal("write_file", _tool.Name);
-        Assert.Equal(AgentSharp.Tools.ToolRiskLevel.Write, _tool.RiskLevel);
+        Assert.Equal(AgentSharpLib.Tools.ToolRiskLevel.Write, _tool.RiskLevel);
     }
 }

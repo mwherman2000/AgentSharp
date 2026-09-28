@@ -17,7 +17,7 @@ All commands below are PowerShell, run from the VS Code integrated terminal (`` 
 4. Launch AgentSharp with `Start-Process` so it runs as its own process rather than tying up your terminal:
 
    ```pwsh
-   Start-Process dotnet -ArgumentList 'run', '--project', 'AgentSharp'
+   Start-Process dotnet -ArgumentList 'run', '--project', 'AgentSharpApp'
    ```
 
    This opens AgentSharp's interactive REPL in its own console window. `Start-Process` spawns a child process that inherits the environment variables (like `ANTHROPIC_API_KEY`) already set in your current session, as long as you set them *before* calling `Start-Process`.
@@ -25,14 +25,14 @@ All commands below are PowerShell, run from the VS Code integrated terminal (`` 
    To keep it attached to your current terminal window instead of opening a new one, add `-NoNewWindow`:
 
    ```pwsh
-   Start-Process dotnet -ArgumentList 'run', '--project', 'AgentSharp' -NoNewWindow
+   Start-Process dotnet -ArgumentList 'run', '--project', 'AgentSharpApp' -NoNewWindow
    ```
 
 5. One-shot mode (single prompt, then exit), waiting for it to finish and capturing output to a log file — useful when you want to inspect what happened after the fact rather than watch it live:
 
    ```pwsh
    Start-Process dotnet `
-     -ArgumentList 'run', '--project', 'AgentSharp', '--', '--prompt', 'explain this codebase' `
+     -ArgumentList 'run', '--project', 'AgentSharpApp', '--', '--prompt', 'explain this codebase' `
      -NoNewWindow -Wait -RedirectStandardOutput agentsharp.log -RedirectStandardError agentsharp.err.log
    Get-Content agentsharp.log
    ```
@@ -60,7 +60,7 @@ For a cleaner, span-based alternative (turn → LLM call → tool call hierarchy
 
 ```pwsh
 $env:AGENT_ENABLE_OTEL = "1"
-Start-Process dotnet -ArgumentList 'run', '--project', 'AgentSharp' -NoNewWindow
+Start-Process dotnet -ArgumentList 'run', '--project', 'AgentSharpApp' -NoNewWindow
 ```
 
 To persist it across terminal sessions: `setx AGENT_ENABLE_OTEL 1` (only affects *new* terminals; add `/M` from an elevated prompt for machine-wide).
@@ -77,7 +77,7 @@ Or point it at a different OTLP endpoint: `/jaeger http://localhost:4318`.
 
 With the C# Dev Kit (or OmniSharp) extension installed:
 
-1. Open `AgentSharp/Agent/AgentLoop.cs` (or `Program.cs`) and set a breakpoint — e.g. in `RunTurnStreamingAsync`/`RunTurnNonStreamingAsync` to step through the think → decide → execute → observe loop, or in `ExecuteToolCallsAsync` to inspect a specific tool call.
+1. Open `AgentSharpLib/Agent/AgentLoop.cs` (or `Program.cs`) and set a breakpoint — e.g. in `RunTurnStreamingAsync`/`RunTurnNonStreamingAsync` to step through the think → decide → execute → observe loop, or in `ExecuteToolCallsAsync` to inspect a specific tool call.
 2. Press `F5` (Run > Start Debugging). If no launch configuration exists yet, VS Code will offer to auto-generate one under `.vscode/launch.json` — accept it.
 3. One-shot mode is easiest to step through, since it runs a single turn and exits instead of blocking on REPL input. In `.vscode/launch.json`, set the generated config's `args` to something like:
    ```json
@@ -95,7 +95,7 @@ With the C# Dev Kit (or OmniSharp) extension installed:
 ```pwsh
 dotnet build                                        # compile, surface warnings/errors
 dotnet test                                         # run the xUnit suite (AgentSharp.Tests)
-Start-Process dotnet -ArgumentList 'run', '--project', 'AgentSharp', '--', '--help' -NoNewWindow -Wait   # show all CLI flags and env vars
+Start-Process dotnet -ArgumentList 'run', '--project', 'AgentSharpApp', '--', '--help' -NoNewWindow -Wait   # show all CLI flags and env vars
 ```
 
 ## Config resolution order

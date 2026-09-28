@@ -1,0 +1,103 @@
+using System.Reflection;
+using AgentSharpLib.Llm;
+using Spectre.Console;
+
+namespace AgentSharpLib.Tools;
+
+/// <summary>
+/// Registry of all available tools. Supports:
+/// - Auto-discovery via assembly scanning (find all ITool implementations)
+/// - Manual registration for testing or custom tools
+/// - O(1) lookup by name
+/// - Execution with error handling (errors returned as data, not exceptions)
+/// </summary>
+public class ToolRegistry
+{
+    private readonly Dictionary<string, ITool> _tools = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// All registered tools.
+    /// </summary>
+    public IReadOnlyCollection<ITool> All => _tools.Values;
+
+    /// <summary>
+    /// Register a single tool.
+    /// </summary>
+    public void Register(ITool tool)
+    {
+        _tools[tool.Name] = tool;
+    }
+
+    /// <summary>
+    /// Auto-discover and register all ITool implementations in the given assembly.
+    /// Skips abstract classes and interfaces.
+    /// </summary>
+    public void DiscoverTools(Assembly? assembly = null)
+    {
+        assembly ??= Assembly.GetExecutingAssembly();
+
+        var toolTypes = assembly.GetTypes()
+            .Where(t => typeof(ITool).IsAssignableFrom(t) && t is { IsAbstract: false, IsInterface: false });
+
+        foreach (var type in toolTypes)
+        {
+            try
+            {
+                if (Activator.CreateInstance(type) is ITool tool)
+                    Register(tool);
+            }
+            catch (MissingMethodException)
+            {
+                // No parameterless constructor -- this tool needs arguments (e.g.
+                // SubAgentTool, MemoryTool) and must be registered manually instead.
+                // Expected, not a bug.
+            }
+            catch (Exception ex)
+            {
+                // Anything else is a genuine bug in the tool's own constructor or a
+                // static initializer it touches -- previously swallowed by a bare
+                // `catch { }`, so the tool just vanished from the tool list with zero
+                // diagnostic, leaving neither the user nor the model any way to know
+                // it was ever supposed to exist. Surface it instead of hiding it.
+                var inner = ex is TargetInvocationException { InnerException: { } ie } ? ie : ex;
+                AnsiConsole.MarkupLine(
+                    $"[dim yellow]Skipped tool '{Markup.Escape(type.Name)}': {Markup.Escape(inner.Message)}[/]");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Get a tool by name. Returns null if not found.
+    /// </summary>
+    public ITool? Get(string name) => _tools.GetValueOrDefault(name);
+
+    /// <summary>
+    /// Execute a tool by name. Returns error result for unknown tools.
+    /// </summary>
+    public async Task<ToolResult> ExecuteAsync(string name, System.Text.Json.JsonElement input, CancellationToken ct = default)
+    {
+        if (!_tools.TryGetValue(name, out var tool))
+            return ToolResult.Error($"Unknown tool '{name}'. Available tools: {string.Join(", ", _tools.Keys)}");
+
+        try
+        {
+            return await tool.ExecuteAsync(input, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // Let cancellation (e.g. Ctrl+C) propagate so the agent loop stops the
+            // turn, instead of reporting it to the LLM as a failed tool call.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return ToolResult.Error($"Tool '{name}' failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Get tool definitions for the LLM API.
+    /// </summary>
+    public IReadOnlyList<ToolDefinition> GetDefinitions()
+        => _tools.Values.Select(t => t.ToDefinition()).ToList();
+}

@@ -6,7 +6,7 @@ hastily under pressure the next time a long session runs out of context.
 
 ## The problem
 
-`AgentLoop.BuildRequest()` (`AgentSharp/Agent/AgentLoop.cs`) sends the entire
+`AgentLoop.BuildRequest()` (`AgentSharpLib/Agent/AgentLoop.cs`) sends the entire
 accumulated `ConversationHistory` on every single turn:
 
 ```csharp
@@ -67,7 +67,7 @@ is explicitly **not** what we want here:
   deleting them, and being deliberate about what must survive verbatim
   (recent turns, unresolved `tool_use`/`tool_result` pairs, anything the rest
   of the session still depends on) versus what's safe to compress or drop.
-- **Compatibility with `SessionManager`** (`AgentSharp/Memory/SessionManager.cs`)
+- **Compatibility with `SessionManager`** (`AgentSharpLib/Memory/SessionManager.cs`)
   — compaction changes what "the conversation" means, and saved/loaded
   sessions need to keep making sense across it.
 - **Parity across `RunTurnStreamingAsync` and `RunTurnNonStreamingAsync`**

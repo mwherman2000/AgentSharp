@@ -1,5 +1,5 @@
-using AgentSharp.Context;
-using AgentSharp.Memory;
+using AgentSharpLib.Context;
+using AgentSharpLib.Memory;
 
 namespace AgentSharp.Tests.Context;
 

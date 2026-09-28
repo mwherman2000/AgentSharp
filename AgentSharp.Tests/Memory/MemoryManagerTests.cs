@@ -1,4 +1,4 @@
-using AgentSharp.Memory;
+using AgentSharpLib.Memory;
 
 namespace AgentSharp.Tests.Memory;
 

@@ -1,7 +1,7 @@
 using System.Text.Json;
-using AgentSharp.Memory;
-using AgentSharp.Tools;
-using AgentSharp.Tools.Implementations;
+using AgentSharpLib.Memory;
+using AgentSharpLib.Tools;
+using AgentSharpLib.Tools.Implementations;
 
 namespace AgentSharp.Tests.Tools;
 

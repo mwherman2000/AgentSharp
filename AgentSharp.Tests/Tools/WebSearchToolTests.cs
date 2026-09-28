@@ -1,4 +1,4 @@
-using AgentSharp.Tools.Implementations;
+using AgentSharpLib.Tools.Implementations;
 
 namespace AgentSharp.Tests.Tools;
 

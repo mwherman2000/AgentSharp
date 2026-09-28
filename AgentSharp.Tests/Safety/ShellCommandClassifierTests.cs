@@ -1,4 +1,4 @@
-using AgentSharp.Safety;
+using AgentSharpLib.Safety;
 
 namespace AgentSharp.Tests.Safety;
 

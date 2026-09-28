@@ -1,4 +1,4 @@
-using AgentSharp.Llm;
+using AgentSharpLib.Llm;
 
 namespace AgentSharp.Tests.Agent;
 

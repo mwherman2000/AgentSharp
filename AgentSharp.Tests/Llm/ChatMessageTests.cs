@@ -1,5 +1,5 @@
 using System.Text.Json;
-using AgentSharp.Llm;
+using AgentSharpLib.Llm;
 
 namespace AgentSharp.Tests.Llm;
 

@@ -1,11 +1,11 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
-using AgentSharp.Agent;
-using AgentSharp.Llm;
-using AgentSharp.Safety;
-using AgentSharp.Telemetry;
-using AgentSharp.Tools;
+using AgentSharpLib.Agent;
+using AgentSharpLib.Llm;
+using AgentSharpLib.Safety;
+using AgentSharpLib.Telemetry;
+using AgentSharpLib.Tools;
 
 namespace AgentSharp.Tests.Agent;
 

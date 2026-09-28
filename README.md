@@ -31,13 +31,13 @@ dotnet build
 ## Run
 
 ```bash
-dotnet run --project AgentSharp
+dotnet run --project AgentSharpApp
 ```
 
 Or publish and install it as a `agentsharp` executable on your `PATH`:
 
 ```bash
-dotnet publish AgentSharp -c Release -o ./publish
+dotnet publish AgentSharpApp -c Release -o ./publish
 ```
 
 ## Configuration
@@ -79,7 +79,7 @@ agentsharp --prompt "explain this"   One-shot mode (explicit)
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-dotnet run --project AgentSharp
+dotnet run --project AgentSharpApp
 ```
 
 ## REPL commands
@@ -103,14 +103,18 @@ dotnet run --project AgentSharp
 ## Project structure
 
 ```
-AgentSharp/
-  Agent/          Agent loop, system prompt building, multi-agent orchestration
-  Context/        Project context scanning
+AgentSharpLib/     Reusable agent library
+  Agent/          Agent loop, multi-agent orchestration
+  Context/        Project context scanning, system prompt building
   Llm/            LLM clients (Anthropic, OpenAI-compatible)
   Memory/         Persistent memory and session management
   Safety/         Approval gate and shell command risk classification
+  Telemetry/      OpenTelemetry tracing
   Tools/          Tool registry and built-in tool implementations
-  Ui/             REPL host, command parsing, console rendering
+  Transcripts/    Markdown / .docx transcript rendering
+AgentSharpApp/     Interactive chat CLI (entry point)
+  Ui/             REPL host, command parsing
+  *_prompts/      Prompt source material (GTM, Lucy, O*NET)
 AgentSharp.Tests/  xUnit test suite, mirrors the source layout
 docs/              Design notes (e.g. streaming vs. sync)
 ```

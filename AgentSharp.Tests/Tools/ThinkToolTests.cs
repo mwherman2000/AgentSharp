@@ -1,5 +1,5 @@
 using System.Text.Json;
-using AgentSharp.Tools.Implementations;
+using AgentSharpLib.Tools.Implementations;
 
 namespace AgentSharp.Tests.Tools;
 
@@ -21,6 +21,6 @@ public class ThinkToolTests
     public void IsReadOnly()
     {
         var tool = new ThinkTool();
-        Assert.Equal(AgentSharp.Tools.ToolRiskLevel.ReadOnly, tool.RiskLevel);
+        Assert.Equal(AgentSharpLib.Tools.ToolRiskLevel.ReadOnly, tool.RiskLevel);
     }
 }

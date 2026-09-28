@@ -1,9 +1,9 @@
 using System.Net;
 using System.Text.Json;
-using AgentSharp.Agent;
-using AgentSharp.Llm;
-using AgentSharp.Safety;
-using AgentSharp.Tools;
+using AgentSharpLib.Agent;
+using AgentSharpLib.Llm;
+using AgentSharpLib.Safety;
+using AgentSharpLib.Tools;
 
 namespace AgentSharp.Tests.Agent;
 

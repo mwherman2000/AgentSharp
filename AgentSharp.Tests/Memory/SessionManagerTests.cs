@@ -1,5 +1,5 @@
-using AgentSharp.Agent;
-using AgentSharp.Memory;
+using AgentSharpLib.Agent;
+using AgentSharpLib.Memory;
 
 namespace AgentSharp.Tests.Memory;
 
@@ -25,7 +25,7 @@ public class SessionManagerTests : IDisposable
     {
         var history = new ConversationHistory();
         history.AddUserMessage("hello");
-        history.AddAssistantMessage(AgentSharp.Llm.ChatMessage.AssistantText("hi there"));
+        history.AddAssistantMessage(AgentSharpLib.Llm.ChatMessage.AssistantText("hi there"));
         history.AddUserMessage("how are you?");
 
         var sessionId = await _manager.SaveAsync(history, "test-session");

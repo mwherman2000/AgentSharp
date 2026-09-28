@@ -1,7 +1,7 @@
 # `--max-tokens` and local model context windows
 
 `AgentLoop` sends `max_tokens` on every request via `BuildRequest()`
-(`AgentSharp/Agent/AgentLoop.cs`). It defaults to `AgentLoop.DefaultMaxTokens`
+(`AgentSharpLib/Agent/AgentLoop.cs`). It defaults to `AgentLoop.DefaultMaxTokens`
 (**128,000**) and is configurable per run:
 
 | Source | Flag / var |
@@ -78,7 +78,7 @@ not enough:
 - Set `--max-tokens` well below `num_ctx` — a few thousand tokens, not tens of
   thousands — leaving room for the system prompt, growing conversation
   history, and tool schemas. For `qwen3:4b-24k`, `--max-tokens 6000` is a
-  reasonable starting point (see `AgentSharp/Properties/launchSettings.json`).
+  reasonable starting point (see `AgentSharpApp/Properties/launchSettings.json`).
 - Only reach for YaRN-extended context if a task genuinely needs more input
   headroom than the native window provides, understanding it trades away some
   quality on shorter turns.

@@ -1,5 +1,5 @@
-using AgentSharp.Agent;
-using AgentSharp.Llm;
+using AgentSharpLib.Agent;
+using AgentSharpLib.Llm;
 
 namespace AgentSharp.Tests.Agent;
 
