@@ -22,8 +22,13 @@ public static class AgentTelemetry
 {
     public const string SourceName = "AgentSharp";
 
-    /// <summary>Default OTLP/gRPC endpoint Jaeger (and most local collectors) listen on.</summary>
+    /// <summary>Default OTLP/gRPC endpoint Jaeger (and most local collectors) listen on.
+    /// This is where traces are sent -- the /jaeger default everywhere.</summary>
     public const string DefaultJaegerEndpoint = "http://localhost:4317";
+
+    /// <summary>Default address of Jaeger's web UI, where the traces are viewed. It
+    /// does not accept traces itself; export goes to <see cref="DefaultJaegerEndpoint"/>.</summary>
+    public const string DefaultJaegerUiUrl = "http://localhost:16686";
 
     public static readonly ActivitySource Source = new(SourceName, "0.1.0");
 

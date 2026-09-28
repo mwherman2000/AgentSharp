@@ -3,6 +3,7 @@ using AgentSharpLib;
 using AgentSharpLib.Context;
 using AgentSharpLib.Llm;
 using AgentSharpLib.Memory;
+using AgentSharpLib.Telemetry;
 
 // ============================================================================
 // AgentLucyApp - a minimal chat with Lucy, built only on AgentSharpLib.
@@ -13,6 +14,9 @@ using AgentSharpLib.Memory;
 // ============================================================================
 
 var options = ParseArgs(args);
+
+// Tracing is off unless AGENT_ENABLE_OTEL is set, or /jaeger turns it on mid-session.
+AgentTelemetry.Initialize();
 
 AgentSession lucy;
 try
@@ -54,7 +58,8 @@ Console.CancelKeyPress += (_, e) =>
     }
 };
 
-while (true)
+var running = true;
+while (running)
 {
     Console.ForegroundColor = ConsoleColor.Magenta;
     Console.Write($"\n{agentName}> ");
@@ -73,29 +78,63 @@ while (true)
         var argument = parts.Length > 1 ? parts[1] : null;
         switch (parts[0].ToLowerInvariant())
         {
-            case "/exit" or "/quit":
-                return 0;
-            case "/help":
+            case "/exit" or "/quit" or "/q":
+                running = false;
+                break;
+            case "/help" or "/h" or "/?":
                 PrintHelp(agentName);
                 break;
-            case "/clear":
+            case "/clear" or "/cls":
                 lucy.Reset();
                 Console.WriteLine("(new conversation)");
                 break;
             case "/save":
                 await SaveAsync(argument);
                 break;
-            case "/load":
+            case "/load" or "/resume":
                 await LoadAsync(argument);
                 break;
-            case "/sessions":
+            case "/sessions" or "/ls":
                 PrintSessions();
                 break;
             case "/status":
                 PrintStatus();
                 break;
-            case "/memory":
+            case "/model":
+                Console.WriteLine($"Current model: {lucy.Llm.ProviderName} / {lucy.Llm.ModelId}");
+                Console.WriteLine("To change the model, restart with --model <name>.");
+                break;
+            case "/memory" or "/mem":
                 HandleMemory(argument);
+                break;
+            case "/sync":
+                AgentFlags.SyncMode = !AgentFlags.SyncMode;
+                Console.WriteLine(AgentFlags.SyncMode
+                    ? "SyncMode: on (non-streaming replies)"
+                    : "SyncMode: off (streaming replies, default)");
+                break;
+            case "/request":
+                AgentFlags.RequestTrace = !AgentFlags.RequestTrace;
+                Console.WriteLine($"RequestTrace: {AgentFlags.RequestTrace}");
+                break;
+            case "/history":
+                AgentFlags.HistoryTrace = !AgentFlags.HistoryTrace;
+                Console.WriteLine($"HistoryTrace: {AgentFlags.HistoryTrace}");
+                break;
+            case "/tools":
+                AgentFlags.ToolsTrace = !AgentFlags.ToolsTrace;
+                Console.WriteLine($"ToolsTrace: {AgentFlags.ToolsTrace}");
+                break;
+            case "/jaeger":
+                var endpoint = argument ?? AgentTelemetry.DefaultJaegerEndpoint;
+                if (!Uri.TryCreate(endpoint, UriKind.Absolute, out _))
+                {
+                    Console.WriteLine($"Not a valid endpoint URL: {endpoint}");
+                    break;
+                }
+                AgentTelemetry.SwitchToJaeger(endpoint);
+                Console.WriteLine($"OTel export switched to Jaeger (OTLP @ {endpoint}).");
+                Console.WriteLine($"View traces at {AgentTelemetry.DefaultJaegerUiUrl} (assumes Jaeger is running locally).");
                 break;
             case "/transcribe":
                 if (argument is null)
@@ -130,6 +169,8 @@ while (true)
     }
 }
 
+// Flush whichever trace exporter ended up active (console, or Jaeger via /jaeger).
+AgentTelemetry.Shutdown();
 return 0;
 
 // Saves the conversation, plus a .docx transcript of it next to the project (same
@@ -239,16 +280,24 @@ static void PrintHelp(string agentName)
 {
     Console.WriteLine($"""
         Commands:
-          /help                Show this help
-          /clear               Start a new conversation with {agentName}
+          /help, /h, /?        Show this help
+          /clear, /cls         Start a new conversation with {agentName}
           /save [id]           Save this conversation (and a .docx transcript)
-          /load <id>           Continue a saved conversation
-          /sessions            List saved conversations
+          /load, /resume <id>  Continue a saved conversation
+          /sessions, /ls       List saved conversations
           /status              Model, tools, token usage, directory
-          /memory [clear]      Show {agentName}'s MEMORY.md, or delete it
+          /model               Show the current provider and model
+          /memory, /mem [clear]  Show {agentName}'s MEMORY.md, or delete it
           /transcribe <name>   Write a Q&A transcript (<name>.md, or <name>.docx)
-          /exit, /quit         Quit
+          /exit, /quit, /q     Quit
           Ctrl+C               Interrupt {agentName} mid-reply (at the prompt: quit)
+
+        Diagnostics:
+          /sync                Toggle streaming vs. non-streaming replies
+          /request             Toggle dumping each request sent to the model
+          /history             Toggle dumping the conversation history with each request
+          /tools               Toggle dumping the tool definitions with each request
+          /jaeger [endpoint]   Send OpenTelemetry traces to Jaeger (default {AgentTelemetry.DefaultJaegerEndpoint})
         """);
 }
 

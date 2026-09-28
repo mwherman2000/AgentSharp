@@ -182,7 +182,7 @@ public class ReplHost
                     : command.Argument;
                 AgentTelemetry.SwitchToJaeger(jaegerEndpoint);
                 AnsiConsole.MarkupLine($"[green]OTel export switched to Jaeger[/] (OTLP @ {Markup.Escape(jaegerEndpoint)}).");
-                AnsiConsole.MarkupLine("[dim]View traces at http://localhost:16686 (assumes Jaeger is running locally).[/]");
+                AnsiConsole.MarkupLine($"[dim]View traces at {AgentTelemetry.DefaultJaegerUiUrl} (assumes Jaeger is running locally).[/]");
                 break;
 
             case CommandType.Clear:
@@ -446,7 +446,7 @@ public class ReplHost
             .AddRow("/history", "Toggle history trace")
             .AddRow("/tools", "Toggle tools trace")
             .AddRow("/sync", "Toggle SendAsync (non-streaming) vs StreamAsync (default)")
-            .AddRow("/jaeger [[endpoint]]", "Switch OTel export to Jaeger (OTLP, default http://localhost:4317)");
+            .AddRow("/jaeger [[endpoint]]", $"Switch OTel export to Jaeger (OTLP, default {AgentTelemetry.DefaultJaegerEndpoint})");
 
         AnsiConsole.Write(table);
     }

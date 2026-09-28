@@ -157,7 +157,7 @@ internal class Program
             AnsiConsole.MarkupLine("  /history    Toggle history trace");
             AnsiConsole.MarkupLine("  /tools      Toggle tools trace");
             AnsiConsole.MarkupLine("  /sync       Toggle SendAsync (non-streaming) vs StreamAsync (default)");
-            AnsiConsole.MarkupLine("  /jaeger     Switch OTel export to Jaeger (OTLP @ http://localhost:4317)");
+            AnsiConsole.MarkupLine($"  /jaeger     Switch OTel export to Jaeger (OTLP @ {AgentTelemetry.DefaultJaegerEndpoint})");
         }
     }
 }
