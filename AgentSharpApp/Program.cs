@@ -1,11 +1,13 @@
 using AgentSharpLib;
 using AgentSharpLib.Agent.MultiAgent;
 using AgentSharpLib.Context;
+using AgentSharpLib.Llm;
 using AgentSharpLib.Memory;
 using AgentSharpLib.Safety;
 using AgentSharpLib.Telemetry;
 using AgentSharpLib.Tools;
 using AgentSharpLib.Tools.Implementations;
+using AgentSharpApp.Cli;
 using AgentSharpApp.Ui;
 using Spectre.Console;
 
@@ -26,13 +28,14 @@ internal class Program
     private static async Task Main(string[] args)
     {
         // Handle --help and --version
-        if (args.Contains("--help") || args.Contains("-h"))
+        var commandLine = CommandLineParser.Parse(args);
+        if (commandLine.ShowHelp)
         {
             PrintUsage();
             return;
         }
 
-        if (args.Contains("--version") || args.Contains("-v"))
+        if (commandLine.ShowVersion)
         {
             AnsiConsole.MarkupLine("[bold]AgentSharp[/] v0.1.0");
             return;
@@ -48,18 +51,18 @@ internal class Program
             AgentTelemetry.Initialize();
 
             // --- Configuration ---
-            var config = Configuration.Load(args);
+            var options = commandLine.Options;
             __Mark("config loaded");
 
             // Set the process CWD before anything else reads it -- every relative path
             // (tool file I/O, ProjectContext scanning, MemoryManager, session files) falls
             // back to Directory.GetCurrentDirectory() on its own, so this one call is
             // enough to redirect all of them; nothing downstream needs to know --dir exists.
-            if (config.WorkingDirectory is not null)
-                Directory.SetCurrentDirectory(config.WorkingDirectory);
+            if (options.WorkingDirectory is not null)
+                Directory.SetCurrentDirectory(options.WorkingDirectory);
 
             // --- LLM Client ---
-            var llm = config.CreateLlmClient();
+            var llm = LlmClientFactory.Create(options);
             __Mark("llm client created");
 
             // --- Tool Registry (auto-discover all ITool implementations) ---
@@ -79,9 +82,9 @@ internal class Program
             // --- Multi-Agent Orchestrator ---
             // Create orchestrator and register the sub_agent and remember tools
             // (must be done after tool discovery since both require constructor args)
-            var maxTokens = config.MaxTokens ?? AgentSharpLib.Agent.AgentLoop.DefaultMaxTokens;
-            var maxIterations = config.MaxIterations ?? AgentSharpLib.Agent.AgentLoop.DefaultMaxIterations;
-            var promptBuilder = new SystemPromptBuilder(new ProjectContext(), memory, config.SuperPrompt);
+            var maxTokens = options.MaxTokens ?? AgentSharpLib.Agent.AgentLoop.DefaultMaxTokens;
+            var maxIterations = options.MaxIterations ?? AgentSharpLib.Agent.AgentLoop.DefaultMaxIterations;
+            var promptBuilder = new SystemPromptBuilder(new ProjectContext(), memory, options.SuperPrompt);
             var orchestrator = new AgentOrchestrator(llm, tools, approval, promptBuilder.Build(), maxTokens, maxIterations, output: output);
             tools.Register(new SubAgentTool(orchestrator));
             tools.Register(new MemoryTool(memory));
@@ -97,11 +100,11 @@ internal class Program
             __Mark("project scan done");
 
             // --- Check for one-shot mode (prompt passed as argument) ---
-            var promptArg = GetPromptArgument(args);
+            var promptArg = commandLine.Prompt;
             if (promptArg is not null)
             {
                 // One-shot mode: run a single turn and exit
-                var oneShotPromptBuilder = new SystemPromptBuilder(project, memory, config.SuperPrompt);
+                var oneShotPromptBuilder = new SystemPromptBuilder(project, memory, options.SuperPrompt);
                 var agentLoop = new AgentSharpLib.Agent.AgentLoop(llm, tools, approval, oneShotPromptBuilder.Build(), maxTokens: maxTokens, maxIterations: maxIterations, output: output);
                 __Mark("about to call RunTurnAsync");
                 if (AgentFlags.SyncMode)
@@ -113,7 +116,7 @@ internal class Program
             }
 
             // --- Interactive REPL ---
-            var repl = new ReplHost(llm, tools, approval, output, project, sessions, memory, maxTokens, maxIterations, config.SuperPrompt);
+            var repl = new ReplHost(llm, tools, approval, output, project, sessions, memory, maxTokens, maxIterations, options.SuperPrompt);
             await repl.RunAsync();
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("API key"))
@@ -141,30 +144,6 @@ internal class Program
             AgentTelemetry.Shutdown();
         }
 
-        static string? GetPromptArgument(string[] args)
-        {
-            for (int i = 0; i < args.Length; i++)
-            {
-                if (args[i] == "--prompt" && i + 1 < args.Length)
-                    return args[i + 1];
-
-                // Support: agentsharp "do something"
-                // (first non-flag argument)
-                if (!args[i].StartsWith('-') && !IsValueOfPreviousFlag(args, i))
-                    return args[i];
-            }
-            return null;
-        }
-
-        static bool IsValueOfPreviousFlag(string[] args, int index)
-        {
-            if (index == 0) return false;
-            var prev = args[index - 1];
-            return prev is "--provider" or "-p" or "--model" or "-m"
-                or "--api-key" or "-k" or "--base-url" or "--prompt" or "--timeout" or "--max-tokens" or "--dir"
-                || string.Equals(prev, "--Superprompt", StringComparison.OrdinalIgnoreCase);
-        }
-
         static void PrintUsage()
         {
             AnsiConsole.MarkupLine("[bold]AgentSharp[/] - AI Coding Agent CLI");
@@ -180,6 +159,7 @@ internal class Program
             AnsiConsole.MarkupLine("      --base-url <url>     Custom API base URL for compatible providers");
             AnsiConsole.MarkupLine("      --timeout <minutes>  Request timeout, e.g. for slow local Ollama models (default: 60)");
             AnsiConsole.MarkupLine("      --max-tokens <n>     Max output tokens per request (default: 128000; lower this for small-context local models)");
+            AnsiConsole.MarkupLine("      --max-iterations <n> Max LLM/tool round-trips per turn (default: 100)");
             AnsiConsole.MarkupLine("      --dir <path>         Project directory to run in (default: current directory)");
             AnsiConsole.MarkupLine("      --Superprompt <name> Base persona/prompt: andy (default), angie, connie, donald, fed, lucy, code");
             AnsiConsole.MarkupLine("  -h, --help               Show this help");
@@ -195,6 +175,8 @@ internal class Program
             AnsiConsole.MarkupLine("  AGENT_API_KEY            Generic API key (any provider)");
             AnsiConsole.MarkupLine("  AGENT_TIMEOUT_MINUTES    Request timeout in minutes (default: 60, Ollama only)");
             AnsiConsole.MarkupLine("  AGENT_MAX_TOKENS         Max output tokens per request (default: 128000)");
+            AnsiConsole.MarkupLine("  AGENT_MAX_ITERATIONS     Max LLM/tool round-trips per turn (default: 100)");
+            AnsiConsole.MarkupLine("  AGENT_BASE_URL           Custom API base URL");
             AnsiConsole.MarkupLine("  AGENT_ENABLE_OTEL        Emit OpenTelemetry traces via the console exporter (default: off)\n");
             AnsiConsole.MarkupLine("[bold]REPL COMMANDS:[/]");
             AnsiConsole.MarkupLine("  /help       Show commands");

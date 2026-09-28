@@ -10,7 +10,7 @@
 | Environment | `AGENT_MAX_TOKENS` |
 | Config file | `max_tokens` in `~/.agentsharp/config.json` |
 
-Precedence follows the rest of `Configuration` (env → config file → CLI, CLI
+Precedence follows the rest of `CommandLineParser` (env → config file → CLI, CLI
 wins). The resolved value flows from `Program.cs` through `ReplHost`,
 `AgentOrchestrator`, and `SubAgent` into every `AgentLoop` instance — including
 sub-agents spawned via the `sub_agent` tool — so it only needs to be set once
