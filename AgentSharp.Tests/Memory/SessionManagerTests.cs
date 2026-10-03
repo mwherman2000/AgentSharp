@@ -59,6 +59,24 @@ public class SessionManagerTests : IDisposable
     }
 
     [Fact]
+    public void ListSessions_SortsMostRecentFirst()
+    {
+        // Names sort opposite to dates, so a name-based order would fail.
+        var sessionsDir = Path.Combine(_tempDir, "sessions");
+        WriteSession(sessionsDir, "a-newest", new DateTime(2026, 10, 3, 0, 0, 0, DateTimeKind.Utc));
+        WriteSession(sessionsDir, "m-oldest", new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        WriteSession(sessionsDir, "z-middle", new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        var ids = _manager.ListSessions().Select(s => s.Id).ToList();
+
+        Assert.Equal(["a-newest", "z-middle", "m-oldest"], ids);
+    }
+
+    private static void WriteSession(string dir, string id, DateTime createdAt) =>
+        File.WriteAllText(Path.Combine(dir, $"{id}.json"),
+            $$"""{"id":"{{id}}","created_at":"{{createdAt:O}}","message_count":0,"messages":[]}""");
+
+    [Fact]
     public async Task Save_GeneratesId_WhenNotProvided()
     {
         var history = new ConversationHistory();

@@ -119,7 +119,7 @@ public class SessionManager
     }
 
     /// <summary>
-    /// List all saved sessions.
+    /// List all saved sessions, most recently saved first.
     /// </summary>
     public IReadOnlyList<SessionInfo> ListSessions()
     {
@@ -127,7 +127,7 @@ public class SessionManager
             return [];
 
         var sessions = new List<SessionInfo>();
-        foreach (var file in Directory.GetFiles(_sessionsDir, "*.json").OrderByDescending(f => f))
+        foreach (var file in Directory.GetFiles(_sessionsDir, "*.json"))
         {
             try
             {
@@ -148,7 +148,8 @@ public class SessionManager
                 // Skip corrupt session files
             }
         }
-        return sessions;
+        // CreatedAt is stamped on every save, so this is newest-saved first.
+        return sessions.OrderByDescending(s => s.CreatedAt).ToList();
     }
 
     private string GetSessionPath(string sessionId) =>
