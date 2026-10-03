@@ -23,15 +23,14 @@ try
 {
     lucy = await new AgentBuilder()
         .WithOptions(options)
-        .WithSuperPrompt("lucy")
         .WithOutput(new ConsoleAgentOutput())
         .WithApprovalPrompt(new ConsoleApprovalPrompt())
         .BuildAsync();
 }
-catch (InvalidOperationException ex)
+catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
 {
     Console.Error.WriteLine(ex.Message);
-    Console.Error.WriteLine("Usage: AgentLucyApp [--provider <name>] [--model <name>] [--api-key <key>] [--max-tokens <n>]");
+    Console.Error.WriteLine("Usage: AgentLucyApp [--provider <name>] [--model <name>] [--api-key <key>] [--max-tokens <n>] [--Superprompt <name>]");
     return 1;
 }
 
@@ -314,8 +313,11 @@ static AgentOptions ParseArgs(string[] args)
             case "--model" or "-m": options.Model = args[++i]; break;
             case "--api-key" or "-k": options.ApiKey = args[++i]; break;
             case "--max-tokens" when int.TryParse(args[i + 1], out var n): options.MaxTokens = n; i++; break;
+            case "--superprompt": options.SuperPrompt = args[++i]; break;
         }
     }
+    // Lucy unless --Superprompt picks another persona (andy, angie, connie, donald, fed, code).
+    options.SuperPrompt ??= "lucy";
     options.ApiKey ??= LlmClientFactory.ApiKeyEnvironmentVariables(options.Provider)
         .Select(Environment.GetEnvironmentVariable)
         .FirstOrDefault(v => v is not null);
