@@ -74,7 +74,7 @@ public sealed class AgentBuilder
         return this;
     }
 
-    /// <summary>Persona to use (andy, angie, connie, donald, fed, lucy, code). Overrides
+    /// <summary>Persona to use (one of <see cref="SystemPromptBuilder.AvailableSuperPrompts"/>). Overrides
     /// <see cref="AgentOptions.SuperPrompt"/>.</summary>
     public AgentBuilder WithSuperPrompt(string superPrompt)
     {

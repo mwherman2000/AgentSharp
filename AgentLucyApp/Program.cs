@@ -316,7 +316,7 @@ static AgentOptions ParseArgs(string[] args)
             case "--superprompt": options.SuperPrompt = args[++i]; break;
         }
     }
-    // Lucy unless --Superprompt picks another persona (andy, angie, connie, donald, fed, code).
+    // Lucy unless --Superprompt picks another persona (SystemPromptBuilder.AvailableSuperPrompts).
     options.SuperPrompt ??= "lucy";
     options.ApiKey ??= LlmClientFactory.ApiKeyEnvironmentVariables(options.Provider)
         .Select(Environment.GetEnvironmentVariable)

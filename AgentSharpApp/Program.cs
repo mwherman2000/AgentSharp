@@ -1,4 +1,5 @@
 using AgentSharpLib;
+using AgentSharpLib.Context;
 using AgentSharpLib.Memory;
 using AgentSharpLib.Telemetry;
 using AgentSharpApp.Cli;
@@ -127,7 +128,7 @@ internal class Program
             AnsiConsole.MarkupLine("      --max-tokens <n>     Max output tokens per request (default: 128000; lower this for small-context local models)");
             AnsiConsole.MarkupLine("      --max-iterations <n> Max LLM/tool round-trips per turn (default: 100)");
             AnsiConsole.MarkupLine("      --dir <path>         Project directory to run in (default: current directory)");
-            AnsiConsole.MarkupLine("      --Superprompt <name> Base persona/prompt: andy (default), angie, connie, donald, fed, lucy, code");
+            AnsiConsole.MarkupLine($"      --Superprompt <name> Base persona/prompt: {SystemPromptBuilder.AvailableSuperPrompts[0]} (default), {string.Join(", ", SystemPromptBuilder.AvailableSuperPrompts.Skip(1))}");
             AnsiConsole.MarkupLine("  -h, --help               Show this help");
             AnsiConsole.MarkupLine("  -v, --version            Show version\n");
             AnsiConsole.MarkupLine("[bold]ENVIRONMENT VARIABLES:[/]");

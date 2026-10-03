@@ -21,15 +21,33 @@ public class SystemPromptBuilder
     /// <summary>
     /// </summary>
     /// <param name="superPrompt">Selects which base persona/prompt to use, matching the
-    /// CLI's --Superprompt argument (case-insensitive). Null or empty uses the default
-    /// (Andy). Valid names: andy, angie, connie (or consort), donald (or trump),
-    /// fed (or powell), lucy, code.</param>
+    /// CLI's --Superprompt argument (case-insensitive): one of <see cref="AvailableSuperPrompts"/>
+    /// or an alias. Null or empty uses the default (the first, Andy).</param>
     public SystemPromptBuilder(ProjectContext project, MemoryManager? memory = null, string? superPrompt = null)
     {
         _project = project;
         _memory = memory;
         _basePrompt = ResolveSuperPrompt(superPrompt);
     }
+
+    // The single list of personas: --Superprompt name, accepted aliases, display name, prompt.
+    // The first entry is the default.
+    private static readonly (string Key, string[] Aliases, string Name, string Prompt)[] Personas =
+    [
+        ("andy", [], "Andy", BasePromptAndy),
+        ("angie", [], "Angie", BasePromptAngie),
+        ("connie", ["consort"], "Connie", BasePromptConnie),
+        ("donald", ["trump"], "Donald", BasePromptDonald),
+        ("fed", ["powell"], "Fed Chair", BasePromptFed),
+        ("lucy", [], "Lucy", BasePromptLucy),
+        ("code", ["coding"], "AgentSharp", BasePromptCode),
+    ];
+
+    /// <summary>
+    /// The valid --Superprompt names (aliases excluded), default first. Use this for help
+    /// text and error messages rather than spelling the list out.
+    /// </summary>
+    public static IReadOnlyList<string> AvailableSuperPrompts { get; } = Personas.Select(p => p.Key).ToArray();
 
     /// <summary>
     /// Resolves a --Superprompt name to its base prompt text. Unknown names throw so a
@@ -46,20 +64,16 @@ public class SystemPromptBuilder
     private static (string Name, string Prompt) Resolve(string? superPrompt)
     {
         if (string.IsNullOrWhiteSpace(superPrompt))
-            return ("Andy", BasePromptAndy);
+            return (Personas[0].Name, Personas[0].Prompt);
 
-        return superPrompt.Trim().ToLowerInvariant() switch
+        var key = superPrompt.Trim().ToLowerInvariant();
+        foreach (var p in Personas)
         {
-            "andy" => ("Andy", BasePromptAndy),
-            "angie" => ("Angie", BasePromptAngie),
-            "connie" or "consort" => ("Connie", BasePromptConnie),
-            "donald" or "trump" => ("Donald", BasePromptDonald),
-            "fed" or "powell" => ("Fed Chair", BasePromptFed),
-            "lucy" => ("Lucy", BasePromptLucy),
-            "code" or "coding" => ("AgentSharp", BasePromptCode),
-            _ => throw new ArgumentException(
-                $"Unknown --Superprompt '{superPrompt}'. Valid options: andy, angie, connie, donald, fed, lucy, code.")
-        };
+            if (p.Key == key || p.Aliases.Contains(key))
+                return (p.Name, p.Prompt);
+        }
+        throw new ArgumentException(
+            $"Unknown --Superprompt '{superPrompt}'. Valid options: {string.Join(", ", AvailableSuperPrompts)}.");
     }
 
     public string Build()

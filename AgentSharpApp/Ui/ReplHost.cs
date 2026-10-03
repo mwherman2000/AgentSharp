@@ -442,7 +442,7 @@ public class ReplHost
             .AddColumn(new TableColumn("Command").Width(CommandColumnWidth))
             .AddColumn("Description")
             .AddRow("/help, /h, /?", "Show this help")
-            .AddRow("/clear, /cls [[persona]]", "Start a new conversation; optionally switch persona (andy, angie, connie, donald, fed, lucy, code)")
+            .AddRow("/clear, /cls [[persona]]", $"Start a new conversation; optionally switch persona ({string.Join(", ", SystemPromptBuilder.AvailableSuperPrompts)})")
             .AddRow("/save [[id]]", "Save this conversation (and a .docx transcript)")
             .AddRow("/load, /resume <id>", "Continue a saved conversation")
             .AddRow("/sessions, /ls", "List saved conversations")

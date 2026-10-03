@@ -50,4 +50,22 @@ public class SystemPromptBuilderTests : IDisposable
         Assert.Contains("# Memory", prompt);
         Assert.Contains("User prefers concise commit messages.", prompt);
     }
+
+    [Fact]
+    public void AvailableSuperPrompts_AllResolve()
+    {
+        foreach (var name in SystemPromptBuilder.AvailableSuperPrompts)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(SystemPromptBuilder.ResolveSuperPrompt(name)));
+            Assert.False(string.IsNullOrWhiteSpace(SystemPromptBuilder.ResolveAgentName(name)));
+        }
+    }
+
+    [Fact]
+    public void ResolveSuperPrompt_UnknownName_ListsAvailableSuperPrompts()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => SystemPromptBuilder.ResolveSuperPrompt("bogus"));
+
+        Assert.Contains(string.Join(", ", SystemPromptBuilder.AvailableSuperPrompts), ex.Message);
+    }
 }
