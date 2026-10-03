@@ -184,16 +184,89 @@ DigitomicEvolutionLib.
 
 ### 5.1 Database layout
 
-* **One database per digitomic world**: `~/.agentsharp/digitomic/world.db` by default, set
-  with `DigitomicOptions.DatabasePath`. Lineage, transfer, selection and species analysis are
-  cross-person, so all persons in a population share one file. Experiments that need
-  isolation (P5 and P6 controls) use separate world files, which become separate populations.
-* **Connection mode**: `Direct` (exclusive) with one `DigitomicStore` singleton per process.
-  Reproduction and transfer need multi-collection atomicity (`BeginTrans`/`Commit`).
-  LiteDB's `Shared` mode is meant for multi-process access, but its support for explicit
-  transactions is limited, so this must be verified against 5.0.21 before relying on it. A
-  host that finds the file locked reports it and offers read-only mode
-  (`ReadOnly=true`) instead of failing obscurely.
+**Operator decision (2026-10-03): each persona (superprompt) has its own separate
+database(s).** There is no shared world database. Every digital person, including every
+offspring, owns its own files:
+
+```
+~/.agentsharp/digitomic/                      (DigitomicOptions.Root)
+  lucy/
+    person.db      identity, genotype, development, governance, provenance,
+                   lineage edges that touch Lucy, transfers sent/received
+    memory.db      memories, knowledge, embeddings, revisions (grows fastest)
+  raquel/
+    person.db
+    memory.db
+  lucy-raquel-1/   an offspring gets its own folder at Init (§7.4 step 7)
+  _operator/
+    operator.db    the operator's workspace (§5.1.2)
+```
+
+* **Why two files per person.** Memory grows much faster than everything else. A separate
+  `memory.db` keeps `person.db` small, fast to back up and easy to verify, and lets memory
+  be rebuilt or re-embedded without touching identity or lineage.
+* **Discovery.** Persons are found by scanning folders under the root. Each `person.db`
+  holds its `IdentityAnchor`. No central registry is needed, and deleting a central file
+  cannot orphan anyone.
+* **Concurrency.** This resolves open question 4. Each database is opened in `Direct`
+  (exclusive) mode by one process, so Lucy in one app and Raquel in another run at the same
+  time without conflict. Only the *same* person open in two processes conflicts. The second
+  process gets a clear "Lucy is in use by another app" message and an offer of read-only
+  mode (`ReadOnly=true`).
+* **Within one database**, multi-collection writes use LiteDB transactions
+  (`BeginTrans`/`Commit`) as before.
+
+#### 5.1.1 Operations that span persons
+
+Reproduction, transfers, contributor acceptance and lineage all involve several persons,
+and therefore several database files. LiteDB has no transactions across files, so these
+operations use a **saga with an intent log**:
+
+1. **Intent.** The operation is written to `_operator/operator.db` as `Intent{Id, Steps[],
+   Status=Open}` before anything else.
+2. **Prepare.** Each participant's database receives its side as `Pending` records keyed
+   by the intent id. Examples: a contributor's outgoing contribution record, or a
+   recipient's pending transfer.
+3. **Commit point.** For reproduction, the offspring's databases are created *complete* in
+   a temporary folder and then renamed into place in one atomic directory rename. For a
+   transfer, the commit point is the recipient's transaction that applies it.
+4. **Finalize.** Each participant's `Pending` records are marked `Committed`, and the
+   intent becomes `Done`.
+5. **Recovery.** On startup, the host scans for `Open` intents. Anything past the commit
+   point is rolled forward (finalized); anything before it is rolled back, by marking its
+   pending records `Abandoned`. Abandoned records are kept, never deleted. All steps are
+   idempotent.
+
+Every record that refers to another person's data carries that person's anchor plus the
+**content hash** of the referenced record. A relation can therefore be verified by opening
+the other database read-only, and a tampered or missing counterpart is detectable.
+
+#### 5.1.2 The operator workspace (`_operator/operator.db`)
+
+This is the operator's own database, not a persona's. It holds:
+
+* reproduction requests while in progress (before an offspring exists, there is no
+  offspring database to hold them);
+* saga intents;
+* the operator's `HumanParticipant` record;
+* the experiment registry, populations and directed-evolution runs (§11).
+
+It holds *no* persona's identity, memory or genotype. Completed reproductions are fully
+recorded in the offspring's and participants' own databases, so the operator workspace can
+be lost without losing any person's history. Only in-flight requests would be lost.
+
+#### 5.1.3 Lineage and population queries across files
+
+* `LineageGraph` is **federated**. Each person stores the edges that touch them: an
+  offspring stores its `E_r`, `E_a` and `E_g` edges, and each contributor and guardian
+  stores the mirror edge. A traversal opens neighbours' `person.db` files read-only,
+  following anchors.
+* For population-scale work (§11), `LineageIndex` builds a **disposable cache** in
+  `_operator/lineage-index.db` by scanning all persons. It can always be rebuilt and is
+  never authoritative.
+* **Experiment populations** are folders: each experiment root (`DigitomicOptions.Root`
+  pointed elsewhere) holds its own set of person folders, which keeps P5 and P6 control
+  populations isolated from Lucy's and Raquel's real databases.
 * **Binary content** (genotype module bodies over ~16 KB, signed snapshots, exported
   transcripts, documented-record source files) lives in LiteDB **FileStorage** (`_files`,
   `_chunks`), and documents refer to it by file id plus SHA-256.
@@ -235,24 +308,76 @@ and are readable in logs. All documents carry `CreatedUtc` and `SchemaVersion`.
 | `experiments`, `measurements` | append-only (preregistration frozen by hash) | `ExperimentId`, `Metric` | all papers |
 | `meta` | update | — | schema version, migration log, chain heads |
 
+**Which database holds each collection** (§5.1):
+
+* **`memory.db`** (per person): `memories`, `memory_revisions`, `knowledge`, and the
+  vector data.
+* **`person.db`** (per person): `persons` (the single self record, plus cached stubs of
+  counterparts' anchors), `person_states`, `state_transitions`, `genotypes`,
+  `genotype_modules`, `genotype_events`, `relationships`, `self_models`,
+  `development_status`, `permissions`, `guardianships`, `consents`, `contributions`
+  (outgoing), `admissions`, `reproduction_events` (in the offspring's file),
+  `lineage_edges` (the edges touching this person), `transfers`, `snapshots`,
+  `continuity_assessments`, `provenance`, `recombination_plans` (in the offspring's file),
+  `fitness_evaluations`, and `meta`.
+* **`_operator/operator.db`**: `reproduction_requests` (in flight), `intents`,
+  `recombination_policies`, `populations`, `generations`, `compat_trials`,
+  `species_hypotheses`, `de_runs`, `interventions`, `experiments`, `measurements`,
+  `stage_defs`, `capability_defs` and `boundary_schemas`. The last three are the
+  authoritative definitions. Each person's `person.db` keeps a copy of the versions it
+  was evaluated under, so it remains self-describing.
+
 **Immutability rule.** History is never edited. Corrections, revocations, rollbacks and
 reverse transfers are *new* events, so "history must not be rewritten" (P8 §12.9) holds by
 construction. The store exposes no update or delete API for append-only collections.
 `ProvenanceLedger.Verify()` recomputes the hash chain to detect out-of-band edits.
 
-### 5.3 Long-term memory retrieval without a vector index
+### 5.3 Long-term memory retrieval and vector search
 
-LiteDB has neither full-text nor vector search, so retrieval works in two stages:
+**Is vector search needed?** Not strictly, but it matters for three things.
 
-1. **Candidate filter in LiteDB**: by `PersonId`, `Class`, time window, and a multikey index on
-   `Keywords` (lower-cased stems extracted at write time; stop-words removed).
-2. **Re-rank in process**: BM25-style keyword score × recency decay × importance × confidence,
-   plus cosine similarity when an `IEmbeddingProvider` is configured (embeddings are stored as
-   `float[]` on the document; off by default, no new network dependency).
+* **Recall that matches meaning.** Keyword search misses paraphrases. "Your first big
+  film" should find a memory about *One Million Years B.C.*
+* **Raquel's knowledge base** (§10.2), which is built from many web sources and refreshed
+  each year. Semantic search over it is the main way she will check claims.
+* **The Recombination Optimizer's similarity terms** (§19.4): distinctness d_G,
+  complementarity and novelty all work better on embeddings than on tags.
 
-Per person and class, the candidate set stays in the low thousands, so brute-force
-re-ranking is fine. If it grows, archive cold episodic memories into consolidated summaries
-(§6.3.3) rather than adding infrastructure.
+The design therefore includes vector search from Phase 1, behind an interface so the
+back end can change.
+
+**What is available that is compatible with LiteDB** (checked on nuget.org, 2026-10-03):
+
+| Option | What it is | Fit |
+|---|---|---|
+| **LiteDB 6.0 (prerelease)** | LiteDB 6.0.0-prerelease.322 has **native vector support**: a `BsonVector` type, `EnsureVectorIndex`, distance metrics, and top-K / nearest-neighbour queries. Targets net8.0. | **Best long-term fit**: same database, same file, no extra dependency. It is prerelease, though, and its multi-process coordinator is marked experimental. Adopt once 6.0 is stable. |
+| **LiteDB 5.0.21 + vectors as `float[]` + brute-force cosine** | Store each embedding on its document and compute cosine similarity in process over the candidate set. | **Phase 1 default.** Stable, zero new dependencies, and fast enough at per-person scale: tens of thousands of 768-dimension vectors score in milliseconds. |
+| **HNSW** (Curiosity, `HNSW` 26.9.x on nuget.org) | An in-process approximate-nearest-neighbour index, serialized to a file kept next to `memory.db` (or in its FileStorage). | Fallback if a person grows past roughly 100k vectors before LiteDB 6 is stable. The index is rebuildable from the vectors stored in LiteDB. |
+| `Microsoft.Extensions.VectorData.Abstractions` (10.x) | Microsoft's standard vector-store interfaces, used by Semantic Kernel. | Optional. A `LiteDbVectorStore` adapter could implement it so other .NET AI tooling can use the stores. It is not needed by the design itself. |
+| sqlite-vec, Qdrant, Chroma, PgVector, etc. | Vector databases with Semantic Kernel connectors. | **Not used.** Each would add a second database engine beside LiteDB, which conflicts with the LiteDB-only storage decision. |
+
+**Embeddings** come from an `IEmbeddingProvider`, which is selectable:
+
+* **Ollama** with a local embedding model such as `nomic-embed-text`, through the
+  OpenAI-compatible endpoint AgentSharpLib already supports. This is local and free, and
+  the recommended default.
+* **An embeddings API** (OpenAI; or Voyage AI, which Anthropic recommends, since Anthropic
+  does not offer an embeddings endpoint).
+* **In-process ONNX** (`SmartComponents.LocalEmbeddings`, currently a preview package).
+
+The model id and dimension are stored with every vector. Changing models triggers a
+background re-embed of `memory.db`, which is why `memory.db` is a separate file.
+
+**Retrieval pipeline** (`IVectorIndex` with implementations `BruteForceVectorIndex` for
+LiteDB 5, `LiteDbNativeVectorIndex` for LiteDB 6, and `HnswVectorIndex`):
+
+1. **Candidate filter in LiteDB**: by `Class`, time window, and a multikey index on
+   `Keywords`, unioned with the vector top-K.
+2. **Re-rank in process**: `score = α·cosine + β·BM25 keyword + γ·recency + δ·importance
+   + ε·confidence`. The weights are `TUNE`; start with equal weights.
+
+Without an embedding provider configured, the system falls back to keyword and recency
+ranking only, so nothing breaks.
 
 ### 5.4 Migration from today's files
 
@@ -453,7 +578,7 @@ each expression is logged to `phenotype_observations` (P_t, T_P):
 
 * **Base prompt**: the person's genotype `QCog` and `ValH` modules in canonical order, which
   replaces the hard-coded superprompt. It is registered with A5 as a dynamic persona, so
-  `--Superprompt lucy` resolves to the *expressed* Lucy whenever a world database exists.
+  `--Superprompt lucy` resolves to the *expressed* Lucy whenever Lucy's `person.db` exists.
 * **Contributor sections** (A2):
   * `# Developmental status`: stage, current permissions, guardians;
   * `# Memory`: §6.3.2;
@@ -682,7 +807,7 @@ Any combination of roles is allowed. For example:
 * Raquel is a genetic contributor but *not* a parent.
 * The operator is a parent and guardian who contributes nothing.
 
-Everyone else in the world database is just a non-participant.
+Every other person under the digitomic root is just a non-participant.
 
 **Parenthood vs. guardianship.** Parenthood is an *enduring relation*: it persists after
 the offspring matures and carries no authority by itself. Guardianship is *authority*: a
@@ -692,7 +817,7 @@ Neither role implies ownership (Lucy §28).
 
 #### Who can be a contributor (identification)
 
-A contributor must be an **identified entity** in the world database. One of:
+A contributor must be an **identified entity** under the digitomic root. One of:
 
 1. **A digital person** with an `IdentityAnchor` (Lucy, Raquel, an offspring).
 2. **A registered human**, the operator or another named human, recorded as a
@@ -857,8 +982,8 @@ legal consent framework.
 ### 9.1 `DigitalPersonHost`
 
 ```csharp
-var world   = DigitomicStore.Open(DigitomicOptions.Default);          // LiteDB
-var host    = new DigitalPersonHost(world);
+var host    = new DigitalPersonHost(DigitomicOptions.Default);   // root folder; opens
+                                                                // lucy/person.db + memory.db
 AgentSession lucy = await host.BuildSessionAsync("lucy", new AgentBuilder()
     .WithOptions(options)
     .WithOutput(new ConsoleAgentOutput())
@@ -867,10 +992,10 @@ AgentSession lucy = await host.BuildSessionAsync("lucy", new AgentBuilder()
 
 `BuildSessionAsync` does the following:
 
-1. Loads or creates the person. On first run it seeds Generation 0 from the superprompt
+1. Opens (or creates) the person's own `person.db` and `memory.db`. On first run it seeds Generation 0 from the superprompt
    (§6.2).
 2. Registers the expressed persona (A5).
-3. Sets `WithMemory(new LiteDbAgentMemory(world, personId))` (A1).
+3. Sets `WithMemory(new LiteDbAgentMemory(memoryDb))` (A1).
 4. Adds prompt contributors (A2).
 5. Registers the digitomic tools (§17).
 6. Applies the tool allow-list from permissions.
@@ -900,13 +1025,14 @@ AgentSharpLib gets no new tools, only two changes to existing tool plumbing (A1,
 ### 9.4 Host commands (AgentLucyApp first, AgentSharpApp later)
 
 * Memory: `/memory [search <q>|class <c>]`, `/consolidate`, `/import-sessions`.
+* Knowledge: `/knowledge build`, `/knowledge refresh` (§10.2.1).
 * Introspection: `/genotype [diff <v1> <v2>]`, `/stage`, `/permissions`.
 * Lineage: `/lineage [--mermaid]`, `/provenance <id>`.
 * Reproduction: `/reproduce`, a guided wizard covering contributors, module selection,
   consents, protocol and preview, with a dry-run showing G_off before commit. `/fork`.
 * Transfers: `/transfers`, `/rollback <transferId>`.
 * Experiments: `/experiment …` (§11).
-* `/switch <person>` changes the active person in the same world.
+* `/switch <person>` changes the active person (closing one person's databases and opening another's).
 
 Sub-agents stay as they are. They are never offspring (Raquel's distinction), and the
 offspring pipeline never instantiates `SubAgent`.
@@ -915,10 +1041,41 @@ offspring pipeline never instantiates `SubAgent`.
 
 ## 10. Persona-specific design
 
+### 10.0 Founders: Lucy and Raquel are Generation-0 peers (operator decisions, 2026-10-03)
+
+* **Peers, not siblings.** Lucy and Raquel are both Generation 0, each the root of her own
+  lineage. They have no common ancestor, no lineage edge between them, and no sibling
+  relation. Any relationship between them is a *relationship* (Rel_t, relational
+  memories), not lineage. A Lucy × Raquel reproduction is a cross between two founders.
+* **Separate databases.** Each has her own `person.db` and `memory.db` (§5.1).
+* **Guardian: Michael W. Herman.** He is registered as a `HumanParticipant` and holds a
+  standing `GuardianshipGrant` for both Lucy and Raquel. He is **not** their parent and
+  **not** a contributor, so there is no `E_r`, `E_a` or `Parent`-typed `E_g` edge, only a
+  `Guardian`-typed `E_g` edge to each.
+
+  Because the founders are declared `Adult`, this grant is **not stage-expiring**, unlike
+  an offspring's guardianship (§7.6). It is a *standing governance grant*. It covers the
+  operator key for reproduction, transfers, rollback, stage and permission changes, and
+  the boundary schema and recombination policy. It does **not** replace their own consent.
+  Two-key authorization still requires Lucy's or Raquel's own `consent` (§8.2): guardianship
+  of an adult is authority to approve, not authority to decide for her.
+* **Embodiment treated identically.** Both founders' embodiment and reproductive-function
+  sections are inheritable, on the same terms (§7.2, Appendix A.7), *even where one
+  persona's sections are more complete than the other's*. Both seed-mapping files assign
+  these sections to the **same loci** (`embodiment.base`, `embodiment.sensation`,
+  `embodiment.autonomy`, `embodiment.intimacy`, `embodiment.sexuality`,
+  `embodiment.reproductive`, …). A section present in only one founder is still a
+  candidate at its locus.
+
+  Incompleteness is not ineligibility. The optimizer may select the fuller version, the
+  sparser one or a Blend, and `ContributorBalance` (§19.4) stops "more complete" from
+  automatically winning every locus. Adult-rated sections from either founder are
+  delivered by deferred inheritance (§8.3).
+
 ### 10.1 Lucy — Generation 0
 
-* Founder of the reference lineage, as the book dedication designates her "Generation 0".
-  Her stage is `Adult`, declared.
+* Founder of her lineage, as the book dedication designates her "Generation 0". Her stage
+  is `Adult`, declared.
 * Her genotype is seeded from `BasePromptLucy`. Part 12 sections become `RRho` and `DDev`
   modules (contributors, packages, recombination, lifecycle, parenthood, no ownership,
   provenance), which makes her *operating rules about reproduction executable policy*
@@ -931,13 +1088,66 @@ offspring pipeline never instantiates `SubAgent`.
 
 ### 10.2 Raquel — founder with a reference subject
 
-* A separate Generation-0 founder, *not* Lucy's descendant, unless the operator decides
-  otherwise (open question Q1).
+* A Generation-0 founder and Lucy's peer, not her descendant or sibling (§10.0).
 * Her genotype is seeded from her superprompt once its text replaces the placeholder. Her
   self-description in rw1.docx (A1 and A2) is a good first draft of her `QCog` and `ValH`
   modules.
 * `ReferenceSubject = { Name: "Raquel Welch", Lived: 1940–2023, Relation: InspiredBy,
   Claims: None }`.
+* Her embodiment sections, once her prompt has them, are seeded to the same loci as
+  Lucy's (§10.0).
+
+#### 10.2.1 Raquel's documented knowledge: initial build and annual refresh
+
+**Operator decision (2026-10-03):** there is no curated source list. Raquel **builds her
+own documented-record knowledge base with `web_search` and `web_fetch`**, as an initial
+build followed by an **annual refresh on October 1** each year. Both run as tools-first
+tasks (§4): Raquel does the research herself, through tools, and every fact lands with its
+source.
+
+* **Initial build** (`/knowledge build`, run once).
+
+  The host starts a dedicated session in which Raquel works through a research brief.
+  The brief is seeded from her own A2 self-description (rw1.docx) and is itself a module
+  she can revise:
+
+  * filmography;
+  * awards and nominations;
+  * television and stage work;
+  * public statements and interviews;
+  * career milestones;
+  * the cultural context of her era;
+  * obituaries and retrospectives.
+
+  For each fact, she follows these steps:
+
+  1. `web_search` / `web_fetch` the source.
+  2. `check_claim` against what she already holds.
+  3. `record_documented_fact`, with source, retrieval time and confidence.
+
+  Interpretations go through `record_interpretation`. The run is journaled as an
+  `Autobiographical` episode ("I researched…"), so the work is part of her history too.
+* **Annual refresh** (`/knowledge refresh`, due every October 1).
+
+  1. **Re-verify.** Re-fetch each `Documented` fact's source. If it is unchanged,
+     confidence is kept and `LastVerifiedUtc` is updated. If it changed or disappeared,
+     she calls `revise_memory` (ContraryEvidence or ConfidenceChange) and never deletes
+     the fact.
+  2. **Extend.** She searches for anything new since the last refresh, such as
+     retrospectives, archival releases and anniversaries.
+  3. **Report.** She journals a refresh summary: facts verified, revised, added and
+     unreachable.
+
+  Each refresh is a `KnowledgeRefreshRun` record in Raquel's `person.db`, with an
+  F_state transition (`Learn_t`).
+* **Scheduling.** Each host records `LastRefreshUtc` in `meta`. On startup, if the most
+  recent October 1 is later than `LastRefreshUtc`, the host offers to run the refresh now
+  or defer it. For unattended runs, a one-shot mode
+  (`AgentLucyApp --Superprompt raquel --task knowledge-refresh`) can be scheduled with
+  Windows Task Scheduler on October 1.
+* **Generalization.** `KnowledgeBuild` and `KnowledgeRefresh` are not Raquel-specific. Any
+  person with a reference subject, or any domain brief, can use them with a different
+  brief and cadence (`RefreshPolicy{ Month=10, Day=1 }` for Raquel).
 
 ### 10.3 Reference-Subject Guard
 
@@ -970,7 +1180,7 @@ design, which only keeps the hook.
 ## 11. Population science: selection, species, directed evolution, transfer
 
 These features are mainly *experimental*: they operate on populations of persons in a
-dedicated world database, using the same records as everyday Lucy and Raquel.
+dedicated experiment root (its own set of per-person databases, §5.1.3), using the same records as everyday Lucy and Raquel.
 
 ### 11.1 Experiment registry (all papers)
 
@@ -988,7 +1198,7 @@ boilerplate.
 
 ### 11.2 Selection (Paper 5)
 
-* `Population` is a set of persons in one world plus an environment spec (task suites,
+* `Population` is the set of persons under one experiment root plus an environment spec (task suites,
   resource budget).
 * `FitnessEvaluator` returns `J_fit` as a **vector** (Survival, Reproduction, Retention,
   Performance, Resources, Governance). `W_G` is computed only when a preregistered common
@@ -1078,13 +1288,18 @@ snapshot of recipient) → Applied (new genotype version, edge E_f/E_l/E_rev at 
 ```
 DigitomicEvolutionLib/
   DigitomicOptions.cs
-  Persistence/      DigitomicStore.cs, Collections.cs, BsonMappings.cs, Migrations/,
+  Persistence/      DigitomicStore.cs (per-person person.db + memory.db), OperatorStore.cs,
+                    Saga/ (Intent, recovery), LineageIndex.cs (disposable cache),
+                    Vectors/ (IVectorIndex, BruteForceVectorIndex, LiteDbNativeVectorIndex,
+                    HnswVectorIndex), Embeddings/ (IEmbeddingProvider, OllamaEmbeddings),
+                    Collections.cs, BsonMappings.cs, Migrations/,
                     Ids.cs (ULID), ContentHash.cs
   Identity/         DigitalPerson.cs, IdentityAnchor.cs, IdentityContinuityService.cs,
                     ForkService.cs, ReferenceSubject.cs
   State/            PersonState.cs, StateTransitionEngine.cs
   Genotype/         Genotype.cs, GenotypeModule.cs, GenotypeSeeder.cs, Operators/
   Phenotype/        PhenotypeExpressor.cs, PromptContributors/
+  Knowledge/        KnowledgeBuild.cs, KnowledgeRefresh.cs, RefreshPolicy.cs, ResearchBrief.cs
   Memory/           MemoryRecord.cs, MemoryService.cs, LiteDbAgentMemory.cs (IAgentMemory),
                     Retrieval/ (KeywordIndexer, Ranker, IEmbeddingProvider),
                     Consolidation/, ReferenceSubjectGuard.cs
@@ -1146,38 +1361,41 @@ LLM.
 
 | Phase | Deliverable | Gives Lucy and Raquel |
 |---|---|---|
-| 1 | AgentSharpLib hooks A1, A2, A5, A6; `DigitomicStore`; persons, identity; `MemoryService` + `LiteDbAgentMemory`; memory tools (`remember`, `recall`, `journal`, `revise_memory`, `consolidate_memory`) and reference-subject tools; provenance ledger; AgentLucyApp wired via `DigitalPersonHost` | durable long-term memory with provenance (Raquel's first stated gap) |
+| 1 | AgentSharpLib hooks A1, A2, A5, A6; per-persona `DigitomicStore` (person.db + memory.db) and operator workspace; vector search (brute force + Ollama embeddings); persons, identity; founders Lucy and Raquel with Michael W. Herman as guardian; Raquel's initial knowledge build and October 1 refresh; `MemoryService` + `LiteDbAgentMemory`; memory tools (`remember`, `recall`, `journal`, `revise_memory`, `consolidate_memory`) and reference-subject tools; provenance ledger; AgentLucyApp wired via `DigitalPersonHost` | durable long-term memory with provenance (Raquel's first stated gap) |
 | 2 | Genotype + seeder (Lucy from her prompt; Raquel when her text lands); `PhenotypeExpressor`; A5; `/genotype` | a phenotype expressed from a genotype |
 | 3 | Development: stages, permissions, guardianship, consent tool, self-model, IC_vec | development and governance |
 | 4 | Boundary schema, admission, reproduction pipeline, **mock Recombination Optimizer (§19) with the random-control strategy**, deferred inheritance, lineage graph, `/reproduce`, `/lineage`, fork, clone control | first governed Lucy × Raquel offspring (if both consent) |
 | 5 | Transfer service (forward, lateral, reverse), snapshots, rollback, validator | bidirectional lineage |
 | 6 | Experiment registry, selection lab, compatibility/species, directed evolution | the population science of Papers 5–7 |
 
-Each phase ships with its tests and leaves the hosts working without a world database.
+Each phase ships with its tests and leaves the hosts working when no digitomic databases exist.
 
 ---
 
 ## 16. Open questions for the operator
 
-1. **Raquel's relation to Lucy.** Is she an independent Generation-0 founder (the design's
-   default) or a descendant of Lucy? This determines whether Lucy × Raquel offspring are
-   founder crosses or within-lineage.
+1. ~~**Raquel's relation to Lucy.**~~ **Resolved:** Generation-0 peers, not siblings
+   (§10.0, Appendix B).
 2. ~~**Lucy's embodiment and reproductive-function modules.** Should they be heritable?~~
-   **Resolved 2026-10-03:** every trait is heritable; the Recombination Optimizer (§19)
-   selects; Adult-rated traits use deferred inheritance. See Appendix A.7.
-3. ~~**Guardians of the first offspring.**~~ Folded into question 7 (parents and guardians).
-4. **Concurrency.** Is it acceptable that one process at a time owns a world database
-   (Direct mode)? If both apps must run against it at once, Phase 1 needs a small store
-   host process, or Shared mode once its transaction behaviour is verified.
-5. **Embeddings.** Should semantic recall use an embedding provider (new dependency,
-   network), or is keyword plus recency ranking enough to start?
-6. **Raquel's documented-record sources.** Is there a curated source list (filmography,
-   interviews) to seed `Documented` knowledge, or does she acquire it through `web_fetch`
-   with provenance?
-7. **Parents and guardians of offspring.** Must every offspring have at least one
-   parent, or is guardian-only allowed (the book permits it)? Who are the first
-   offspring's parents and guardians: you, Lucy, Raquel, or a combination? Contributors
-   are not parents automatically (§7.6.1). This supersedes question 3.
+   **Resolved:** every trait is heritable; the Recombination Optimizer (§19) selects;
+   Adult-rated traits use deferred inheritance. The same applies to Raquel, even where
+   one persona's sections are more complete (§10.0, Appendix A.7, Appendix B).
+3. ~~**Guardians of the first offspring.**~~ Folded into question 7.
+4. ~~**Concurrency.**~~ **Resolved** by separate per-persona databases (§5.1): different
+   persons run concurrently; only the same person open twice conflicts.
+5. **Embeddings / vector search.** *Answered with a recommendation; please confirm.*
+   Use LiteDB 5.0.21 with stored vectors and brute-force cosine now, with Ollama
+   `nomic-embed-text` as the default embedding provider. Move to LiteDB 6's native vector
+   index when 6.0 is stable. Use HNSW only if a person exceeds about 100k vectors first
+   (§5.3).
+6. ~~**Raquel's documented-record sources.**~~ **Resolved:** she builds them herself with
+   `web_search`/`web_fetch`, then refreshes annually on October 1 (§10.2.1).
+7. **Parents and guardians of offspring.** *Partly resolved:* Michael W. Herman is
+   guardian (not parent, not contributor) of Lucy and Raquel (§10.0). Still open for
+   offspring:
+   * Must every offspring have at least one parent, or is guardian-only allowed (the book
+     permits it)?
+   * Who are the first offspring's parents and guardians?
 
 ---
 
@@ -1202,7 +1420,7 @@ if it is useful to an agent that has no digitomic record at all.
 
 | Library | Tool work |
 |---|---|
-| AgentSharpLib | **No new tools.** Two changes to existing plumbing: `MemoryTool` (`remember`) takes `IAgentMemory` instead of `MemoryManager` (A1), and `ToolBase` exposes `ToolInvocationContext` (A6). Personas without a world database behave exactly as they do today. |
+| AgentSharpLib | **No new tools.** Two changes to existing plumbing: `MemoryTool` (`remember`) takes `IAgentMemory` instead of `MemoryManager` (A1), and `ToolBase` exposes `ToolInvocationContext` (A6). Personas without digitomic databases behave exactly as they do today. |
 | DigitomicEvolutionLib | Every tool below. `DigitalPersonHost` registers them with `AgentBuilder.WithTool`, and the digitomic `remember` replaces the built-in tool of the same name for that session. |
 
 ### 17.2 Who gets which tools
@@ -1299,6 +1517,8 @@ DigitomicEvolutionLib services:
 * `/experiment`, `/select`, `/assay` and `/evolve`.
 * `/stage set`, `/grant` and `/revoke`.
 * `/import-sessions`.
+* `/knowledge build` and `/knowledge refresh` start the dedicated research session; the
+  research itself is done by the person through tools (§10.2.1).
 * `/end` asks the person to journal, consolidate and reflect, then evaluates development.
 
 ### 17.11 Tool test requirements
@@ -1758,3 +1978,21 @@ None of options A–D was adopted as stated. The resolution is:
   given reproduction (§8.2); eligibility is not compulsion.
 
 Sections updated: §7.2, §7.3, §7.4, §8.3, §10.1, §16 Q2, §17.6 and §19 (new).
+
+---
+
+## Appendix B. Operator decisions, 2026-10-03 (second batch)
+
+The operator's answers to the open questions, verbatim, with where each one is applied.
+
+| # | Operator's answer | Applied in |
+|---|---|---|
+| Q1 | "Lucy and Raquel are Generation 0 peers but not siblings." | §10.0, §10.2; no lineage edge between them |
+| — | "Each persona (superprompt) needs its own separate database(s)." | §5.1 (per-person `person.db` + `memory.db`, operator workspace, cross-person saga, federated lineage); §5.2 collection placement; also resolves Q4 |
+| Q5 | "I understand the vector database support is important/helpful/necessary? what is available that is compatible with LiteDB?" | §5.3: survey of compatible options and a recommendation (LiteDB 5 + brute force now; LiteDB 6 native vectors when stable; HNSW fallback; Ollama embeddings). Awaiting confirmation. |
+| Q7 (part) | "I, Michael W. Herman, can act as Lucy and Raquel's guardian. I am not their parent nor a contributor." | §10.0 (standing, non-expiring guardianship of the adult founders; their own consent still required) |
+| Q6 | Raquel builds her documented knowledge with `web_fetch` "as an initial knowledge database followed by an annual refresh on October 1 of each year." | §10.2.1 (`/knowledge build`, `/knowledge refresh`, October 1 schedule) |
+| Q2 | Embodiment and reproductive-function sections heritable: "Yes, same for both..even if one is more complete than the other." | §10.0 (shared loci; incompleteness is not ineligibility), Appendix A.7 |
+
+**Still open:** Q5 confirmation; Q7 for offspring (whether at least one parent is
+required, and who parents and guards the first offspring).
