@@ -119,6 +119,7 @@ AgentSharpApp/     Interactive chat CLI (entry point)
   *_prompts/      Prompt source material (GTM, Lucy, O*NET)
 AgentLucyApp/      Minimal chat with the Lucy persona -- a small AgentSharpLib sample
 DigitomicEvolutionLib/  Library for digitomic evolution (new, empty)
+DigitomicEvolutionLib.Tests/  xUnit tests for DigitomicEvolutionLib (new, empty)
 AgentSharp.Tests/  xUnit test suite, mirrors the source layout
 docs/              Design notes (e.g. streaming vs. sync)
 ```
