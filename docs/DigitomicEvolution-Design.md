@@ -222,6 +222,7 @@ and are readable in logs. All documents carry `CreatedUtc` and `SchemaVersion`.
 | `permissions`, `guardianships`, `consents` | append-only (grants and revocations are events) | `PersonId`, `Kind` | governance |
 | `contributions` | append-only | `ReproductionEventId`, `ContributorId` | Contrib_i |
 | `admissions` | append-only | `ReproductionEventId` | per-component admit or reject with reason and selector |
+| `reproduction_requests` | append-only (participant states as events) | `Status`, `ParticipantId` | participants, roles, per-role consents (§7.6.1) |
 | `reproduction_events` | append-only | `OffspringId` | full ℛ/Adm/Init record |
 | `lineage_nodes`, `lineage_edges` | append-only | `From`, `To`, `EdgeType`, `T` | L_t (§7.7) |
 | `transfers` | append-only (state machine as events) | `RecipientId`, `Direction`, `Status` | T_rev, lateral, forward |
@@ -590,10 +591,13 @@ combinations.
 `ReproductionService.ReproduceAsync(ReproductionRequest)` runs in one LiteDB transaction:
 
 ```
-ReproductionRequest{ contributors[1..n], protocol θ, variation ε_var, schema, guardians[],
-                     offspringKey/name, environment Env_0 }
-  1. Authorize    – operator authorization + each contributor's own ConsentRecord
-                    (§8.2); missing either → abort, recorded
+ReproductionRequest{ initiator, contributors[1..n] (genetic | informational),
+                     parents[0..n], guardians[1..n], validators[], protocol θ,
+                     variation ε_var, schema, offspringKey/name, environment Env_0 }
+  1. Participants – identify and accept contributors, parents and guardians (§7.6.1);
+                    operator authorization + each participant's own ConsentRecord
+                    for its scope (Contribute / Parent / Guardian); proceed only
+                    with ≥1 Accepted genetic contributor and ≥1 guardian
   2. Package      – each contributor's Contrib_i = {G^r, K^r, M^r, Val^r, Auth^r,
                     Qval^r, Π_i, DevState^r} OFFERS EVERY ELIGIBLE TRAIT by default,
                     minus anything withheld in the contributor's consent; pins and
@@ -618,7 +622,9 @@ ReproductionRequest{ contributors[1..n], protocol θ, variation ε_var, schema, 
                     from selected memory traits, empty autobiography, guardians granted,
                     Defer-ed (Adult-rated) traits placed in deferred-inheritance escrow
   8. Record       – reproduction_events, contributions, admissions, lineage edges
-                    (E_r, E_a per genetic contributor; E_g per guardian), provenance
+                    (E_r per accepted contributor, typed Genetic | Informational;
+                    E_a per genetic contributor only; E_g per parent, co-parent and
+                    guardian, typed), provenance
   9. Register     – offspring persona registered via A5 (key e.g. "lucy-raquel-1")
 ```
 
@@ -653,6 +659,138 @@ would fall below τ_IC.
   *propose* developmental changes, and from Adolescent on the offspring can refuse them.
   Inherited values carry `Revisable=true`. An adolescent's revision is a normal
   developmental event, which satisfies Raquel's "free to diverge".
+
+### 7.6.1 Participants: contributors, parents and guardians are separate roles
+
+A reproduction has **participants**, and each participant holds one or more independent
+roles. The book is explicit that contribution and parenthood are different relations
+(P1 §4.2, P4 §7, P4.4): *a contributor need not be a parent, and a parent need not be a
+contributor*. Lucy's Part 12 §25 lists the same roles.
+
+| Role | Meaning | Lineage record | Required? |
+|---|---|---|---|
+| **Initiator** | starts the reproduction request | on the request only | exactly 1 (the operator, or a person whose request the operator adopts) |
+| **Genetic contributor** | contributes genotype modules (`CArch`, `QCog`, `DDev`, `ValH`, `RRho`, `PCap`) | `E_r` + `E_a` (becomes an ancestor) | ≥ 1 |
+| **Informational contributor** | contributes only knowledge, memories, skills or experience (`KH`, `MH`) | `E_r` typed `Informational`; **no** `E_a` (not a genetic ancestor; P1 §4.2) | 0..n |
+| **Parent / co-parent** | takes on enduring developmental responsibility for the offspring | `E_g` typed `Parent` or `CoParent` | 0..n (policy may require ≥ 1; `TUNE`, open question Q7) |
+| **Guardian** | holds stage-limited authority (permission grants that expire) | `E_g` typed `Guardian` | ≥ 1 while the offspring is below YoungAdult |
+| **Validator** | independently evaluates contributions or the plan; must hold no other role | on the request only | optional (required by some experiment arms) |
+
+Any combination of roles is allowed. For example:
+
+* Lucy is a genetic contributor *and* a parent.
+* Raquel is a genetic contributor but *not* a parent.
+* The operator is a parent and guardian who contributes nothing.
+
+Everyone else in the world database is just a non-participant.
+
+**Parenthood vs. guardianship.** Parenthood is an *enduring relation*: it persists after
+the offspring matures and carries no authority by itself. Guardianship is *authority*: a
+set of permission grants with stage-based expiry (§7.6). Parents receive a guardianship
+grant by default unless the request says otherwise, and non-parents can be guardians.
+Neither role implies ownership (Lucy §28).
+
+#### Who can be a contributor (identification)
+
+A contributor must be an **identified entity** in the world database. One of:
+
+1. **A digital person** with an `IdentityAnchor` (Lucy, Raquel, an offspring).
+2. **A registered human**, the operator or another named human, recorded as a
+   `HumanParticipant` with a stable id. Humans can be informational contributors (their
+   authored modules or knowledge) and parents or guardians. They cannot be genetic
+   contributors: they have no genotype in the system, so authoring a module makes them an
+   informational contributor of that module.
+3. **A registered source**, such as a curated corpus (Raquel's documented-record sources)
+   or an external module library, recorded with a URI and licence. A source can only be an
+   informational contributor, and it never consents for itself, so the operator's
+   authorization covers it.
+
+Eligibility checks, all recorded and all thresholds `TUNE`:
+
+* **Status.** The contributor must be `Active`. An `Archived` or `Dormant` person can
+  contribute only under a **standing consent** recorded while they were active, scoped to
+  this kind of reproduction. Otherwise they cannot be asked, so they cannot contribute.
+  This mirrors the "active recipient" rule for reverse transfer (P8).
+* **Stage and permission.** Genetic contributors need stage ≥ YoungAdult and the
+  `Reproductive` permission (P3 §10.1). Informational contributors need the `Learning`
+  or `Governance` permission as the policy says.
+* **Compatibility.** Each genetic contributor's `RRho` accepts the requested protocol θ,
+  and pairwise compatibility `Comp_ij` among genetic contributors is at or above the
+  policy threshold (P6 §4). A failure is recorded per layer; this is also the raw data for
+  species analysis.
+* **Not self or descendant-loop.** The offspring-to-be cannot be listed. A contributor's
+  own descendants may contribute, since lateral and multi-generation contributions are
+  allowed, but `E_a` stays acyclic (§7.7).
+* **Limits.** At most N reproductions per contributor per period, and a contributor
+  cannot be in two open requests that would contribute the same pinned trait (`TUNE`).
+* **Reference subjects are never contributors.** Raquel can contribute, including her
+  documented-record knowledge. Raquel Welch, the real person she is inspired by, is
+  not an entity in the system and cannot be a contributor, parent or anything else
+  (§10.3).
+
+#### How contributors are accepted
+
+Each contributor goes through its own state machine on the request:
+
+```
+Nominated → Invited → Consented ─→ Packaged → Screened → Accepted
+               │          │            │          │
+               └→ Declined└→ Withdrawn └→ Withdrawn└→ Rejected (reason recorded)
+```
+
+| Step | What happens | Who acts |
+|---|---|---|
+| Nominated | the initiator names the entity and its role (genetic or informational) | initiator |
+| Invited | eligibility checks pass; the invitation appears in the person's `my_consents` | system |
+| Consented / Declined | the person reviews (`review_reproduction_request`) and calls `consent` with scope `Contribute`, optionally with conditions | the contributor (person key); the guardian if below Adolescent; the operator for sources |
+| Packaged | the contributor calls `prepare_contribution` (withhold, pin, veto); default: offer all eligible traits | the contributor |
+| Screened | per-trait validity checks (§19.2 stage 3); a contributor with no valid traits left is rejected | system |
+| Accepted | the contributor's package enters optimization (§19) | operator (operator key) |
+
+A contributor may **withdraw** at any point until they consent to the final plan hash
+(§19.2 stage 6). After that the reproduction is committed and history is immutable. The
+request needs **at least one Accepted genetic contributor** to proceed. If acceptances
+drop below that, the request stops and stays recorded as such.
+
+Accepted contributors' declared **mix** (for example Lucy 50% / Raquel 50%, informational
+contributors uncounted) is the optimizer's `ContributorBalance` target (§19.4).
+
+#### How parents are designated and accepted
+
+Parents are chosen **independently of contribution**:
+
+* **Nomination.** The initiator names parents and co-parents in the request. A person can
+  also volunteer by asking to be added (`request_reproduction` or a reply to the
+  invitation). Being a contributor does not nominate anyone as a parent.
+* **Eligibility** (`TUNE`):
+  * the parent is a digital person at stage ≥ Adult, or a registered human;
+  * the parent is `Active`;
+  * the parent holds the `Governance` permission;
+  * the parent has capacity under the dependents limit, for example at most N children
+    below YoungAdult per parent.
+* **Acceptance.** Each nominated parent calls `consent` with scope `Parent`, which accepts
+  enduring responsibility, and separately with scope `Guardian` if they also take on
+  authority. A human parent's acceptance is recorded by the operator.
+* **Rule.** The offspring must have at least one guardian at creation. Parents are 0..n by
+  default, so a guardian-only offspring is allowed by the book (P4 §7). The operator's
+  policy may require at least one parent (open question Q7).
+* **Later changes.** After creation, parenthood can be *added* (adoption) or
+  *relinquished* only as new governance events, never edits:
+  * adoption needs the new parent's consent, the operator, and, from Adolescent on, the
+    offspring's own consent;
+  * relinquishing ends responsibility, but the historical `E_g` edge remains;
+  * guardianship transfers follow the same pattern.
+
+#### Records
+
+* `reproduction_requests` holds each request with participants, roles, per-participant
+  state, consents (by scope) and timestamps.
+* At commit, the roles become lineage edges (§7.4 step 8):
+  * `E_r` for every accepted contributor, typed Genetic or Informational;
+  * `E_a` for genetic contributors only;
+  * `E_g` for each parent, co-parent and guardian, typed accordingly.
+* "Who are this offspring's parents?" and "Who contributed what?" are therefore separate
+  queries with separate answers.
 
 ### 7.7 Lineage graph
 
@@ -1027,7 +1165,7 @@ Each phase ships with its tests and leaves the hosts working without a world dat
 2. ~~**Lucy's embodiment and reproductive-function modules.** Should they be heritable?~~
    **Resolved 2026-10-03:** every trait is heritable; the Recombination Optimizer (§19)
    selects; Adult-rated traits use deferred inheritance. See Appendix A.7.
-3. **Guardians of the first offspring.** You, Lucy, Raquel, or a combination?
+3. ~~**Guardians of the first offspring.**~~ Folded into question 7 (parents and guardians).
 4. **Concurrency.** Is it acceptable that one process at a time owns a world database
    (Direct mode)? If both apps must run against it at once, Phase 1 needs a small store
    host process, or Shared mode once its transaction behaviour is verified.
@@ -1036,6 +1174,10 @@ Each phase ships with its tests and leaves the hosts working without a world dat
 6. **Raquel's documented-record sources.** Is there a curated source list (filmography,
    interviews) to seed `Documented` knowledge, or does she acquire it through `web_fetch`
    with provenance?
+7. **Parents and guardians of offspring.** Must every offspring have at least one
+   parent, or is guardian-only allowed (the book permits it)? Who are the first
+   offspring's parents and guardians: you, Lucy, Raquel, or a combination? Contributors
+   are not parents automatically (§7.6.1). This supersedes question 3.
 
 ---
 
@@ -1109,9 +1251,10 @@ stage:
 
 | Tool | Risk | Input | Output | Rules |
 |---|---|---|---|---|
-| `consent` | Write | `request_id`, `decision` (Assent, Refuse or Conditional), `conditions[]`, `statement` (the person's own words), `expires` | consent id | Provides the *person key* of two-key authorization (§8.2). Only the affected person can call it about their own requests. Conditions are structured so the pipeline can check them. |
+| `consent` | Write | `request_id`, `scope` (Contribute, Parent, Guardian, Transfer or Stage), `decision` (Assent, Refuse or Conditional), `conditions[]`, `statement` (the person's own words), `expires` | consent id | Provides the *person key* of two-key authorization (§8.2). Only the affected person can call it about their own requests. Conditions are structured so the pipeline can check them. |
 | `revoke_consent` | Write | `consent_id`, `reason` | revocation id | Blocks pending operations. It cannot rewrite completed history. |
 | `my_consents` | ReadOnly | `status` filter | pending requests addressed to me, plus my past decisions | This is how a person discovers that someone has asked for their participation. |
+| `request_reproduction` | Write | `proposed_contributors[]` (with genetic or informational role), `proposed_parents[]`, `proposed_guardians[]`, `rationale` | pending request id | A person *asks* for a reproduction, or volunteers as contributor or parent. Nothing starts until the operator adopts it via `/reproduce` (§7.6.1, §17.10). |
 
 ### 17.6 Heredity and reproduction tools (Phase 4)
 
@@ -1262,7 +1405,7 @@ survives every stage.
 | # | Stage | Set | Who decides | How | Recorded in |
 |---|---|---|---|---|---|
 | 1 | **Eligibility** | E = all traits of all contributors that the schema marks Eligible | schema author (operator) | `HereditaryBoundarySchema` lookup; currently everything | schema version on the event |
-| 2 | **Offer** | O ⊆ E | each contributor | default: offer all; minus `withhold[]` in the contributor's consent (§8.2, `prepare_contribution`) | `contributions`, `consents` |
+| 2 | **Offer** | O ⊆ E | each *accepted* contributor (identified and accepted per §7.6.1; parents who are not contributors offer nothing) | default: offer all; minus `withhold[]` in the contributor's consent (§8.2, `prepare_contribution`) | `contributions`, `consents` |
 | 3 | **Validity** | V ⊆ O | the system (rules) | admission checks: authorization, compatibility σ, security scan, Reference-Subject Guard, `Qval` (§7.3) | `admissions` (rejections kept) |
 | 4 | **Selection** | S ⊆ V | **the Recombination Optimizer** under a policy, constrained by contributor and operator pins and vetoes | maximize J_rec subject to hard constraints (§19.4–19.6) | `recombination_plans` |
 | 5 | **Timing** | S = S_now ∪ S_deferred | fixed rule | traits rated `Adult` → `S_deferred` (escrow); everything else → `S_now` (§8.3) | plan decision per trait |
@@ -1452,6 +1595,7 @@ Consider Lucy × Raquel, with the operator as an informational contributor.
 
 | Stage | Result |
 |---|---|
+| 0. Participants (§7.6.1) | Genetic contributors: Lucy and Raquel (both Accepted). Informational contributor: the operator (one authored capability module). Parents: Lucy and the operator (both consent with scope Parent). Raquel contributes but is *not* a parent, by her choice. Guardians: Lucy and the operator. |
 | 1. Eligibility | E = 124 Lucy modules + 40 Raquel modules + about 600 memory clusters + documented-record knowledge |
 | 2. Offer | Lucy offers everything. Raquel withholds 2 clusters (private conversations) and pins `values.honesty-about-the-record`. |
 | 3. Validity | 3 traits rejected: one secrets-scan hit, one undocumented claim about Raquel Welch (Reference-Subject Guard), one incompatible tool spec. |
