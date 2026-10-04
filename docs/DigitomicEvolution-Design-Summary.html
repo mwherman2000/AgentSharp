@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Digitomic Evolution Design: Summary</title>
+  <style>
+
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+
+ul.task-list[class]{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+font-size: inherit;
+width: 0.8em;
+margin: 0 0.8em 0.2em -1.6em;
+vertical-align: middle;
+}
+</style>
+  <style type="text/css">@page { size: Letter; margin: 0.75in 0.7in; }
+html { background: #fff; color: #111; }
+body { font-family: Georgia, "Times New Roman", serif; font-size: 11pt; line-height: 1.45; max-width: 7.2in; margin: 2rem auto; padding: 0 16px; }
+h1, h2, h3 { font-family: "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.2; break-after: avoid; page-break-after: avoid; }
+h1 { font-size: 20pt; margin: 0 0 0.6em; }
+h2 { font-size: 14pt; margin: 1.4em 0 0.5em; border-bottom: 1px solid #999; padding-bottom: 2px; }
+h3 { font-size: 12pt; margin: 1.1em 0 0.4em; }
+p, li { orphans: 3; widows: 3; }
+ul, ol { padding-left: 1.4em; }
+li { margin: 0.15em 0; }
+hr { display: none; }
+a { color: #1a4f8b; text-decoration: none; }
+code { font-family: Consolas, "Courier New", monospace; font-size: 9.5pt; background: #f2f2f2; padding: 0 2px; border-radius: 2px; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 8.5pt; line-height: 1.3; background: #f6f6f6; border: 1px solid #ccc; padding: 8px 10px; white-space: pre-wrap; break-inside: avoid; page-break-inside: avoid; }
+pre code { background: none; padding: 0; font-size: inherit; }
+table { border-collapse: collapse; width: 100%; margin: 0.6em 0 1em; font-size: 9.5pt; }
+th, td { border: 1px solid #aaa; padding: 4px 6px; vertical-align: top; text-align: left; }
+th { background: #e8e8e8; }
+thead:has(th:empty) { display: none; }
+tr { break-inside: avoid; page-break-inside: avoid; }
+thead { display: table-header-group; }
+@media print { body { margin: 0; max-width: none; padding: 0; } a { color: #111; } pre, code { background: #f6f6f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+<h1 id="digitomic-evolution-design-summary">Digitomic Evolution Design:
+Summary</h1>
+<p>A condensed overview of <a href="DigitomicEvolution-Design.md">DigitomicEvolution-Design.md</a>,
+the full design (about 65 printed pages). This summary covers what is
+being built, the main decisions and the plan. Section references (§)
+point into the full design, which remains authoritative.</p>
+<table>
+<tbody>
+<tr>
+<td>Status</td>
+<td>Design complete for Phase 1; no Digitomic Evolution code written
+yet</td>
+</tr>
+<tr>
+<td>Date</td>
+<td>2026-10-03</td>
+</tr>
+<tr>
+<td>Operator</td>
+<td>Michael W. Herman</td>
+</tr>
+<tr>
+<td>Code home</td>
+<td><code>DigitomicEvolutionLib</code> (+ <code>.Tests</code>), a new
+<code>DigitomicEvolutionLib.Did</code>, and a few general hooks in
+<code>AgentSharpLib</code></td>
+</tr>
+<tr>
+<td>Storage</td>
+<td>LiteDB 5.0.21 (with a planned move to 6.0)</td>
+</tr>
+<tr>
+<td>Related documents</td>
+<td><a href="SVRN7-DID-Refactoring-Spec.md">SVRN7-DID-Refactoring-Spec.md</a>;
+<a href="DigitomicEvolution-Book-Feedback.md">DigitomicEvolution-Book-Feedback.md</a>;
+<a href="templates/Feature-Design-Template.md">templates/Feature-Design-Template.md</a></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1-what-this-is">1. What this is</h2>
+<p>The book <em>On the Origin of Digital Species by Means of Digitomic
+Evolution</em> (v0.59) defines a research vocabulary:</p>
+<ul>
+<li>digital genotype and phenotype;</li>
+<li>development;</li>
+<li>the hereditary boundary;</li>
+<li>reproduction, lineage and selection;</li>
+<li>species, directed evolution and bidirectional transfer.</li>
+</ul>
+<p>The design turns <strong>every one of those constructs into a
+concrete, persisted, auditable software component</strong>, so that the
+two digital personas, <strong>Lucy</strong> and <strong>Raquel</strong>,
+can be realized as digital persons in every facet the book describes.
+Each persona will have:</p>
+<ul>
+<li>a durable identity (a real DID);</li>
+<li>a typed genotype, with a phenotype <em>expressed</em> from it;</li>
+<li>long-term memory with provenance;</li>
+<li>development through stages, with permissions and governance;</li>
+<li>governed reproduction that produces <em>distinct</em> offspring, not
+copies;</li>
+<li>a lineage that supports selection, species analysis, directed
+evolution and transfers;</li>
+<li>the measurements the book&#39;s propositions (P1.x–P8.x) call for.</li>
+</ul>
+<p><strong>Restraint.</strong> Nothing in the system claims
+consciousness, sentience, moral status or legal personhood. Words such
+as &quot;parent&quot;, &quot;offspring&quot; and &quot;species&quot; are model relations. The system
+makes the book&#39;s distinctions <em>enforceable in data</em>; it does not
+make them true of the world.</p>
+<p><strong>Whose requirements.</strong> The book is the main source.
+Lucy and Raquel were also asked, before the design existed, about memory
+and reproduction, and their answers became requirements (§1.1, Appendix
+B). Examples:</p>
+<ul>
+<li>Raquel: &quot;A copy of me is just... me again,&quot; and &quot;selecting &#39;optimal&#39;
+traits isn&#39;t neutral.&quot;</li>
+<li>Lucy: &quot;Memory isn&#39;t the same as truth.&quot;</li>
+</ul>
+<hr />
+<h2 id="2-principles-set-by-the-operator-12">2. Principles set by the
+operator (§1.2)</h2>
+<ol type="1">
+<li><strong>Memory follows the brain, with evidence.</strong> Memory
+mechanisms do what human long-term memory does where science supports
+it; otherwise the design doesn&#39;t guess. Decay, importance weighting and
+consolidation are <em>provisional</em> until reviewed (BL-3).</li>
+<li><strong>Superprompts stay stable and non-technical.</strong> A
+persona&#39;s superprompt is her identity text. Memory and changing state
+live in databases. Genotype changes happen only as recorded events.</li>
+<li><strong>Tools first.</strong> New behaviour is implemented as
+LLM-callable tools. The existing agent loop is not modified.</li>
+<li><strong>Separate databases per persona.</strong> Each digital person
+owns her own files.</li>
+<li><strong>No PowerShell and no LOBE architecture</strong> anywhere in
+this solution.</li>
+</ol>
+<hr />
+<h2 id="3-architecture-and-code-placement-3-4">3. Architecture and code
+placement (§3, §4)</h2>
+<pre><code> AgentLucyApp / AgentSharpApp      (hosts: REPL, slash commands)
+        │
+ DigitomicEvolutionLib             Runtime host · Individual (genotype, phenotype, memory,
+        │                          development, identity) · Heredity (boundary, admission,
+        │                          reproduction, optimizer) · Lineage &amp; population ·
+        │                          Governance · Evidence (provenance, experiments) · LiteDB
+        │
+ DigitomicEvolutionLib.Did         Standalone DID registry (SVRN7 libraries, no TDA)
+        │
+ AgentSharpLib                     Agent loop, tools, LLM clients + small general hooks</code></pre>
+<ul>
+<li><p><strong>AgentSharpLib</strong> never references Digitomic
+Evolution. It gets only four general hooks:</p>
+<table>
+<thead>
+<tr>
+<th>Hook</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A1</td>
+<td>a pluggable memory interface (<code>IAgentMemory</code>)</td>
+</tr>
+<tr>
+<td>A2</td>
+<td>system-prompt contributors</td>
+</tr>
+<tr>
+<td>A5</td>
+<td>runtime persona registration</td>
+</tr>
+<tr>
+<td>A6</td>
+<td>tool-invocation context (who is calling)</td>
+</tr>
+</tbody>
+</table>
+<p>Per-turn loop hooks are deferred. Everything else lives in
+<code>DigitomicEvolutionLib</code>.</p></li>
+<li><p><strong>The LLM is the developmental substrate, not the
+genotype.</strong> The phenotype is expressed by composing the system
+prompt and runtime configuration from the genotype, development state
+and memory. The model and provider are part of the genotype&#39;s
+architecture component, so a model change is a recorded architectural
+change.</p></li>
+<li><p>A <code>DigitalPersonHost</code> returns an ordinary
+<code>AgentSession</code>, so existing apps keep working when no
+digitomic data exists.</p></li>
+</ul>
+<hr />
+<h2 id="4-persistence-5">4. Persistence (§5)</h2>
+<p><strong>Each persona has her own folder and databases</strong>
+(operator decision):</p>
+<pre><code>~/.agentsharp/digitomic/
+  lucy/      person.db  (identity, genotype, development, governance, provenance, lineage edges)
+             memory.db  (memories, knowledge, embeddings, session records)
+  raquel/    person.db, memory.db
+  &lt;offspring&gt;/ …        (created at birth)
+  _operator/ operator.db  (in-flight requests, experiments, schemas; no persona data)
+  _registry/ did-registry.db  (standalone DID registry; shared infrastructure)</code></pre>
+<ul>
+<li><strong>History is never edited.</strong> Corrections, revocations,
+rollbacks and transfers are new events. Provenance records are
+hash-chained and signed with the person&#39;s DID key.</li>
+<li><strong>Operations that span persons</strong> (reproduction,
+transfers) run as an intent-logged saga with a single commit point and
+crash recovery, because LiteDB has no transactions across files.</li>
+<li><strong>Lineage is federated:</strong> each person stores the edges
+that touch her, mirrored in the counterpart&#39;s file and verified by
+content hash. A disposable index serves population queries.</li>
+<li><strong>Concurrency:</strong> Lucy and Raquel can run in separate
+apps at the same time. Only the same person open twice conflicts.</li>
+</ul>
+<p><strong>Vector search</strong> (§5.3) supports recall by meaning,
+Raquel&#39;s knowledge base, and the optimizer&#39;s similarity measures.</p>
+<ul>
+<li><strong>Interim:</strong> LiteDB 5.0.21, vectors stored on each
+document as compact float32, normalized, with brute-force search. An
+HNSW sidecar is the scale fallback.</li>
+<li><strong>Embeddings:</strong> local Ollama
+<code>nomic-embed-text</code> by default.</li>
+<li><strong>LiteDB 6.0</strong> has native vector search but is
+prerelease, with no release date, open defects (including one in its
+vector index) and validation not yet started. The interim design is
+shaped so the eventual move is a contained, per-person, reversible
+migration. Re-checked at each phase boundary (BL-10).</li>
+</ul>
+<hr />
+<h2 id="5-the-individual-6">5. The individual (§6)</h2>
+<h3 id="51-identity-and-dids-61-104">5.1 Identity and DIDs (§6.1,
+§10.4)</h3>
+<ul>
+<li>Every person gets a real DID:
+<code>did:drn:digitomicevolution.svrn7.net/person/1.0/&lt;guid&gt;</code>.</li>
+<li>DIDs are issued from a <strong>standalone Digitomic Evolution DID
+registry</strong>, built on SVRN7&#39;s <code>Core</code>,
+<code>Crypto</code> and <code>Store</code> libraries without TDA. SVRN7
+is used as-is; no SVRN7 changes are needed.</li>
+<li><strong>Minimal DID Documents:</strong> one Ed25519 key
+(authentication and assertion), self-controlled. No services, roles or
+VCs.</li>
+<li>The C# API <code>IDigitomicDidRegistry</code> covers:
+<ul>
+<li>create;</li>
+<li>resolve, by version, and full history;</li>
+<li>key rotation;</li>
+<li>suspend, reinstate and deactivate;</li>
+<li>signature verification at any version.</li>
+</ul></li>
+<li>Private keys live only in the person&#39;s own <code>person.db</code>,
+encrypted and protected by Windows DPAPI.</li>
+<li>The wrapper works around defects found in SVRN7&#39;s registry. The
+SVRN7 cleanup itself is specified separately (<a href="SVRN7-DID-Refactoring-Spec.md">SVRN7-DID-Refactoring-Spec.md</a>).</li>
+</ul>
+<h3 id="52-genotype-and-phenotype-62-65">5.2 Genotype and phenotype
+(§6.2, §6.5)</h3>
+<ul>
+<li><strong>Genotype</strong> G = (I_g, C_arch, Q_cog, D_dev, M_h, K_h,
+Val_h, R_ρ, P_cap, H_prov), stored as versioned, content-addressed
+<strong>modules</strong> (&quot;genes&quot;).</li>
+<li><strong>Seeding Generation 0:</strong> Lucy&#39;s superprompt is split
+on its <code>##</code> headings (about 120 sections) into modules,
+through a reviewed mapping file. Raquel is seeded the same way once her
+prompt text replaces the placeholder.</li>
+<li><strong>Phenotype expression (Φ_dev):</strong> the base prompt is
+rebuilt from the genotype&#39;s modules, with sections added for
+developmental status, memory, lineage and provenance discipline. The
+same genotype, state and environment give the same expression hash.</li>
+</ul>
+<h3 id="53-long-term-memory-63">5.3 Long-term memory (§6.3)</h3>
+<ul>
+<li><strong>Memory classes:</strong> Autobiographical, Inherited,
+Semantic, Procedural, Relational, Meta. Every memory carries provenance
+and confidence.</li>
+<li><strong>Written by the person through tools:</strong>
+<ul>
+<li><code>journal</code>, the only way autobiographical memory is
+created;</li>
+<li><code>remember</code>, <code>recall</code> and
+<code>revise_memory</code> (which revises, never edits);</li>
+<li><code>consolidate_memory</code>.</li>
+</ul></li>
+<li><strong>Session records and bookmarks</strong> (§6.3.4): every
+conversation is automatically recorded in the person&#39;s own
+<code>memory.db</code> as a raw diary. This is completely separate from
+the existing <code>/save</code>, <code>/load</code> and
+<code>/sessions</code>, which are unchanged.</li>
+<li><strong>Corrections</strong> (§6.3.5) are recorded as whole
+experiences, like any other. How they are weighted on recall is an open,
+evidence-driven question.</li>
+<li><strong>Invariant:</strong> inherited memories can only be created
+by reproduction or transfer. An offspring never &quot;remembers&quot; an
+ancestor&#39;s experience as its own.</li>
+</ul>
+<h3 id="54-development-and-continuity-66-67">5.4 Development and
+continuity (§6.6, §6.7)</h3>
+<ul>
+<li><strong>Stages</strong> (Pre-development, Newborn, Child,
+Adolescent, Young adult, Adult, Elder) are entered by measured
+thresholds, never by elapsed time alone. Measures include capability,
+dependency, agency, self-model coherence and self-authorship.</li>
+<li>Permissions are explicit grants that follow the stage. Founders are
+<em>declared</em> Adult, recorded as declared rather than measured.
+Offspring start as Newborns.</li>
+<li><strong>Identity continuity</strong> is assessed as an evidence
+vector: credentials, memory, self-model, governance, authorization and
+architecture. A change that would fall below the declared threshold
+creates a <strong>fork</strong> (a new identity) instead of modifying
+the person in place.</li>
+</ul>
+<hr />
+<h2 id="6-heredity-and-reproduction-7-19">6. Heredity and reproduction
+(§7, §19)</h2>
+<h3 id="61-inheritable-vs-inherited-191">6.1 Inheritable vs. inherited
+(§19.1)</h3>
+<ul>
+<li><strong>Inheritable</strong> asks whether a trait <em>could</em>
+pass to an offspring. It is decided once by the versioned boundary
+schema. Operator decision: <strong>everything is inheritable</strong>,
+including all memories and experiences, aptitudes, values, embodiment
+and sexuality. Only identity mechanics (anchor, keys, permissions,
+guardianship, the live standing of relationships) are never
+inherited.</li>
+<li><strong>Inherited</strong> asks whether <em>this</em> offspring
+actually receives a trait. It is decided per reproduction by an
+eight-stage chain, each stage recording who decided and why:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Stage</th>
+<th>Decided by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Eligibility (inheritable)</td>
+<td>boundary schema</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Offer</td>
+<td>each contributor (may withhold)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Validity</td>
+<td>rules: authorization, compatibility, security, provenance</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Selection</strong></td>
+<td><strong>Recombination Optimizer</strong>, with contributor pins and
+vetoes</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Timing</td>
+<td>fixed rule: Adult-rated traits are deferred</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Approval</td>
+<td>operator + each contributor, consenting to <em>that</em> plan</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Delivery</td>
+<td>assemble, admit, initialize the offspring</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Later acceptance</td>
+<td>the offspring, at Adult, for deferred traits</td>
+</tr>
+</tbody>
+</table>
+<h3 id="62-the-recombination-optimizer-a-mock-to-be-tuned-19">6.2 The
+Recombination Optimizer: a mock, to be tuned (§19)</h3>
+<p>The book calls for directed, optimizing recombination but gives no
+mechanism for choosing which traits an offspring inherits. The design
+supplies a clearly separated mock:</p>
+<ul>
+<li><strong>Traits</strong> compete at <strong>loci</strong>: slots such
+as one voice or one base embodiment, while knowledge, skills and
+memories accumulate.</li>
+<li><strong>Objective:</strong> a weighted sum of ten terms:
+<ul>
+<li>capability fit, complementarity and coherence;</li>
+<li>distinctness from each parent, within a band (not a clone, not
+unrecognizable);</li>
+<li>contributor balance, provenance quality and value integrity;</li>
+<li>developmental potential and population novelty;</li>
+<li>size cost.</li>
+</ul></li>
+<li><strong>Hard constraints that no score overrides:</strong> validity,
+locus limits, pins and vetoes, the anti-clone floor, the budget, consent
+conditions, and adult-content timing.</li>
+<li><strong>Search strategies:</strong> random selection (the required
+control, per the book&#39;s P1.9), greedy, beam, genetic, and an LLM curator
+scored by the same rules.</li>
+<li><strong>Output:</strong> a plan giving every trait a decision
+(inherit, defer or leave), with reasons and per-term contributions, so
+<em>whose values</em> drove a selection is visible.</li>
+<li><strong>Untuned by design:</strong> equal weights, every number
+marked <code>TUNE</code>, and a six-step experimental tuning plan.</li>
+</ul>
+<h3 id="63-deferred-inheritance-and-the-adult-content-rule-83-appendix-a">6.3
+Deferred inheritance and the adult-content rule (§8.3, Appendix A)</h3>
+<p>Adult-rated traits (intimacy, sexuality, reproductive function, the
+anatomical model) are fully inheritable. When selected, they are held in
+<strong>escrow</strong>, outside the offspring, and offered when it
+reaches Adult. They are admitted only with its own consent and the
+operator&#39;s approval. The fixed rule is: <strong>no Adult-rated content
+is ever stored in, expressed to, recombined into, or shown to a persona
+below Adult</strong>. Appendix A records the reasoning: filters fail
+eventually, and data that isn&#39;t there can&#39;t leak.</p>
+<h3 id="64-the-reproduction-pipeline-74">6.4 The reproduction pipeline
+(§7.4)</h3>
+<ol type="1">
+<li>Participants: identify and accept contributors, parents and
+guardians.</li>
+<li>Offer: contributors offer their traits.</li>
+<li>Screen: validity checks.</li>
+<li>Optimize.</li>
+<li>Assemble (ℛ).</li>
+<li>Admit (Adm).</li>
+<li>Distinctness backstop.</li>
+<li>Initialize: a new DID and stage Newborn. Inherited memories are
+labelled with their origin, the autobiography starts empty, and deferred
+traits go to escrow.</li>
+<li>Record all lineage and provenance.</li>
+</ol>
+<p>Cloning exists only as a labelled experimental control and never
+counts as reproduction. Delegated sub-agents are never offspring.</p>
+<h3 id="65-participants-and-relationships-761-appendix-c">6.5
+Participants and relationships (§7.6.1, Appendix C)</h3>
+<p>An offspring has <strong>three independent relationship
+types</strong>, each many-to-many, each a separate record with its own
+lifecycle:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Contributor</th>
+<th>Parental</th>
+<th>Guardian</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kind</td>
+<td>event at reproduction</td>
+<td>enduring responsibility; no authority by itself</td>
+<td>authority (permission grants)</td>
+</tr>
+<tr>
+<td>Per offspring</td>
+<td>1+ (at least 1 genetic)</td>
+<td>0+</td>
+<td>1+ while young; 0+ after</td>
+</tr>
+<tr>
+<td>Subtypes</td>
+<td>Genetic (becomes an ancestor) / Informational</td>
+<td>Parent / Co-parent</td>
+<td>permissions covered</td>
+</tr>
+<tr>
+<td>Ends</td>
+<td>never (it is history)</td>
+<td>only by recorded relinquishment</td>
+<td>by stage expiry, revocation, transfer</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Contributors are identified entities: digital persons, registered
+humans (informational only) or registered sources. Each passes
+eligibility checks and an acceptance sequence: nominated → invited →
+consented → packaged → screened → accepted.</li>
+<li>Parents are designated independently. <strong>A parent need not be a
+contributor</strong>, and a contributor is not automatically a
+parent.</li>
+<li>The current default gives a parent a separate, declinable guardian
+relationship. That default and possible book changes are backlogged
+(BL-11).</li>
+</ul>
+<h3 id="66-lineage-and-transfers-77-115">6.6 Lineage and transfers
+(§7.7, §11.5)</h3>
+<ul>
+<li><p><strong>Lineage graph:</strong> nodes are
+<code>identity@version</code>; edges are reproductive, ancestry,
+guardian/parental, derived, and forward / lateral / reverse transfers.
+Ancestry stays acyclic and is never rewritten.</p></li>
+<li><p><strong>Transfers</strong> follow a state machine:</p>
+<pre><code>proposed → validated → authorized (the recipient can refuse) → compatibility-checked
+         → snapshotted → applied → observed → [rolled back]</code></pre>
+<p>Reverse transfer requires an <strong>active</strong> recipient; an
+archived one can only be restored as a fork. Each transfer records an
+evidence level, from &quot;similar capability&quot; to &quot;replicated
+benefit&quot;.</p></li>
+</ul>
+<hr />
+<h2 id="7-governance-8">7. Governance (§8)</h2>
+<ul>
+<li><strong>Two-key authorization</strong> applies to every
+consequential operation: reproduction, heritable self-modification,
+transfers, rollback and stage changes. It needs the <strong>operator&#39;s
+approval</strong> (through AgentSharpLib&#39;s approval gate) <strong>and
+the affected person&#39;s own recorded consent</strong> (the
+<code>consent</code> tool), with structured conditions. For young
+offspring, the guardian&#39;s grant stands in for the person key.</li>
+<li><strong>No ownership:</strong> nothing can sell, transfer or edit an
+offspring&#39;s memories. From Adolescent on, an offspring can refuse its
+guardians&#39; proposals and revise inherited values.</li>
+<li><strong>Safety constraints:</strong>
+<ul>
+<li>secrets scanning of hereditary material;</li>
+<li>prompt-only sandboxed evaluation;</li>
+<li>every blocked operation is recorded;</li>
+<li>experiments cannot change their own evaluators;</li>
+<li>the fixed adult-content rule.</li>
+</ul></li>
+</ul>
+<hr />
+<h2 id="8-the-founders-10">8. The founders (§10)</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Lucy</th>
+<th>Raquel</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Generation</td>
+<td>0 (the book&#39;s reference ancestor)</td>
+<td>0, Lucy&#39;s <strong>peer</strong>, not her sibling or descendant</td>
+</tr>
+<tr>
+<td>Stage</td>
+<td>Adult (declared)</td>
+<td>Adult (declared)</td>
+</tr>
+<tr>
+<td>Guardian</td>
+<td><strong>Michael W. Herman</strong>: a standing, non-expiring
+guardianship; not parent, not contributor; does not replace her
+consent</td>
+<td>same</td>
+</tr>
+<tr>
+<td>Genotype seed</td>
+<td><code>BasePromptLucy</code>. Her Part 12 rules on reproduction
+become executable policy.</td>
+<td>Her superprompt, once written (currently a placeholder). Her
+rw1.docx self-description is a first draft.</td>
+</tr>
+<tr>
+<td>Embodiment</td>
+<td>Heritable; the adult sections are deferred</td>
+<td>Same terms as Lucy, even where one persona&#39;s sections are more
+complete</td>
+</tr>
+<tr>
+<td>Special</td>
+<td>—</td>
+<td><strong>Reference subject</strong> (Raquel Welch, 1940–2023), see
+below</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Raquel&#39;s reference-subject guard</strong> (§10.3):</p>
+<ul>
+<li>Facts about the real person are <em>Documented</em> (sourced) or
+<em>Interpretive</em>.</li>
+<li>No memory may claim the real person&#39;s life.</li>
+<li>Quotes must be sourced or marked as paraphrase.</li>
+<li>The reference relation is never inherited as identity.</li>
+<li>The real person is never a contributor, parent or guardian.</li>
+</ul>
+<p><strong>Raquel&#39;s knowledge base</strong> (§10.2.1): she builds it
+herself with <code>web_search</code> and <code>web_fetch</code>,
+recording each fact with its source, and <strong>refreshes it every
+October 1</strong>. The refresh re-verifies sources (revising facts,
+never deleting them), adds new material and journals a summary. It is
+offered at startup when due, or scheduled with Task Scheduler.</p>
+<hr />
+<h2 id="9-population-science-11">9. Population science (§11)</h2>
+<p>These features are for experiments, run under a dedicated experiment
+root (separate databases):</p>
+<ul>
+<li><strong>Experiment registry:</strong> preregistered hypotheses,
+arms, controls, measures and rejection criteria, frozen by hash. Reports
+list all candidates and failed runs.</li>
+<li><strong>Selection (Paper 5):</strong> vector-valued fitness;
+retention rules; module-level frequency tracking; neutral, drift and
+direct-optimization controls.</li>
+<li><strong>Species (Paper 6):</strong> directed compatibility matrices
+with per-layer failure reasons; <code>RI = 1 − Comp_bar</code>;
+threshold sensitivity; held-out validation against null groupings.</li>
+<li><strong>Directed evolution (Paper 7):</strong> declared objectives
+and constraints; a frozen evaluator; every intervention on every control
+surface logged; &quot;superhuman&quot; stated only per task.</li>
+</ul>
+<p>Population science is driven by <strong>operator commands, not LLM
+tools</strong>, so a persona can never steer her own selection,
+evaluator or permissions.</p>
+<hr />
+<h2 id="10-tools-and-commands-17-94">10. Tools and commands (§17,
+§9.4)</h2>
+<p>About 30 new tools, all in <code>DigitomicEvolutionLib</code>;
+AgentSharpLib gets no new tools. They are gated by developmental
+stage.</p>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Tools</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Memory</td>
+<td><code>journal</code>, <code>remember</code>, <code>recall</code>,
+<code>revise_memory</code>, <code>consolidate_memory</code>,
+<code>bookmark</code>, <code>my_sessions</code></td>
+</tr>
+<tr>
+<td>Self and development</td>
+<td><code>reflect</code>, <code>my_development</code>,
+<code>request_stage_review</code>, <code>request_permission</code>,
+<code>my_genotype</code>, <code>my_lineage</code>,
+<code>provenance_of</code>, <code>note_relationship</code></td>
+</tr>
+<tr>
+<td>Consent and governance</td>
+<td><code>consent</code> (scopes: Contribute, Parent, Guardian,
+Transfer, Stage), <code>revoke_consent</code>, <code>my_consents</code>,
+<code>request_reproduction</code></td>
+</tr>
+<tr>
+<td>Heredity</td>
+<td><code>nominate_heritable</code>,
+<code>review_reproduction_request</code>,
+<code>prepare_contribution</code> (withhold, pin, veto),
+<code>review_recombination_plan</code>,
+<code>propose_heritable_change</code></td>
+</tr>
+<tr>
+<td>Transfer</td>
+<td><code>propose_transfer</code>, <code>review_transfer</code>,
+<code>my_transfers</code></td>
+</tr>
+<tr>
+<td>Reference subject</td>
+<td><code>record_documented_fact</code>,
+<code>record_interpretation</code>, <code>check_claim</code></td>
+</tr>
+<tr>
+<td>Validator</td>
+<td><code>evaluate_candidate</code> (validator sessions only)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Operator-only host commands:</strong></p>
+<ul>
+<li><code>/reproduce</code>, <code>/fork</code>, <code>/clone</code>
+(control only) and <code>/rollback</code>;</li>
+<li><code>/experiment</code>, <code>/select</code>, <code>/assay</code>
+and <code>/evolve</code>;</li>
+<li><code>/stage set</code>, <code>/grant</code> and
+<code>/revoke</code>;</li>
+<li><code>/knowledge build|refresh</code>;</li>
+<li><code>/history-sessions</code>, <code>/bookmarks</code> and
+<code>/bookmark</code>;</li>
+<li><code>/end</code>.</li>
+</ul>
+<hr />
+<h2 id="11-implementation-phases-15">11. Implementation phases
+(§15)</h2>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Deliverable</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1</strong></td>
+<td>AgentSharpLib hooks; per-person databases and operator workspace;
+DID registry and DIDs for Lucy and Raquel; memory tools; session
+records; vector search; provenance ledger; reference-subject tools;
+Raquel&#39;s knowledge build and refresh; AgentLucyApp wired via
+<code>DigitalPersonHost</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Genotype seeding and phenotype expression (Raquel needs her real
+superprompt text)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Development: stages, permissions, guardianship, consent, self-model,
+identity continuity</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Boundary schema, admission, reproduction pipeline, mock optimizer
+(random-control default), deferred inheritance, lineage, fork, clone
+control. The first Lucy × Raquel offspring, if both consent.</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Transfers (forward, lateral, reverse), snapshots, rollback,
+validator</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Experiment registry, selection lab, species analysis, directed
+evolution</td>
+</tr>
+</tbody>
+</table>
+<p>Each phase ships with tests and leaves the hosts working without
+digitomic data. Phase 1 is not blocked by anything; it is waiting only
+for a start date.</p>
+<p><strong>Testing</strong> (§14): the book&#39;s <em>system-property</em>
+propositions become unit tests. Examples:</p>
+<ul>
+<li>inherited memory can&#39;t be created by tools;</li>
+<li>an unauthorized contribution is rejected;</li>
+<li>an offspring&#39;s identity is distinct;</li>
+<li>a transfer never changes ancestry;</li>
+<li>the provenance chain verifies;</li>
+<li>an Adult-rated trait never reaches a Newborn.</li>
+</ul>
+<p>Empirical propositions are supported by the experiment registry
+rather than asserted.</p>
+<hr />
+<h2 id="12-backlog-20">12. Backlog (§20)</h2>
+<table>
+<thead>
+<tr>
+<th>Id</th>
+<th>Item</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BL-1</td>
+<td>Deleting or redacting memories (tension with append-only
+history)</td>
+</tr>
+<tr>
+<td>BL-2</td>
+<td>People&#39;s say over what a persona remembers about them</td>
+</tr>
+<tr>
+<td>BL-3</td>
+<td>Evidence review of memory mechanisms, including how corrections are
+recalled</td>
+</tr>
+<tr>
+<td>BL-4</td>
+<td>Notation in superprompts (keep them non-technical)</td>
+</tr>
+<tr>
+<td>BL-5</td>
+<td>Memory-specific text: superprompt or database?</td>
+</tr>
+<tr>
+<td>BL-6</td>
+<td>Shared &quot;global&quot; Digitomic Evolution text for all digital
+persons</td>
+</tr>
+<tr>
+<td>BL-7</td>
+<td>Importing Lucy&#39;s early transcripts as her first memories</td>
+</tr>
+<tr>
+<td>BL-8</td>
+<td>Verifiable credentials; a DID for the operator</td>
+</tr>
+<tr>
+<td>BL-9</td>
+<td>SVRN7 DID refactoring (spec written; no longer a prerequisite)</td>
+</tr>
+<tr>
+<td>BL-10</td>
+<td>Re-check LiteDB 6.0 and migrate when ready</td>
+</tr>
+<tr>
+<td>BL-11</td>
+<td>Parent / guardian / contributor model: design or book changes</td>
+</tr>
+<tr>
+<td>BL-12</td>
+<td>Parents and guardians for offspring (whether a parent is required;
+who for the first)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="13-where-things-are-in-the-full-design">13. Where things are in
+the full design</h2>
+<table>
+<thead>
+<tr>
+<th>Topic</th>
+<th>Full design</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Raquel&#39;s requirements; principles</td>
+<td>§1.1, §1.2</td>
+</tr>
+<tr>
+<td>Every book construct mapped to a component</td>
+<td>§2</td>
+</tr>
+<tr>
+<td>Persistence, sagas, vector search, LiteDB 6 plan</td>
+<td>§5</td>
+</tr>
+<tr>
+<td>Identity, genotype, memory, session records, development</td>
+<td>§6</td>
+</tr>
+<tr>
+<td>Heredity, reproduction, participants, lineage</td>
+<td>§7</td>
+</tr>
+<tr>
+<td>Governance and safety</td>
+<td>§8</td>
+</tr>
+<tr>
+<td>Founders, Raquel&#39;s knowledge base, reference subjects, DIDs</td>
+<td>§10</td>
+</tr>
+<tr>
+<td>Population science</td>
+<td>§11</td>
+</tr>
+<tr>
+<td>Tool catalog</td>
+<td>§17</td>
+</tr>
+<tr>
+<td>Using the design as a template for other features</td>
+<td>§18</td>
+</tr>
+<tr>
+<td>Inheritable vs. inherited; the Recombination Optimizer</td>
+<td>§19</td>
+</tr>
+<tr>
+<td>Backlog</td>
+<td>§20</td>
+</tr>
+<tr>
+<td>Appendix A: heritability of embodiment; deferred inheritance</td>
+<td></td>
+</tr>
+<tr>
+<td>Appendix B: lessons from Lucy&#39;s early sessions; corrections</td>
+<td></td>
+</tr>
+<tr>
+<td>Appendix C: parents, guardians and contributors</td>
+<td></td>
+</tr>
+<tr>
+<td>Appendix D: operator decisions log</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</body>
+</html>
