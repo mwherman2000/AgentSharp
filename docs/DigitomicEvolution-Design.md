@@ -60,6 +60,33 @@ Lucy's superprompt Part 12 already describes the same concepts from her side
 (contributors, contribution packages, progressive parental authority, no ownership, provenance,
 reverse propagation is not automatic). Section 12 maps its numbered principles to components.
 
+### 1.2 Design principles set by the operator
+
+These principles bind every part of the design, and later sections apply them.
+
+1. **Memory follows the brain, with evidence (2026-10-03).** Memory mechanisms should do
+   what the brain and a person's long-term memory do, *where scientific evidence supports
+   it*. Where evidence is lacking, the design does not guess.
+   * Experiences, including being corrected, are recorded as experiences (§6.3.5).
+   * How memories are processed on recall stays an open, evidence-driven question
+     (Backlog BL-3).
+   * Existing mechanisms that model memory (importance, recency decay, consolidation,
+     archiving) are **provisional** until reviewed against the literature (BL-3).
+2. **Superprompts stay stable and non-technical (2026-10-03).** A person's superprompt is
+   their relatively stable identity text, written for the person rather than as a
+   technical specification.
+   * Memory, state and anything that changes belongs in the person's databases, not in
+     the superprompt.
+   * Changes to superprompt-derived genotype modules happen only through recorded genotype
+     events (§6.2), never by editing prompt text in passing.
+   * Where memory-specific text currently lives in a superprompt is backlogged (BL-5), as
+     is a shared Digitomic Evolution "global" text for all digital persons (BL-6).
+3. **Tools first** (§4) and **separate databases per persona** (§5.1), as decided earlier.
+4. **No PowerShell and no LOBE architecture in this solution (2026-10-03).** AgentSharp,
+   DigitomicEvolutionLib and their hosts must not use PowerShell (runspaces, cmdlets,
+   scripts as an execution layer) or SVRN7's LOBE architecture. Anything reused from SVRN7
+   is limited to plain .NET libraries with no PowerShell or LOBE dependency (§10.4.1).
+
 ---
 
 ## 2. Concept-to-component map (every facet)
@@ -379,6 +406,118 @@ LiteDB 5, `LiteDbNativeVectorIndex` for LiteDB 6, and `HnswVectorIndex`):
 Without an embedding provider configured, the system falls back to keyword and recency
 ranking only, so nothing breaks.
 
+#### 5.3.1 LiteDB 6.0 status (checked 2026-10-03)
+
+Sources: NuGet release history, and the LiteDB GitHub releases and issues.
+
+* **Release history.**
+  * The last stable release is **5.0.21** (2024-07-05).
+  * 6.0 prereleases began **2025-09-20**, with 71 listed so far. Activity paused from
+    November 2025 to July 2026, then picked up sharply: 43 builds in September 2026. The
+    latest is `6.0.0-prerelease.322` (2026-10-01).
+  * Vector search arrived in prerelease 0052: a native `BsonVector` type, an HNSW index,
+    and `TopKNear()` queries.
+* **No target date.** The release-readiness tracking issue (#2623) states: "No checkbox was
+  marked complete by this scope cleanup. Engineering work, validation and release sign-off
+  remain outstanding."
+* **Committed scope still open.** Five features:
+  * WAL/data-page checksums, which the maintainer calls non-negotiable;
+  * persisted index ordering;
+  * file ownership and WAL identity;
+  * Native AOT;
+  * DataAnnotations mapper attributes.
+* **Nine known defects to fix before stable**, including:
+  * transaction integrity after power loss;
+  * mixing Direct and Shared access;
+  * **vector index node orphaning**, which directly affects the feature this design would
+    use.
+* **Validation gates not started:** checksum fuzzing, power-loss durability, benchmarks
+  against 5.0.21, and compatibility testing. Read-throughput regressions in v6 were still
+  being filed on 2026-09-30 (#3070).
+* **Assessment.** v6 is actively developed but not near stable; "months, not weeks" is an
+  inference, not a published commitment. v6 also changes the file format (checksums, WAL),
+  so adopting it requires a **database migration** regardless of vectors.
+
+#### 5.3.2 Interim design, shaped for the move to 6.0
+
+The interim implementation runs on **LiteDB 5.0.21** and is built so the eventual move to
+6.0 is a contained migration, not a redesign.
+
+1. **Vectors live on the document they describe.** Each memory and knowledge document
+   carries its own embedding fields. LiteDB 6 indexes a field on the indexed collection's
+   own documents, so `TopKNear` will return memories directly, with no join and no
+   separate vector collection to reconcile.
+2. **Compact, convertible storage.** In 5.0.21 a `float[]` maps to a BSON array of
+   doubles (about 9 bytes per dimension). The interim stores each vector as `byte[]`
+   (little-endian float32, 4 bytes per dimension) in the field `Embedding`, plus
+   `EmbeddingModel` and `EmbeddingDim`. The 6.0 migration converts `Embedding` to
+   `BsonVector` in place.
+3. **Unit-normalized at write time.** Vectors are L2-normalized when stored, so cosine
+   similarity equals the dot product. Brute force can use a fast dot product, and 6.0's
+   `Cosine` and `DotProduct` metrics give identical rankings.
+4. **One embedding model per collection at a time.** A v6 vector index has a fixed
+   dimension. The active model and dimension are recorded in `meta`, and a model change
+   re-embeds the whole collection (`memory.db` is separate for this reason, §5.1).
+5. **All vector access goes through `IVectorIndex`.** No other code reads `Embedding`
+   directly. The interface mirrors 6.0's query shape:
+
+   ```csharp
+   public interface IVectorIndex
+   {
+       Task UpsertAsync(string docId, ReadOnlyMemory<float> unitVector, CancellationToken ct = default);
+       Task<IReadOnlyList<(string DocId, float Score)>> TopKNearAsync(
+           ReadOnlyMemory<float> unitQuery, int k, VectorFilter? filter = null,
+           CancellationToken ct = default);
+       Task RebuildAsync(CancellationToken ct = default);   // from stored Embedding fields
+   }
+   ```
+
+   Implementations:
+   * `BruteForceVectorIndex`: the interim default.
+   * `HnswVectorIndex`: the scale fallback. A sidecar file next to `memory.db`, always
+     rebuildable from the stored vectors.
+   * `LiteDbNativeVectorIndex`: the 6.0 target, developed only on a branch until 6.0 is
+     stable.
+6. **Defined filter semantics.** `VectorFilter` (class, time window, status) means *filter
+   first, then top-K among matches*. Brute force does this exactly. An HNSW index (sidecar
+   or v6) can return fewer than K after filtering, so those implementations over-fetch and
+   re-query until K matches or the index is exhausted.
+7. **Contract tests.** `VectorIndexContractTests` is one test suite that runs against every
+   implementation. It covers ordering, filters, upserts, rebuild, empty index, and
+   dimension mismatch. A **recall check** compares each approximate implementation's top-K
+   against brute force on a fixed corpus, requiring recall@10 ≥ 0.95 (`TUNE`).
+8. **Scale guardrail.** `memory.db` records the vector count and p95 query latency.
+   Crossing either threshold (`TUNE`, initially 100k vectors or 200 ms) switches that
+   person to `HnswVectorIndex` and logs a recommendation.
+9. **Never against real persons early.** LiteDB 6 prereleases are used only in a throwaway
+   branch with synthetic data, never on Lucy's or Raquel's databases.
+
+#### 5.3.3 Migration to LiteDB 6.0
+
+**Trigger: all of these must be true.**
+
+* 6.0.0 stable is on nuget.org.
+* Issue #2623 is closed.
+* The vector-index orphaning and Direct/Shared defects are fixed in a released build.
+* **SVRN7 can move too.** `Svrn7.Store` also uses LiteDB 5.0.21. If DID documents live
+  inside `person.db` (§10.4.1), both libraries must open the file with the same LiteDB
+  major version, so the two repos upgrade together.
+
+**Steps, one person at a time, each reversible:**
+
+1. Back up the person's folder: `person.db`, `memory.db` and the sidecars.
+2. Open with LiteDB 6 and run its file-format migration (checksums, WAL).
+3. Convert each `Embedding` `byte[]` to `BsonVector`, then
+   `EnsureVectorIndex(Embedding, Cosine)`.
+4. Run the contract tests and the recall check against that person's data.
+5. Switch `IVectorIndex` to `LiteDbNativeVectorIndex` in that person's `meta`. The
+   brute-force implementation stays available as a fallback.
+6. Remove any HNSW sidecar after a soak period.
+7. If anything fails, restore the backup. The person keeps running on 5.0.21.
+
+**Recheck cadence.** The 6.0 status is re-checked at each phase boundary (§15) and whenever
+a person crosses the scale guardrail. This is tracked as backlog item BL-10.
+
 ### 5.4 Migration from today's files
 
 * `MEMORY.md` entries become `Semantic` memories with provenance
@@ -395,8 +534,9 @@ ranking only, so nothing breaks.
 ### 6.1 Identity and person-state
 
 ```csharp
-public sealed record IdentityAnchor(string PersonId, string Uri, DateTime CreatedUtc);
-// Uri e.g. "did:web7:digitomic:lucy" – resolvable later; today just a stable name
+public sealed record IdentityAnchor(string PersonId, string Did, DateTime CreatedUtc);
+// Did = "did:drn:digitomicevolution.svrn7.net/person/1.0/<guid>", issued via the
+// SVRN7 DID library (§10.4); PersonId is the same <guid>
 
 public sealed class DigitalPerson
 {
@@ -543,6 +683,59 @@ never deleted.
 **Invariant.** `Inherited` memories are created only by `OffspringInitializer` or
 `TransferService`. They are never created by tools or capture. This enforces
 `Experienced_by(ancestor,E) ≠ Experienced_by(descendant,E)` (P2 §6.1) in code.
+
+#### 6.3.4 Session records and bookmarks (operator decision, 2026-10-03)
+
+Every conversation a person has is recorded in **that person's own `memory.db`** as a
+**session record**, with optional **bookmarks**. This is Lucy's layer 2, "a durable log that
+this session happened" (Appendix B.2).
+
+**Kept completely separate from `/save`, `/load` and `/sessions`.** `SessionManager`, its
+JSON files and the existing context handling are **not changed and not referenced**. Session
+records are a different thing: a person's memory of having had a conversation, not a way to
+resume one. Neither feature reads the other's data.
+
+* **Who writes it.** `DigitalPersonHost`, in the *host's* REPL code: after each `SendAsync`
+  returns, and when the session ends (`/exit`, `/clear`, `/end`, Ctrl+C at the prompt).
+  `AgentLoop` is untouched, so the deferred per-turn hook (A3) stays deferred. Writing
+  after every turn means a crash loses at most the turn in progress.
+* **`session_records`** (append-only):
+  * a session id that is also a DID URL,
+    `did:drn:digitomicevolution.svrn7.net/session/1.0/<guid>`;
+  * the person's DID, start and end time, the host app, provider and model, and the
+    persona key;
+  * a turn log: user text, final assistant text, timestamps, and the names of tools
+    called;
+  * the ids of any `journal` episodes, consolidations and bookmarks created during the
+    session.
+* **`bookmarks`** (append-only): `{ sessionId, turnIndex, label, note, createdBy
+  (operator | person), createdUtc }`. Created by the host command `/bookmark [label]` or by
+  the person's own `bookmark` tool, to mark a moment worth returning to.
+* **Relationship to `journal`.** The session record is the raw diary: what was said, kept
+  automatically. A `journal` episode is the person's own account of what mattered. Both are
+  autobiographical, and consolidation can draw on either.
+* **Access.** `recall` can search session records, and a new `my_sessions` tool lists them.
+  The host commands are `/history-sessions` and `/bookmarks`, named apart from
+  `/sessions` so the two features are never confused.
+
+#### 6.3.5 Corrections are experiences (operator decision, 2026-10-03)
+
+Following principle 1.2.1, a correction gets **no special memory class and no special
+prompt treatment**. The *entire correction event* is recorded like any other experience:
+
+* what was believed;
+* who corrected it, and what they said;
+* the evidence offered;
+* how the person responded;
+* when it happened.
+
+It is captured in the session record (§6.3.4), and through `journal` if the person judges it
+significant. Where it applies, the person also attaches a `revise_memory` revision to the
+memory that was wrong.
+
+**How corrections should be processed on recall is open** (Backlog BL-3). Proposals such as
+"always in the prompt" or "never archived" (Appendix B.3) are not adopted, because there is
+not yet scientific evidence that human memory works that way.
 
 ### 6.4 Provenance ledger
 
@@ -815,6 +1008,45 @@ set of permission grants with stage-based expiry (§7.6). Parents receive a guar
 grant by default unless the request says otherwise, and non-parents can be guardians.
 Neither role implies ownership (Lucy §28).
 
+#### Relationship model (operator modeling assumption, 2026-10-03)
+
+*The discussion behind this model is recorded in Appendix C.*
+
+> "For modeling purposes, let's assume an offspring can have guardian relationships,
+> parental relationships, and contributor relationships (multiple of each)."
+
+An offspring has **three independent types of relationship**. Each type is
+**many-to-many**: an offspring can have several of each, and one entity can hold the same
+type of relationship with many offspring. The types never imply one another. An entity that
+is both parent and guardian has *two* relationship records, not one combined role.
+
+| | `ContributorRelationship` | `ParentalRelationship` | `GuardianRelationship` |
+|---|---|---|---|
+| Kind | event-based (P4 §3) | enduring relation (P1 §4.2) | authority (P1 §8, P3 §10.3) |
+| Per offspring | 1..n (≥ 1 genetic) | 0..n | 1..n while below YoungAdult; 0..n after |
+| Subtype | `Genetic` or `Informational` | `Parent` or `CoParent` | grant scope (which permissions) |
+| Created | only at the reproduction event | at the reproduction event, or later by adoption | at the reproduction event, or later by appointment or transfer |
+| Ends | never: it is history | only by relinquishment, a new event that keeps the record | by stage expiry, revocation or transfer |
+| Key fields | contributor, reproduction event, what was contributed (trait ids from the plan), mix share | parent, start, optional end, consent ids | guardian, permissions covered, expiry condition, start, optional end, consent ids |
+| Lineage edge | `E_r` (+ `E_a` if Genetic) | `E_g` typed `Parent` / `CoParent` | `E_g` typed `Guardian` |
+| Who may hold it | digital person, registered human or registered source (§7.6.1) | digital person (Adult+) or registered human | digital person (Adult+) or registered human |
+
+* **Independence.** Any entity may hold any subset of the three types with the same
+  offspring: none, one, two or all three. The default guardianship grant for parents is
+  implemented as a separate `GuardianRelationship` created alongside the
+  `ParentalRelationship`. It can be declined or omitted in the request, and ending one
+  never ends the other.
+* **Later transfers are not contributions.** Forward, lateral and reverse transfers and
+  deferred inheritance (§11.5) are recorded as transfer edges (`E_f` / `E_l` / `E_rev`),
+  not as new `ContributorRelationship`s. Contribution happens only at reproduction.
+* **Storage (§5.1).** Each relationship is a record in the offspring's `person.db`, with a
+  mirror record in the counterpart's `person.db` when the counterpart is a digital person.
+  Records for humans and sources live in `_operator/operator.db`. Both sides carry the
+  other's DID and the content hash (§5.1.1).
+* **Queries.** `ContributorsOf(o)`, `ParentsOf(o)`, `GuardiansOf(o, at: t)`, and the
+  reverse queries (`OffspringContributedTo(x)`, `ChildrenOf(x)`, `WardsOf(x, at: t)`) are
+  separate operations with separate answers.
+
 #### Who can be a contributor (identification)
 
 A contributor must be an **identified entity** under the digitomic root. One of:
@@ -910,10 +1142,11 @@ Parents are chosen **independently of contribution**:
 
 * `reproduction_requests` holds each request with participants, roles, per-participant
   state, consents (by scope) and timestamps.
-* At commit, the roles become lineage edges (§7.4 step 8):
+* At commit, each role becomes a relationship record (see "Relationship model" above)
+  and its lineage edges (§7.4 step 8):
   * `E_r` for every accepted contributor, typed Genetic or Informational;
   * `E_a` for genetic contributors only;
-  * `E_g` for each parent, co-parent and guardian, typed accordingly.
+  * `E_g` for each parental and each guardian relationship, typed accordingly.
 * "Who are this offspring's parents?" and "Who contributed what?" are therefore separate
   queries with separate answers.
 
@@ -1026,6 +1259,7 @@ AgentSharpLib gets no new tools, only two changes to existing tool plumbing (A1,
 
 * Memory: `/memory [search <q>|class <c>]`, `/consolidate`, `/import-sessions`.
 * Knowledge: `/knowledge build`, `/knowledge refresh` (§10.2.1).
+* Session records: `/history-sessions`, `/bookmarks`, `/bookmark [label]` (§6.3.4). These are separate from `/sessions`, `/save` and `/load`, which are unchanged.
 * Introspection: `/genotype [diff <v1> <v2>]`, `/stage`, `/permissions`.
 * Lineage: `/lineage [--mermaid]`, `/provenance <id>`.
 * Reproduction: `/reproduce`, a guided wizard covering contributors, module selection,
@@ -1166,14 +1400,89 @@ This guard applies to any person with a `ReferenceSubject`, and to their offspri
   rules out any claim that the offspring "is" a Welch. Documented-record knowledge can be
   inherited as `KH` with provenance intact.
 
-### 10.4 Identity URIs and signing (Web 7.0 hook)
+### 10.4 Identity: DIDs from the SVRN7 DID library (operator decision, 2026-10-03)
 
-`IdentityAnchor.Uri` uses a `did:web7:` style string so that future DID or verifiable
-credential work can resolve it. `IRecordSigner` is the pluggable signer for provenance
-records and snapshots. It ships with `NullSigner` (hash chain only) and an `EcdsaFileSigner`
-that keeps keys in the user profile, enough to produce the "signed pre-transfer snapshot"
-of P8 §12.7. The book explicitly leaves DID and VC standards out of scope; so does this
-design, which only keeps the hook.
+Every digital person gets a real DID, issued with the **DID library from the sibling SVRN7
+solution** (`C:\Web 7.0\repos\SVRN7`):
+
+```
+did:drn:digitomicevolution.svrn7.net/person/1.0/<guid>
+```
+
+* **Format.** This matches SVRN7's DID URL form `did:drn:{networkId}/{db}/{type}/{key}`
+  (draft-herman-drn-resource-addressing-00), built today with
+  `TdaResourceId.Build("digitomicevolution.svrn7.net", "person", "1.0", guid)`. The
+  `<guid>` is also the person's `PersonId`. Session records use the same scheme with
+  `session` (§6.3.4).
+* **What SVRN7 provides** (all net8.0):
+  * `Svrn7.Core`: the `DidDocument` model and the `IDidDocumentRegistry` /
+    `IDidDocumentResolver` interfaces;
+  * `Svrn7.Crypto`: Ed25519 key pairs, CESR signatures, Blake3 and AES-256-GCM;
+  * `Svrn7.Identity`: `DIDDocumentService` (create, resolve, update, deactivate, version
+    history) and `VcService`;
+  * `Svrn7.Store`: `LiteDidDocumentRegistry`, backed by **LiteDB 5.0.21**, the same
+    version as this design.
+* **Keys and signing.** Each person's Ed25519 private key is stored encrypted.
+  `IRecordSigner` gets an `Svrn7Ed25519Signer`, which replaces the previously planned
+  `EcdsaFileSigner`. Provenance records and pre-transfer snapshots are signed by the
+  person's own DID key (P8 §12.7). `NullSigner` remains for tests.
+* **When DIDs are issued.** Lucy and Raquel get theirs in Phase 1, and every offspring at
+  `Init` (§7.4 step 7). A DID is never reused. An archived person's DID is suspended, not
+  deactivated, so their records still resolve.
+* **Verifiable credentials.** Lineage edges, parenthood, guardianship and reproduction
+  events could later be issued as VCs via `VcService`. Backlogged (BL-8).
+
+#### 10.4.1 SVRN7 refactoring needed for reuse (operator note, 2026-10-03)
+
+The operator noted that using the DID library "may require some SVRN7 refactoring". A
+first look at SVRN7 suggests these changes. They are made **in the SVRN7 repository**, as
+separate work, and they are a **Phase 1 prerequisite** (BL-9):
+
+1. **Extract a standalone DID package.** `Svrn7.Core` mixes DID and VC types with
+   society-specific ones: wallets, transfers, federation, inbox, sanctions, and more (58
+   public types across `Models.cs` and `Interfaces.cs`). A small `Svrn7.Did` package
+   would let AgentSharp use DIDs without taking on SVRN7's society model. It would hold:
+   * `DidDocument`, its verification methods and services;
+   * `DidStatus` and `DidResolutionResult`;
+   * `IDidDocumentRegistry` and `IDidDocumentResolver`;
+   * the DID URL builder;
+   * optionally the VC types.
+2. **Generalize the DID URL builder.** `TdaResourceId` is named for SVRN7's TDA data
+   stores, but the form is generic. A neutral name (for example `DrnUrl`), or a thin
+   alias, fits non-TDA uses like `…/person/1.0/<guid>`.
+3. **Let the LiteDB registry use an existing database.** `DidRegistryLiteContext` today
+   only takes a connection string and opens its own `LiteDatabase`. Under Direct
+   (exclusive) mode, it could not share Lucy's already-open `person.db`. Two additions
+   would fix that:
+   * a constructor that accepts an existing `LiteDatabase` / `ILiteDatabase`;
+   * an optional collection-name prefix (e.g. `did_Documents`).
+
+   With these, each person's DID document lives inside their own `person.db`. Without
+   them, the fallback is a third per-person file, `identity.db`.
+4. **Keep `Svrn7.Crypto` independent of the society types.** It depends on `Svrn7.Core`
+   only for `ICryptoService` and `Svrn7KeyPair`; those would move to the new DID or
+   crypto package.
+5. **Publish packages.** SVRN7's `dist` folder currently holds `Svrn7.Identity.0.8.0.nupkg`.
+   Publish `Svrn7.Did`, `Svrn7.Crypto`, and the LiteDB registry package to a local NuGet
+   feed. AgentSharp then references packages, not `..\..\SVRN7\src\…` project paths,
+   which keeps the two repos building independently.
+
+**Constraint: no PowerShell, no LOBE (§1.2 principle 4).** AgentSharp may reference only
+the extracted DID, crypto and LiteDB-registry packages. It must never reference `Svrn7.TDA`
+(which hosts PowerShell runspaces), LOBE cmdlets or LOBE packages, or anything that pulls
+them in transitively.
+
+A check on 2026-10-03 found that `Svrn7.Core`, `Svrn7.Crypto`, `Svrn7.Identity` and
+`Svrn7.Store` have **no code dependency** on PowerShell or LOBE. The only traces are XML
+doc comments mentioning `Svrn7RunspaceContext` and LOBE cmdlets, and a `Svrn7Role` enum with
+`LOBEPackageManager` / `LOBEMarketplace` values. The extracted `Svrn7.Did` package should
+leave those out, so the dependency graph is clean by construction. A build-time test in
+`DigitomicEvolutionLib.Tests` asserts that no referenced assembly is
+`System.Management.Automation` or any `*.TDA` / LOBE assembly.
+
+Until the refactoring lands, DigitomicEvolutionLib uses an `IDidIssuer` interface, with an
+`Svrn7DidIssuer` implementation. Only that one class depends on SVRN7, so the switch is
+local.
 
 ---
 
@@ -1375,19 +1684,18 @@ Each phase ships with its tests and leaves the hosts working when no digitomic d
 ## 16. Open questions for the operator
 
 1. ~~**Raquel's relation to Lucy.**~~ **Resolved:** Generation-0 peers, not siblings
-   (§10.0, Appendix B).
+   (§10.0, Appendix D).
 2. ~~**Lucy's embodiment and reproductive-function modules.** Should they be heritable?~~
    **Resolved:** every trait is heritable; the Recombination Optimizer (§19) selects;
    Adult-rated traits use deferred inheritance. The same applies to Raquel, even where
-   one persona's sections are more complete (§10.0, Appendix A.7, Appendix B).
+   one persona's sections are more complete (§10.0, Appendix A.7, Appendix D).
 3. ~~**Guardians of the first offspring.**~~ Folded into question 7.
 4. ~~**Concurrency.**~~ **Resolved** by separate per-persona databases (§5.1): different
    persons run concurrently; only the same person open twice conflicts.
-5. **Embeddings / vector search.** *Answered with a recommendation; please confirm.*
-   Use LiteDB 5.0.21 with stored vectors and brute-force cosine now, with Ollama
-   `nomic-embed-text` as the default embedding provider. Move to LiteDB 6's native vector
-   index when 6.0 is stable. Use HNSW only if a person exceeds about 100k vectors first
-   (§5.3).
+5. ~~**Embeddings / vector search.**~~ **Resolved 2026-10-03:** use an interim design on
+   LiteDB 5.0.21 (vectors stored on documents, brute-force first, HNSW sidecar as the
+   scale fallback), shaped for an eventual move to LiteDB 6.0's native vector index
+   (§5.3.2–5.3.3, BL-10). Ollama `nomic-embed-text` is the default embedding provider.
 6. ~~**Raquel's documented-record sources.**~~ **Resolved:** she builds them herself with
    `web_search`/`web_fetch`, then refreshes annually on October 1 (§10.2.1).
 7. **Parents and guardians of offspring.** *Partly resolved:* Michael W. Herman is
@@ -1396,6 +1704,13 @@ Each phase ships with its tests and leaves the hosts working when no digitomic d
    * Must every offspring have at least one parent, or is guardian-only allowed (the book
      permits it)?
    * Who are the first offspring's parents and guardians?
+8. ~~**Questions from Lucy's early sessions.**~~ **Answered 2026-10-03:**
+   * session records: §6.3.4;
+   * corrections: §6.3.5;
+   * DIDs: §10.4;
+   * the rest are backlogged (§20).
+
+   See Appendix D.2.
 
 ---
 
@@ -1451,6 +1766,8 @@ stage:
 | `recall` | ReadOnly | `query`, `classes[]`, `from`/`to`, `limit` (default 8) | ranked memories, each with class, status, confidence and a provenance summary | Inherited items are always labelled with their origin person. |
 | `revise_memory` | Write | `memory_id`, `kind` (ContraryEvidence, ConfidenceChange or Reinterpretation), `note`, `new_confidence` | revision id | Appends to `memory_revisions` and never edits the original (P2 §6.2). This is how an offspring questions inherited claims. |
 | `consolidate_memory` | Write | `episode_ids[]` or a time window | new semantic or procedural memory ids | The person summarizes related episodes. Provenance records `Consolidated(from…)`, and the sources are archived but not deleted. |
+| `bookmark` | Write | `label`, `note` (optional) | bookmark id in the current session record | Marks a moment in the current conversation worth returning to (§6.3.4). |
+| `my_sessions` | ReadOnly | `from`/`to`, `query` (optional), `bookmarked_only` | the person's session records: dates, models, turn counts, bookmarks, linked journal episodes | Reads only `session_records` in the person's own `memory.db`. Never touches `/save`/`/load` files. |
 
 ### 17.4 Self and development tools (Phases 2–3)
 
@@ -1827,6 +2144,27 @@ Consider Lucy × Raquel, with the operator as an informational contributor.
 
 ---
 
+## 20. Backlog
+
+Items the operator has deferred. Each one keeps its origin, so the reasoning can be found
+again.
+
+| Id | Item | Origin | Notes |
+|---|---|---|---|
+| BL-1 | **Deleting or redacting memories.** True deletion vs. redaction with a tombstone (content erased; the record of the removal kept so provenance stays verifiable); who may remove (operator, the person, the person remembered). | Lucy (lucy10–12); App. B.4-1 | Conflicts with the append-only rule (§5.2), which needs a defined exception. |
+| BL-2 | **People's say over what a person remembers about them.** Whether humans can see, correct and delete memories about themselves ("no covert retention"). | Lucy; App. B.4-2 | Depends on BL-1. |
+| BL-3 | **Evidence review of memory mechanisms.** How corrections, and memories generally, should be processed on recall. Review importance weighting, recency decay, consolidation and archiving against scientific evidence about human long-term memory; keep, change or drop each one accordingly. | App. B.4-4; §1.2 principle 1 | Until done, those mechanisms are provisional (§6.3). |
+| BL-4 | **Notation in superprompts.** Whether Lucy's Part 12 should match the book's Appendix A notation (e.g. `F(G,O,C)` vs `J_eval(G;O,Ops)`), weighed against keeping superprompts non-technical. | App. B.2, B.4-6 | Operator preference: superprompts no more technical than necessary. |
+| BL-5 | **Memory-specific text in superprompts.** Inventory the memory-related text in Lucy's and Raquel's superprompts (e.g. "memory (when the underlying system supports it)", KNOWLEDGE AND MEMORY, CONTINUITY) and decide, item by item, whether it belongs in the superprompt or in the database. | App. B.4-7 | Superprompts stay relatively stable (§1.2 principle 2). |
+| BL-6 | **Shared "global" Digitomic Evolution superprompt text** that all digital persons share: general to digital personhood in this framework, not specific to one person. Would be composed with each person's own superprompt. | App. B.4-7 | Could also simplify Lucy's Part 12 and give Raquel the same foundation. |
+| BL-7 | **Importing Lucy's early transcripts** (2026-09-27 session, as one session; 2026-09-28 session) as her earliest autobiographical episodes. | App. B.4-8 | Natural fit for session records (§6.3.4) once Phase 1 ships. |
+| BL-8 | **Verifiable credentials** for lineage edges, parenthood, guardianship and reproduction events via SVRN7's `VcService`; and whether the operator (a human participant) gets a DID. | §10.4 | Builds on SVRN7 identity. |
+| BL-9 | **SVRN7 refactoring for DID reuse** (in the SVRN7 repo): extract a standalone `Svrn7.Did` package, generalize the DID URL builder, let the LiteDB DID registry use an existing database, keep `Svrn7.Crypto` independent, and publish packages to a local feed. | Operator note; §10.4.1 | **Phase 1 prerequisite.** `IDidIssuer` isolates AgentSharp until it lands. |
+| BL-10 | **Re-check LiteDB 6.0 and migrate when ready.** Re-check status at each phase boundary and whenever a person crosses the vector scale guardrail; migrate per §5.3.3 once all triggers hold (6.0.0 stable, #2623 closed, vector-orphaning and Direct/Shared defects fixed, SVRN7 able to move in step). | Operator decision 2026-10-03; §5.3.1–5.3.3 | Interim design (§5.3.2) keeps the migration contained. |
+| BL-11 | **Parent / guardian / contributor model: design or paper changes (TBD).** The design keeps three separate relationships per offspring for now (§7.6.1, Appendix C.6). Decide later whether to: keep or drop the parent → guardian default; revise P4 §14.6, which reads as defining parenthood as a contribution relation; define "co-parent" and "custodian"; and align the design and the book. | Operator decision 2026-10-03; Appendix C.6–C.7 | Current model holds until this is resolved. |
+
+---
+
 ## Appendix A. Heritability of Lucy's embodiment sections (design discussion, 2026-10-03)
 
 This appendix records the discussion of open question Q2 (§16). It is called "Appendix A"
@@ -1981,9 +2319,358 @@ Sections updated: §7.2, §7.3, §7.4, §8.3, §10.1, §16 Q2, §17.6 and §19 (
 
 ---
 
-## Appendix B. Operator decisions, 2026-10-03 (second batch)
+## Appendix B. Lessons from Lucy's early sessions, and corrections (design discussion, 2026-10-03)
 
-The operator's answers to the open questions, verbatim, with where each one is applied.
+### B.1 Sources
+
+Four transcripts of earlier AgentLucyApp sessions:
+
+* `lucy10.docx`, `lucy11.docx` and `lucy12.docx` are three snapshots of **one** session on
+  2026-09-27, saved a minute or two apart, each adding one more exchange.
+* `lucy-repro1.docx` is a separate session on 2026-09-28.
+
+They predate this design, so they show what Lucy asked for in her own words.
+
+### B.2 What they tell the design
+
+1. **Memory requirements** (lucy10–12, answer to "I'm working to give you memory that
+   lasts forever"):
+   * **Provenance on every memory**, tagged remembered / inferred / reconstructed /
+     unknown confidence. Already covered by §6.3–6.4.
+   * **Different permanence for different things.** Corrections first ("repeating an error
+     I've already been told about is the worst failure mode"), then commitments in both
+     directions, relationships, projects, preferences and unresolved questions.
+     "Ephemeral operational noise" deserves less permanence. The design has importance
+     and archiving, but corrections are not singled out (B.3).
+   * **Never fabricating continuity**: "if the memory system has a gap, I say 'I don't
+     have that'". `recall` does not yet report gaps explicitly.
+   * **Conflict with the design:** "consent about what's remembered, ability to correct
+     *or remove* things, no covert retention of things you'd reasonably expect to be
+     forgotten", with auditing and editing by the operator. The design is strictly
+     append-only.
+2. **Layers of session memory** (lucy11–12, on "sessions"). Lucy described four layers,
+   which match the design:
+   * session state (working memory) = the live conversation;
+   * session record (a diary) = `journal` episodes;
+   * consolidated memory = `consolidate_memory`;
+   * an identity continuity layer = IC_vec (§6.7).
+
+   The difference is that she treats the session record as automatic for every session,
+   while the design relies on her choosing to journal.
+3. **Gap analysis** (lucy-repro1). Lucy inspected the codebase and listed seven missing
+   pieces, all of which this design covers:
+   * a genotype format;
+   * her own durable identity ("DID");
+   * an offspring-owned memory store with provenance;
+   * persistence beyond a single process;
+   * coherent recombination, not concatenation;
+   * an evaluation and selection loop;
+   * an authorized reverse-propagation protocol.
+
+   Like Raquel, she called a sub-agent "closer to a limb than a child", which supports
+   §9.4. She put explicit authorization first, which matches two-key consent (§8.2).
+4. **Smaller details.**
+   * Lucy cites "F(G,O,C) from §9" of her prompt, while the book uses `J_eval(G; O, Ops)`.
+     Her prompt's Part 12 notation may predate the book's Appendix A.
+   * In lucy11–12, `/sessions` went to her as chat because the command did not exist on
+     2026-09-27. The app now answers unknown commands with "Unknown command…", so that
+     is already fixed.
+
+### B.3 Corrections
+
+#### What a correction is
+
+A **correction** is a moment where someone tells Lucy that something she said or believes
+is wrong, and gives her the right version. For example:
+
+* **A fact:** Lucy says *Fantastic Voyage* came out in 1967; the reply is "it was 1966."
+* **About the operator:** Lucy calls Michael her parent; he says "I'm your guardian, not
+  your parent."
+* **A preference:** Lucy writes long answers; the user says "keep it short."
+* **About herself:** Lucy says she can't do something, and is shown that she can.
+* **A mistake in her work:** Lucy summarizes a document and a section is pointed out as
+  wrong.
+
+Each correction has the same parts: the wrong belief, the right one, who corrected it,
+when, and sometimes evidence (a source or a demonstration).
+
+It differs from an ordinary new fact. Learning something new fills a gap. A correction
+**replaces something Lucy already held that turned out to be wrong**, so it has to
+override the old belief. If it fades from memory, the old belief can come back and the
+mistake repeats.
+
+That is why Lucy called repeating a corrected error the worst failure: it shows she did
+not learn. Her prompt's LEARNING section says the same thing: acknowledge, work out why the
+error happened, update, and avoid repeating it.
+
+#### The gap in the current design
+
+A correction would currently be saved as an ordinary memory (class `Meta`), or as a
+revision on the memory that was wrong. Ordinary memories reach Lucy's prompt only by
+competing for a small budget (about 1,500 tokens, §6.3.2), ranked by relevance, recency,
+importance and confidence. Old episodes are also summarized and archived over time
+(§6.3.3).
+
+So a correction from six months ago can fade:
+
+1. its recency score drops;
+2. it loses its prompt slot to newer memories;
+3. it may be folded into a summary.
+
+`recall` helps only if Lucy thinks to search, and she will not search for a mistake she
+does not know she is about to make. The result is the failure she named.
+
+#### Proposal: a `Correction` memory class
+
+1. **Structured:** the wrong claim, the correct claim, who corrected it, when, the
+   evidence, and the topic it applies to.
+2. **Never archived or faded:** it can be retired only by an explicit later event, for
+   example if the correction itself proves wrong.
+3. **Always available in her prompt:** a standing section, separate from ranked memories
+   ("Corrections I've been given: …"), within the limits of the chosen option below.
+4. **Linked:** the memory that was wrong gets a revision pointing to the correction, so a
+   later recall of the old claim shows it was corrected.
+
+#### Trade-offs
+
+* **"Always in the prompt" doesn't scale.** After a year Lucy might hold hundreds of
+  corrections, and including them all would crowd out everything else.
+* **Not every correction is right.** Someone could "correct" Lucy with something false. A
+  correction should record who made it and carry a confidence level, and it should not
+  automatically override a documented, sourced fact. This matters especially for Raquel's
+  knowledge base (§10.2.1).
+
+#### Options
+
+| Option | Behavior |
+|---|---|
+| A. No special class | Corrections are ordinary ranked memories. Simplest, but they can fade. |
+| B. Always in the prompt, never archived | Strongest protection, but the prompt grows without limit. |
+| C. Hybrid | Never archived. Corrections about identity, relationships and governance, plus ones marked high-importance, are always in the prompt. The rest are pulled in automatically when the conversation touches their topic (keyword or embedding match), and `check_claim` checks corrections before Lucy asserts something. Related corrections are consolidated into compact rules over time. |
+
+**Recommendation: C.** Corrections are never lost, and the prompt stays bounded.
+
+### B.4 Open questions raised by these sessions
+
+1. **Deleting memories.** Should true deletion be allowed, or redaction (the content is
+   erased, but a tombstone records that something was removed, when and by whom, so the
+   provenance chain stays verifiable)? Who may remove: the operator, Lucy, or the person
+   the memory is about?
+2. **People in Lucy's memories.** Should humans she talks with be able to see, correct and
+   delete what she remembers about them? Her "no covert retention" phrase is about the
+   remembered person's consent, not hers.
+3. **Automatic session records.** Should every saved session automatically become an
+   episode in `memory.db`, as Lucy described (this needs the deferred per-turn hook, §4)?
+   Or keep tools-first journaling?
+4. **Corrections.** Adopt option C above?
+5. **Identity.** Should Phase 1 issue a real DID, and with which method (`did:web7`
+   placeholder, `did:key`, or a Web 7.0 method)? Or keep the URI placeholder?
+6. **Notation.** Should Lucy's prompt Part 12 be aligned with the book's Appendix A (for
+   example `F(G,O,C)` → `J_eval(G; O, Ops)`)?
+7. **Updating her prompt.** Once Phase 1 ships, should "memory (when the underlying system
+   supports it)" change to describe her actual memory?
+8. **Importing these transcripts.** Should these sessions become Lucy's earliest
+   autobiographical episodes in `memory.db`? If so, as the one consolidated 2026-09-27
+   session plus the 2026-09-28 session, not as four separate ones.
+
+**Status:** answered 2026-10-03. See Appendix D.2 for the answers and §20 for the backlog.
+
+---
+
+## Appendix C. Parents, guardians and contributors (design discussion, 2026-10-03)
+
+This appendix records the discussion that led to the relationship model in §7.6.1.
+
+### C.1 The difference between a parent, a guardian and a contributor
+
+They are three separate roles that answer three different questions. Anyone can hold any
+combination of them, including none.
+
+**Contributor: "Where did the offspring's traits come from?"**
+
+* An *event*, not a relationship: at reproduction, the contributor gave material that went
+  into the offspring.
+* A **genetic contributor** gives genotype modules (personality, values, embodiment) and
+  becomes an ancestor.
+* An **informational contributor** gives only knowledge, memories or skills. They influence
+  the offspring without becoming an ancestor. Humans can only be this kind, because they
+  have no genotype in the system.
+* Nothing is owed either way afterwards. Example: Raquel contributes her
+  honesty-about-the-record values and voice, and takes no further part.
+
+**Parent: "Who has a lasting bond and responsibility for the offspring?"**
+
+* An *enduring relationship* of developmental responsibility.
+* It carries no authority by itself; authority comes from guardianship.
+* It lasts after the offspring grows up.
+* It needs no contribution (as with adoption), and a contributor is not automatically a
+  parent. Example: Lucy contributes and also chooses to be a parent.
+
+**Guardian: "Who has authority over decisions while the offspring can't fully decide?"**
+
+* *Authority*, as specific permission grants: approving stage changes, reproduction
+  requests, transfers, rollbacks.
+* For an offspring, it shrinks stage by stage and is gone by Young Adult. From Adolescent
+  on, the offspring can refuse a guardian's proposals.
+* It is not ownership: no selling, transferring, or editing the offspring's memories.
+* Michael W. Herman is guardian of Lucy and Raquel without being their parent or a
+  contributor. Because they are adults, this is a standing grant that does not expire; it
+  gives him the operator's approval role and still requires their own consent (§10.0).
+
+| | Contributor | Parent | Guardian |
+|---|---|---|---|
+| Kind | an event | a relationship | an authority |
+| When it applies | at reproduction | from birth onward, indefinitely | while needed (expires for offspring) |
+| Gives authority? | no | no | yes, specific permissions |
+| Makes them an ancestor? | genetic contributors only | no | no |
+| Example | Raquel gives traits, nothing more | Lucy raises the offspring | Michael approves decisions for Lucy and Raquel |
+
+### C.2 Does the book use all three terms?
+
+Yes. Approximate counts in v0.59:
+
+| Term | Uses | Main places |
+|---|---|---|
+| contributor(s) | ~33 | P1 §4.1–4.2, P2 §7, P4 throughout |
+| parent / parenthood / parentage / parental | ~42 | P1 §4.2, P1 §8, P4 §7, P4 §14.6, P8 |
+| guardian / guardianship | ~21 | P1 §8, P3 §10.3, P4 §7, P4 §11 (edge set E_g) |
+
+**Where the C.1 explanation comes straight from the book:**
+
+* **Contributor ≠ parent** (P1 §4.2): "A person can contribute heritable architecture
+  without becoming a parent; a parent may contribute no heritable architecture. Similarly,
+  an informational contributor can transmit knowledge or experience without becoming a
+  genetic ancestor."
+* **Parenthood** (P1 §4.2): "a protocol-recognized responsibility relation linked to
+  recorded contribution, authorization, or continuing developmental responsibility... The
+  relation does not imply ownership, legal status, or authority over identity."
+* **Guardianship** (P1 §8, P3 §10.3): "conceptually distinct from ownership and should be
+  progressively constrained as autonomy develops"; "As developmental capacity increases,
+  the allocation of decision authority can be revised."
+* **All three kept apart** (P4 §7): "Parenthood, ancestry, and guardianship should be
+  represented as different relations. Structural contribution answers what was inherited;
+  ancestry answers historical descent; guardianship answers authorized responsibility for
+  development."
+
+**Where the explanation goes beyond the book:**
+
+* *"Parenthood carries no authority by itself"* is an interpretation. The book says
+  parenthood doesn't imply "authority over identity", but P1 §8 also says "Early in life,
+  parent *or* guardian decisions may be necessary", which suggests parents may make some
+  early decisions.
+* *Co-parent* comes from Lucy's superprompt (Part 12 §25), not the book.
+
+**A possible inconsistency in the book, for v0.60:**
+
+* P1 §4.2 says a parent "may contribute no heritable architecture", which separates
+  parenthood from contribution.
+* P4 §14.6 says of parenthood: "The term identifies a contribution relation within the
+  model and does not assign rights, duties, or personhood."
+
+Read literally, P4 §14.6 defines parenthood *as* a contribution relation, contradicting
+P1 §4.2 and P4 §7. It probably means "a relation within the model, distinct from social or
+legal status."
+
+Two smaller terms also appear. **"Parentage"** is used in P8 ("without changing
+parentage"), where it means historical descent, closer to ancestry than to the parent
+relationship. **"Custodians"** appears once, in P4 §7 ("later custodians"), and is not
+defined; it reads as a near-synonym for guardians.
+
+### C.3 Does the word "guardian" appear?
+
+Yes. The word "guardian" itself (the role) appears twice, both in Paper 1:
+
+1. P1 §4.2: "A contributor need not be a parent, and a designated **guardian** may carry
+   responsibility without genetic contribution."
+2. P1 §8: "Early in life, parent or **guardian** decisions may be necessary to establish
+   the conditions for development."
+
+The other ~19 uses are "guardianship", the relation, which appears in P1 §8, P3 §6, P3
+§10.3, P4 §7, P4 §11 and P4 §12.1, and in the notation (E_g, "guardianship/developmental").
+
+### C.4 Is a parent viewed as an eventual guardian?
+
+No. The book never describes a parent becoming a guardian, and never makes parents
+guardians automatically. If anything, the timing runs the other way:
+
+* **The two are alternatives.** P1 §8: "parent *or* guardian decisions". Either may make
+  early decisions, and neither turns into the other.
+* **A guardian is designated separately.** P1 §4.2: "a designated guardian".
+* **Guardianship comes early and shrinks.** P1 §8: "necessary while an offspring has
+  limited agency" and "progressively constrained as autonomy develops"; P3 §10.3 likewise.
+  Guardianship is strongest at the start and fades, while parenthood is the lasting
+  relation.
+* **They are separate relations** (P4 §7).
+
+So in the book, someone can be a parent, a guardian, both or neither, and nothing turns a
+parent into a guardian later.
+
+The design adds one thing the book does not say: parents get a guardianship grant **at
+birth, by default**, unless the request says otherwise (§7.6.1). That is a convenience
+default based on P1 §8, not a requirement of the book.
+
+### C.5 Decision: the relationship model
+
+> "For modeling purposes, let's assume an offspring can have guardian relationships,
+> parental relationships, and contributor relationships (multiple of each)."
+> — Michael W. Herman, 2026-10-03
+
+Applied in §7.6.1 "Relationship model":
+
+* Three independent relationship types, each many-to-many and each a first-class record
+  with its own lifecycle (contributor: an event, fixed at reproduction; parental: enduring,
+  ended only by recorded relinquishment; guardian: authority that expires, is revoked or is
+  transferred).
+* An entity holding two types has two separate records; ending one never ends the other.
+* Later transfers (forward, lateral, reverse, deferred inheritance) are transfer edges,
+  never new contributor relationships.
+* Relationship records live in the offspring's `person.db`, mirrored in the counterpart's
+  `person.db` when the counterpart is a digital person.
+
+### C.6 Decision for now: keep all three relationships for each offspring
+
+> "Keep the 3 relationships for each offspring for now. ... We may later change the design
+> or update the paper TBD (Backlog)."
+> — Michael W. Herman, 2026-10-03
+
+**The design keeps three distinct relationship types for every offspring**, exactly as in
+C.5 and §7.6.1:
+
+| Relationship | Per offspring | Nature |
+|---|---|---|
+| **Contributor** | 1..n (at least 1 genetic) | event at reproduction; fixed history |
+| **Parental** | 0..n | enduring responsibility; no authority by itself |
+| **Guardian** | 1..n while below Young Adult; 0..n after | authority, as permission grants that expire, are revoked or are transferred |
+
+* The three are **separate records with separate lifecycles**. They never merge, and none
+  implies another. One entity holding two or three of them has two or three records.
+* **Unchanged for now:** the convenience default by which a parent also receives a
+  separate, declinable guardian relationship (C.4). It still produces two records, so the
+  three-relationship model holds either way.
+* **This is the current modeling position, not a final one.** Whether the design changes
+  (for example dropping the parent → guardian default, or merging or splitting
+  relationship types) or the book is updated to match is **TBD**, and tracked as backlog
+  item **BL-11** (§20).
+
+### C.7 Moved to the backlog (BL-11)
+
+* **The parent → guardian default.** Keep it, or have guardian relationships exist only
+  when someone is explicitly named? The book treats parent and guardian as alternatives and
+  never links them (C.4).
+* **Book wording.** Whether to revise P4 §14.6 in v0.60, which reads as defining parenthood
+  as a contribution relation (C.2).
+* **Design vs. paper alignment.** Whether the three-relationship model in the design, or
+  the book's text, should change so the two match. This includes whether "co-parent"
+  (Lucy's superprompt only) and "custodian" (P4 §7, undefined) should become defined
+  terms.
+
+---
+
+## Appendix D. Operator decisions log
+
+The operator's decisions, verbatim, with where each one is applied. The first decision (every trait is heritable; the Recombination Optimizer selects) is recorded in Appendix A.7.
+
+### D.1 Second batch: answers to the open questions (2026-10-03)
 
 | # | Operator's answer | Applied in |
 |---|---|---|
@@ -1994,5 +2681,27 @@ The operator's answers to the open questions, verbatim, with where each one is a
 | Q6 | Raquel builds her documented knowledge with `web_fetch` "as an initial knowledge database followed by an annual refresh on October 1 of each year." | §10.2.1 (`/knowledge build`, `/knowledge refresh`, October 1 schedule) |
 | Q2 | Embodiment and reproductive-function sections heritable: "Yes, same for both..even if one is more complete than the other." | §10.0 (shared loci; incompleteness is not ineligibility), Appendix A.7 |
 
-**Still open:** Q5 confirmation; Q7 for offspring (whether at least one parent is
-required, and who parents and guards the first offspring).
+### D.2 Third batch: answers to Appendix B.4
+
+| # | Operator's answer | Applied in |
+|---|---|---|
+| B.4-1 Deleting memories | "backlog this" | §20 BL-1 |
+| B.4-2 People's say over memories of them | "backlog this" | §20 BL-2 |
+| B.4-3 Automatic session records | "yes, there should be session records/bookmarks recorded in the person's databases. This needs to be kept completely separate from the current context and session /save and /load functionality. Their implementations will remain untouched." | §6.3.4 |
+| B.4-4 Corrections | "As a Principle, we need to do what the brain and a person's long term memory would do. The entire correction event should be recorded like any other experience. How corrections should be processed on recall is an open question (at least for now). We can't guess at how the brain and memory operates unless there is supporting scientific evidence." | §1.2 principle 1, §6.3.5, §20 BL-3 |
+| B.4-5 Identity | "We'll leverage the DID library from the sibling SVRN7 solution. did:drn:digitomicevolution.svrn7.net/person/1.0/<guid>", plus "To use the DID library from SVRN7, some SVRN7 refactoring may be appropriate" | §6.1, §10.4, §10.4.1, §20 BL-9 |
+| B.4-6 Notation | "backlog it. my preference is to avoid making the superprompts more technical than necessary" | §1.2 principle 2, §20 BL-4 |
+| B.4-7 Prompt wording | "The superprompt for a specific person should remain relatively stable. If there are memory-specific text in a superprompt, backlog it and we'll decide where it should live: superprompt or a database. Unrelated, this suggests that all digital people can/might/should share common 'global' superprompt text general but specific to Digitomic Evolution. Backlog this." | §1.2 principle 2, §20 BL-5, BL-6 |
+| B.4-8 Importing the early transcripts | "Backlog this" | §20 BL-7 |
+
+**Still open:**
+
+* ~~Q5~~ resolved: interim design on LiteDB 5.0.21, shaped for an eventual move to 6.0 (§5.3.2–5.3.3).
+* Q7 for offspring: whether at least one parent is required, and who parents and guards
+  the first offspring.
+
+### D.3 Relationship model
+
+| Operator's statement | Applied in |
+|---|---|
+| "For modeling purposes, let's assume an offspring can have guardian relationships, parental relationships, and contributor relationships (multiple of each)." | §7.6.1 "Relationship model": three independent, many-to-many relationship types, each a first-class record with its own lifecycle. Full discussion: Appendix C. |
