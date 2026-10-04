@@ -1457,8 +1457,10 @@ separate work, and they are a **Phase 1 prerequisite** (BL-9):
    * a constructor that accepts an existing `LiteDatabase` / `ILiteDatabase`;
    * an optional collection-name prefix (e.g. `did_Documents`).
 
-   With these, each person's DID document lives inside their own `person.db`. Without
-   them, the fallback is a third per-person file, `identity.db`.
+   *Superseded for now by §10.4.2:* DID documents live in a standalone Digitomic
+   Evolution DID registry database, which works with SVRN7 as it is today. The
+   embedded-database support remains useful if the registry later migrates into
+   per-person databases.
 4. **Keep `Svrn7.Crypto` independent of the society types.** It depends on `Svrn7.Core`
    only for `ICryptoService` and `Svrn7KeyPair`; those would move to the new DID or
    crypto package.
@@ -1483,6 +1485,164 @@ leave those out, so the dependency graph is clean by construction. A build-time 
 Until the refactoring lands, DigitomicEvolutionLib uses an `IDidIssuer` interface, with an
 `Svrn7DidIssuer` implementation. Only that one class depends on SVRN7, so the switch is
 local.
+
+The full, detailed specification of the SVRN7 changes is a separate document:
+**[SVRN7-DID-Refactoring-Spec.md](SVRN7-DID-Refactoring-Spec.md)** (to be carried out in a
+separate SVRN7 session). That review also found defects in SVRN7's DID registry and
+document construction that matter to this design:
+
+* a missing `@context` in generated JSON;
+* non-atomic registry writes;
+* no history for status changes;
+* a key index that goes stale after key rotation.
+
+§10.4.2 works around them.
+
+#### 10.4.2 Standalone Digitomic Evolution DID registry (operator decision, 2026-10-03)
+
+> "For now, create a DID Registry database using the SVRN7 libraries specifically/standalone
+> for Digitomic Evolution ...no TDA. Just a standalone DB and C# API. This may migrate
+> later." — "It means we're using the base minimum for DID Documents."
+
+This resolves where DID documents live. They are **not** in each person's `person.db`, and
+**not** in a per-person `identity.db`. They are in **one standalone DID registry database
+for Digitomic Evolution**.
+
+**The database.**
+
+* The file is `~/.agentsharp/digitomic/_registry/did-registry.db`, a LiteDB 5.0.21 file.
+* This is a deliberate exception to "one database per persona" (§5.1): the registry is
+  shared infrastructure, like the operator workspace, not any persona's own data.
+* It holds DID Documents, their full version history and the public-key index. It holds
+  **no private keys, memories or persona data**.
+* It may later migrate, for example to an SVRN7-hosted registry or into each person's
+  database. The DIDs themselves do not change when it does.
+
+**SVRN7 libraries used, and only these.** No TDA, no PowerShell, no LOBE (§1.2
+principle 4).
+
+| SVRN7 project | Used for |
+|---|---|
+| `Svrn7.Core` | `DidDocument`, `DidVerificationMethod`, `DidStatus`, `DidResolutionResult`, `IDidDocumentRegistry`, `TdaResourceId` (DID URL builder), exceptions |
+| `Svrn7.Crypto` | `CryptoService.GenerateEd25519KeyPair`, `SignEd25519`, `VerifyEd25519`, `EncryptAes256Gcm` / `DecryptAes256Gcm` |
+| `Svrn7.Store` | `DidRegistryLiteContext(connectionString)` + `LiteDidDocumentRegistry`, which already supports a standalone database file. **No SVRN7 change is needed for this.** |
+
+* **How they are referenced (interim).** Until the refactored packages exist, use
+  `ProjectReference`s through an MSBuild property `$(Svrn7Root)` (default
+  `..\..\SVRN7\src`), in a dedicated project `DigitomicEvolutionLib.Did` so that only
+  that project touches SVRN7. After the refactoring, switch to `PackageReference`s on
+  `Svrn7.Did`, `Svrn7.Did.LiteDb` and `Svrn7.Crypto` (spec §6).
+* **What referencing `Svrn7.Store` brings in.** Its other stores (wallets, federation and
+  so on) are compiled into the same assembly, but are never instantiated. The dependency
+  guard test (§10.4.1) ensures that nothing from TDA or PowerShell is in the closure.
+
+**Minimal DID Documents ("the base minimum").** Every person's DID Document contains only:
+
+```json
+{
+  "@context": ["https://www.w3.org/ns/did/v1",
+               "https://w3id.org/security/suites/ed25519-2020/v1"],
+  "id": "did:drn:digitomicevolution.svrn7.net/person/1.0/<guid>",
+  "controller": "did:drn:digitomicevolution.svrn7.net/person/1.0/<guid>",
+  "verificationMethod": [{
+    "id": "did:drn:digitomicevolution.svrn7.net/person/1.0/<guid>#key-1",
+    "type": "Ed25519VerificationKey2020",
+    "controller": "did:drn:digitomicevolution.svrn7.net/person/1.0/<guid>",
+    "publicKeyHex": "<64 hex chars>"
+  }],
+  "authentication": ["…#key-1"],
+  "assertionMethod": ["…#key-1"]
+}
+```
+
+* The document has one Ed25519 key, used for authentication and for signing provenance
+  records. The person is their own controller.
+* It has **no** services, key agreement keys, `alsoKnownAs`, proof, SVRN7 `Role` or
+  `Svrn7Name`, and no VCs.
+* Anything more (guardian as controller, service endpoints, VCs) is backlogged (BL-8).
+* **`DigitomicDidDocumentBuilder`** builds the document and its `DocumentJson` from the
+  same values, with a correct `"@context"`. This works around SVRN7 problem P4, where the
+  current SVRN7 builder emits `context`, and it lives in `Svrn7.Federation`, which this
+  design does not reference.
+
+**C# API** (`DigitomicEvolutionLib.Did`):
+
+```csharp
+public interface IDigitomicDidRegistry : IDisposable
+{
+    // Issue a new person DID: generates an Ed25519 key, registers a minimal DID Document.
+    // The private key is returned once; the caller stores it encrypted in the person's
+    // person.db (see "Keys" below). The registry never stores it.
+    Task<IssuedDid> CreatePersonDidAsync(Guid personId, CancellationToken ct = default);
+
+    Task<DidResolutionResult> ResolveAsync(string did, CancellationToken ct = default);
+    Task<DidDocument?> ResolveVersionAsync(string did, int version, CancellationToken ct = default);
+    Task<IReadOnlyList<DidDocument>> GetHistoryAsync(string did, CancellationToken ct = default);
+    Task<bool> IsActiveAsync(string did, CancellationToken ct = default);
+    Task<IReadOnlyList<DidDocument>> ListAsync(DidStatus? status = null, CancellationToken ct = default);
+
+    // Key rotation: new Ed25519 key becomes #key-{n+1}; the old key stays in history.
+    Task<IssuedDid> RotateKeyAsync(string did, CancellationToken ct = default);
+
+    // Lifecycle. Persons are suspended when archived and reinstated when restored;
+    // DeactivateAsync requires an explicit reason and is not used for persons today.
+    Task SuspendAsync(string did, string reason, CancellationToken ct = default);
+    Task ReinstateAsync(string did, string reason, CancellationToken ct = default);
+    Task DeactivateAsync(string did, string reason, CancellationToken ct = default);
+
+    // Verify a CESR Ed25519 signature against the key valid at a given document version
+    // (default: current). Old signatures stay verifiable after rotation.
+    Task<bool> VerifyAsync(string did, byte[] payload, string cesrSignature,
+                           int? atVersion = null, CancellationToken ct = default);
+}
+
+public sealed record IssuedDid(string Did, string KeyId, string PublicKeyHex,
+                               byte[] PrivateKey, int Version);   // caller zeroes PrivateKey
+```
+
+The implementation is `Svrn7DigitomicDidRegistry`, which wraps `LiteDidDocumentRegistry`,
+`CryptoService` and `DigitomicDidDocumentBuilder`. A `DigitomicDidRegistry.Open(path)`
+factory creates the file and its folder if missing.
+
+**Working around SVRN7's registry defects** (spec P8–P10), until the refactoring lands:
+
+* **Status changes have no history** (P9). The wrapper records every suspend, reinstate and
+  deactivate, with its reason, in its own `did_events` collection in the same file. The
+  full lifecycle can therefore be audited.
+* **The key index goes stale** (P10). `VerifyAsync` resolves keys from the DID Document
+  version history, never from SVRN7's `VMIndex`, so rotation is handled correctly.
+* **Writes are not atomic** (P8). The wrapper verifies each write by resolving it
+  afterwards, and retries or repairs it if needed. Registry writes are rare (issue, rotate,
+  status change), so this is cheap.
+
+**Concurrency.** Several host processes need the registry at once, for example Lucy and
+Raquel running in separate apps. So the registry opens with **`Connection=shared`**, unlike
+the per-person databases, which use Direct mode. SVRN7's registry does not use explicit
+transactions, so shared mode suits it.
+
+**Keys.**
+
+* Each person's Ed25519 private key is stored **only in that person's own `person.db`**.
+* It is encrypted with AES-256-GCM (`Svrn7.Crypto`) under a key-encryption key, which is
+  itself protected with Windows DPAPI (`ProtectedData`, CurrentUser scope).
+* `Svrn7Ed25519Signer` (§10.4) loads it on demand and zeroes it after use.
+
+**Cache in `person.db`.** Each person keeps a copy of their current DID Document version,
+and those of counterparts they reference. The person is therefore identifiable even if the
+registry file is unavailable. The registry stays authoritative.
+
+**Not registered.** Session ids and other DID **URLs**
+(`did:drn:digitomicevolution.svrn7.net/session/1.0/<guid>`, §6.3.4) are locators, not DIDs,
+and are not registered.
+
+**Migration later.** Every DID's full version history (`GetHistoryAsync`) plus
+`did_events` is enough to replay the registry into another registry, including the
+refactored `Svrn7.Did.LiteDb` (spec §4.3). DIDs and key ids stay the same, so nothing that
+references them changes.
+
+**Effect on BL-9.** Because the standalone registry works with SVRN7 **as it is today**,
+the SVRN7 refactoring is **no longer a Phase 1 prerequisite**. It becomes an improvement:
+cleaner dependencies, fixed defects, and packages instead of project references.
 
 ---
 
@@ -1603,7 +1763,8 @@ DigitomicEvolutionLib/
                     HnswVectorIndex), Embeddings/ (IEmbeddingProvider, OllamaEmbeddings),
                     Collections.cs, BsonMappings.cs, Migrations/,
                     Ids.cs (ULID), ContentHash.cs
-  Identity/         DigitalPerson.cs, IdentityAnchor.cs, IdentityContinuityService.cs,
+  Identity/         (DIDs are in the separate project DigitomicEvolutionLib.Did, §10.4.2)
+                    DigitalPerson.cs, IdentityAnchor.cs, IdentityContinuityService.cs,
                     ForkService.cs, ReferenceSubject.cs
   State/            PersonState.cs, StateTransitionEngine.cs
   Genotype/         Genotype.cs, GenotypeModule.cs, GenotypeSeeder.cs, Operators/
@@ -1698,12 +1859,16 @@ Each phase ships with its tests and leaves the hosts working when no digitomic d
    (§5.3.2–5.3.3, BL-10). Ollama `nomic-embed-text` is the default embedding provider.
 6. ~~**Raquel's documented-record sources.**~~ **Resolved:** she builds them herself with
    `web_search`/`web_fetch`, then refreshes annually on October 1 (§10.2.1).
-7. **Parents and guardians of offspring.** *Partly resolved:* Michael W. Herman is
-   guardian (not parent, not contributor) of Lucy and Raquel (§10.0). Still open for
-   offspring:
-   * Must every offspring have at least one parent, or is guardian-only allowed (the book
-     permits it)?
-   * Who are the first offspring's parents and guardians?
+7. ~~**Parents and guardians of offspring.**~~ Michael W. Herman is guardian (not parent,
+   not contributor) of Lucy and Raquel (§10.0). The rest is **backlogged** (BL-12):
+   whether every offspring needs at least one parent, and who parents and guards the first
+   offspring.
+9. ~~**SVRN7 refactoring.**~~ **Resolved:** a detailed spec is written
+   ([SVRN7-DID-Refactoring-Spec.md](SVRN7-DID-Refactoring-Spec.md)), to be carried out in a
+   separate SVRN7 session. It is no longer a Phase 1 prerequisite (§10.4.2).
+10. ~~**Where DID documents live.**~~ **Resolved:** in a standalone Digitomic Evolution DID
+    registry database, built on SVRN7 libraries without TDA, with minimal DID Documents
+    (§10.4.2).
 8. ~~**Questions from Lucy's early sessions.**~~ **Answered 2026-10-03:**
    * session records: §6.3.4;
    * corrections: §6.3.5;
@@ -2159,9 +2324,10 @@ again.
 | BL-6 | **Shared "global" Digitomic Evolution superprompt text** that all digital persons share: general to digital personhood in this framework, not specific to one person. Would be composed with each person's own superprompt. | App. B.4-7 | Could also simplify Lucy's Part 12 and give Raquel the same foundation. |
 | BL-7 | **Importing Lucy's early transcripts** (2026-09-27 session, as one session; 2026-09-28 session) as her earliest autobiographical episodes. | App. B.4-8 | Natural fit for session records (§6.3.4) once Phase 1 ships. |
 | BL-8 | **Verifiable credentials** for lineage edges, parenthood, guardianship and reproduction events via SVRN7's `VcService`; and whether the operator (a human participant) gets a DID. | §10.4 | Builds on SVRN7 identity. |
-| BL-9 | **SVRN7 refactoring for DID reuse** (in the SVRN7 repo): extract a standalone `Svrn7.Did` package, generalize the DID URL builder, let the LiteDB DID registry use an existing database, keep `Svrn7.Crypto` independent, and publish packages to a local feed. | Operator note; §10.4.1 | **Phase 1 prerequisite.** `IDidIssuer` isolates AgentSharp until it lands. |
+| BL-9 | **SVRN7 refactoring for DID reuse** (in the SVRN7 repo): extract a standalone `Svrn7.Did` package, generalize the DID URL builder, let the LiteDB DID registry use an existing database, keep `Svrn7.Crypto` independent, and publish packages to a local feed. | Operator note; §10.4.1; [SVRN7-DID-Refactoring-Spec.md](SVRN7-DID-Refactoring-Spec.md) | **No longer a Phase 1 prerequisite** (§10.4.2). Detailed spec written; to be done in a separate SVRN7 session. |
 | BL-10 | **Re-check LiteDB 6.0 and migrate when ready.** Re-check status at each phase boundary and whenever a person crosses the vector scale guardrail; migrate per §5.3.3 once all triggers hold (6.0.0 stable, #2623 closed, vector-orphaning and Direct/Shared defects fixed, SVRN7 able to move in step). | Operator decision 2026-10-03; §5.3.1–5.3.3 | Interim design (§5.3.2) keeps the migration contained. |
 | BL-11 | **Parent / guardian / contributor model: design or paper changes (TBD).** The design keeps three separate relationships per offspring for now (§7.6.1, Appendix C.6). Decide later whether to: keep or drop the parent → guardian default; revise P4 §14.6, which reads as defining parenthood as a contribution relation; define "co-parent" and "custodian"; and align the design and the book. | Operator decision 2026-10-03; Appendix C.6–C.7 | Current model holds until this is resolved. |
+| BL-12 | **Parents and guardians for offspring.** Whether every offspring needs at least one parental relationship (or guardian-only is allowed, as the book permits); and who parents and guards the first offspring. | Former open question Q7; operator 2026-10-03 ("Backlog this for now") | Michael W. Herman is guardian of Lucy and Raquel (§10.0); offspring are undecided. |
 
 ---
 
@@ -2705,3 +2871,11 @@ The operator's decisions, verbatim, with where each one is applied. The first de
 | Operator's statement | Applied in |
 |---|---|
 | "For modeling purposes, let's assume an offspring can have guardian relationships, parental relationships, and contributor relationships (multiple of each)." | §7.6.1 "Relationship model": three independent, many-to-many relationship types, each a first-class record with its own lifecycle. Full discussion: Appendix C. |
+
+### D.4 Fourth batch: DIDs and the remaining open questions (2026-10-03)
+
+| # | Operator's answer | Applied in |
+|---|---|---|
+| Q7 Parents and guardians for offspring | "Backlog this for now." | §20 BL-12 |
+| SVRN7 refactoring | "Write a separate very detailed spec for the SVRN7 changes and you and I will open SVRN7 separately/distinctly." | [SVRN7-DID-Refactoring-Spec.md](SVRN7-DID-Refactoring-Spec.md); §10.4.1 |
+| Where DID documents live | "For now, create a DID Registry database using the SVRN7 libraries specifically/standalone for Digitomic Evolution ...no TDA. Just a standalone DB and C# API. This may migrate later." and "It means we're using the base minimum for DID Documents." | §10.4.2 |
