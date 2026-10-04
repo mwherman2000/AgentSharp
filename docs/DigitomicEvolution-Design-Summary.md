@@ -118,7 +118,19 @@ requirements (§1.1, Appendix B). Examples:
 ```
 
 * **History is never edited.** Corrections, revocations, rollbacks and transfers are new
-  events. Provenance records are hash-chained and signed with the person's DID key.
+  events. Memory content is immutable: a revision is a new version.
+* **Provenance follows W3C PROV-DM's model** (not its formats; §6.4, Appendix E):
+  * every state-changing operation is one **activity**, with a DID URL
+    (`did:drn:digitomicevolution.svrn7.net/activity/1.0/<guid>`), its exact input and
+    output versions, and its agents with roles (source, recorder, processor, the LLM as
+    `Model`, selector, authorizer, assenter);
+  * activities are hash-chained per database and signed with the responsible agent's DID
+    key;
+  * a `ProvenanceValidator` enforces structural, temporal, role and DE-specific rules
+    (R1–R12) on every write;
+  * unknown origins are recorded as unknown, never invented;
+  * redaction is modeled as invalidation, keeping a tombstone;
+  * attestations record who vouches for a record.
 * **Operations that span persons** (reproduction, transfers) run as an intent-logged saga
   with a single commit point and crash recovery, because LiteDB has no transactions across
   files.
@@ -176,7 +188,8 @@ optimizer's similarity measures.
 ### 5.3 Long-term memory (§6.3)
 
 * **Memory classes:** Autobiographical, Inherited, Semantic, Procedural, Relational, Meta.
-  Every memory carries provenance and confidence.
+  Every memory version is immutable and names the activity that generated it. Confidence
+  and importance changes are separate assessment records.
 * **Written by the person through tools:**
   * `journal`, the only way autobiographical memory is created;
   * `remember`, `recall` and `revise_memory` (which revises, never edits);
@@ -431,7 +444,7 @@ Empirical propositions are supported by the experiment registry rather than asse
 
 | Id | Item |
 |---|---|
-| BL-1 | Deleting or redacting memories (tension with append-only history) |
+| BL-1 | Deleting or redacting memories (mechanism defined via invalidation; who may redact is open) |
 | BL-2 | People's say over what a persona remembers about them |
 | BL-3 | Evidence review of memory mechanisms, including how corrections are recalled |
 | BL-4 | Notation in superprompts (keep them non-technical) |
@@ -443,6 +456,7 @@ Empirical propositions are supported by the experiment registry rather than asse
 | BL-10 | Re-check LiteDB 6.0 and migrate when ready |
 | BL-11 | Parent / guardian / contributor model: design or book changes |
 | BL-12 | Parents and guardians for offspring (whether a parent is required; who for the first) |
+| BL-13 | PROV-JSON export of the provenance history |
 
 ---
 
@@ -454,6 +468,7 @@ Empirical propositions are supported by the experiment registry rather than asse
 | Every book construct mapped to a component | §2 |
 | Persistence, sagas, vector search, LiteDB 6 plan | §5 |
 | Identity, genotype, memory, session records, development | §6 |
+| Provenance: activities, versions, agent roles, validator, redaction, attestation | §6.4 |
 | Heredity, reproduction, participants, lineage | §7 |
 | Governance and safety | §8 |
 | Founders, Raquel's knowledge base, reference subjects, DIDs | §10 |
@@ -466,3 +481,4 @@ Empirical propositions are supported by the experiment registry rather than asse
 | Appendix B: lessons from Lucy's early sessions; corrections | |
 | Appendix C: parents, guardians and contributors | |
 | Appendix D: operator decisions log | |
+| Appendix E: W3C PROV review of the provenance design | |

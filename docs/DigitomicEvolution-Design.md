@@ -99,19 +99,19 @@ book's Appendix A.
 | Digitomic unit, digital person (P0 §3) | `DigitalPerson` aggregate | `persons` |
 | Identity anchor I; I_o ≠ I_i (P1 §7, P4 §6) | `IdentityAnchor` (immutable id + DID-style URI) | `persons` |
 | Person-state S_t (P1 §7) | `PersonState` snapshot (I, G_t ref, K, M, Exp, Val, Rel, Agency, Cap) | `person_states` |
-| F_state transition (P1 §7) | `StateTransitionEngine`: one recorded transition per state-changing tool call, with typed inputs (Input, Learn, Develop, Adapt, Govern) | `state_transitions` |
+| F_state transition (P1 §7) | An `Activity` of kind `StateTransition`, one per state-changing tool call, with typed inputs (Input, Learn, Develop, Adapt, Govern) (§6.4) | `activities` |
 | Genotype G = (I_g, C_arch, Q_cog, D_dev, M_h, K_h, Val_h, R_ρ, P_cap, H_prov) (P2 §3) | `Genotype` + typed `GenotypeModule`s | `genotypes`, `genotype_modules` |
 | Phenotype P_t = Φ_dev(G, Env, Hist, Δ_dev) (P2 §4, P3 §3) | `PhenotypeExpressor` → system-prompt sections + runtime config | `phenotype_observations` |
 | Developmental potential Ω_G; P_cap (P2 §4.1) | `CapabilityGraph` (capabilities, prerequisites, ceilings) | `capability_defs` |
 | Hereditary boundary; Adm(G_candidate; σ, Π) (P2 §5, §10) | `HereditaryBoundary` schema + `AdmissionService` | `boundary_schemas`, `admissions` |
-| Mutation μ, μ_dev; G′ (P2 §7, P3) | `IGenotypeOperator` (stochastic, rule-based, search-guided, authored) | `genotype_events` |
+| Mutation μ, μ_dev; G′ (P2 §7, P3) | `IGenotypeOperator` (stochastic, rule-based, search-guided, authored) | `activities` (kind `GenotypeMutation`) |
 | Recombination ℛ(Contrib_1..n; θ, ε_var) (P2 §7.1, P4 §4) | `IRecombinationOperator` + `RecombinationProtocol` (θ) | `reproduction_events` |
 | Directed/optimizing recombination (P1 §6.2–6.3, P1.9, P7 §3, §6) | **Recombination Optimizer (§19, MOCK)**: `IRecombinationOptimizer`, `RecombinationPolicy`, `RecombinationPlan` | `recombination_policies`, `recombination_plans` |
 | Contribution package Contrib_i (P4 §3) | `ContributionPackage` | `contributions` |
 | Offspring initialization S_o(t_0) = Init(G_off, Env_0, Δ_dev,0) (P4 §12) | `OffspringInitializer` | `persons`, `person_states` |
 | Parenthood, ancestry, guardianship (P1 §8, P4 §7) | Typed `LineageEdge`s plus `GuardianshipGrant` | `lineage_edges`, `guardianships` |
 | Lineage graph L_t = (N_t, E_r, E_a, E_g, E_d, E_f, E_l, E_rev) (P4 §11, P8 §8) | `LineageGraph` (node = identity@version) | `lineage_nodes`, `lineage_edges` |
-| Provenance H_prov, Π, Π_rev (P1 §7.1, P2 §6, P8 §4) | `ProvenanceRecord` + hash-chained `ProvenanceLedger` | `provenance` |
+| Provenance H_prov, Π, Π_rev (P1 §7.1, P2 §6, P8 §4) | PROV-DM-based model: `Activity`, versioned entities, `AgentRole`s, a hash-chained `ProvenanceLedger` over activities, and a `ProvenanceValidator` (§6.4) | `activities`, `memory_assessments`, `attestations` |
 | Memory classes (P3 §9): inherited, autobiographical, semantic, procedural, relational, meta | `MemoryRecord` with `MemoryClass` | `memories` |
 | Inheritance classes (P1 §3.1): genotypic, knowledge, understanding, wisdom, experiential, memory, skill, values, cultural | `InheritanceClass` enum on modules and contributions | (field) |
 | Developmental stages and thresholds (P1 §5.1, P3 §4) | `DevelopmentEngine` + `StageDefinition`s | `development_status`, `stage_defs` |
@@ -250,6 +250,10 @@ and therefore several database files. LiteDB has no transactions across files, s
 operations use a **saga with an intent log**:
 
 1. **Intent.** The operation is written to `_operator/operator.db` as `Intent{Id, Steps[],
+   Status=Open}`. **The intent id is the id of the cross-person activity it records**
+   (§6.4.1), for example a `Reproduction` or `Transfer` activity. The same activity is
+   written, with the same id and hash, into every participant's `person.db`. This is
+   PROV's "bundle" idea applied to the per-persona databases. Formerly: `Intent{Id, Steps[],
    Status=Open}` before anything else.
 2. **Prepare.** Each participant's database receives its side as `Pending` records keyed
    by the intent id. Examples: a contributor's outgoing contribution record, or a
@@ -308,12 +312,11 @@ and are readable in logs. All documents carry `CreatedUtc` and `SchemaVersion`.
 |---|---|---|---|
 | `persons` | append + status updates | `Key` (unique), `Status`, `Generation` | identity anchor, display name, persona key, status (Active, Dormant, Archived) |
 | `person_states` | **append-only** | `PersonId+T` | S_t snapshots (§6.1) |
-| `state_transitions` | append-only | `PersonId+T` | F_state input record per step |
+| `activities` | **append-only, hash-chained** | `Kind`, `StartedUtc`, `Used[]` (multikey), `Generated[]` (multikey), `Agents[].AgentId` (multikey) | the single event spine (§6.4.1): F_state transitions, memory operations, genotype events, admissions, reproduction, transfers, consents, redactions |
 | `genotypes` | append-only (versioned) | `PersonId+Version`, `GenotypeId` | G tuple header; modules by reference |
 | `genotype_modules` | append-only, content-addressed | `Hash` (unique), `Component`, `InheritanceClass` | each module is one "gene" |
-| `genotype_events` | append-only | `PersonId`, `Kind` | μ, μ_dev, heritable modifications |
-| `memories` | append + revision records | `PersonId+Class`, `Keywords` (multikey), `ImportanceDecay` | long-term memory (§6.3) |
-| `memory_revisions` | append-only | `MemoryId` | contrary evidence, confidence changes (P2 §6.2) |
+| ~~`genotype_events`~~ | — | — | replaced by `activities` of kind `GenotypeMutation`, `HeritableModification` (§6.4.1) |
+| `memories` | **immutable, versioned** (`Id+Version` unique) | `PersonId+Class`, `Keywords` (multikey), `RevisionOf`, `GeneratedBy` | long-term memory (§6.3); a revision is a new version (§6.4.2) |
 | `knowledge` | append + revision | `PersonId+Kind`, `Keywords` | semantic facts, including documented-record items with sources |
 | `relationships` | update-in-place, history kept | `PersonId+CounterpartId` | Rel_t |
 | `self_models` | append-only | `PersonId+T` | self-description for SC_t |
@@ -323,12 +326,13 @@ and are readable in logs. All documents carry `CreatedUtc` and `SchemaVersion`.
 | `contributions` | append-only | `ReproductionEventId`, `ContributorId` | Contrib_i |
 | `admissions` | append-only | `ReproductionEventId` | per-component admit or reject with reason and selector |
 | `reproduction_requests` | append-only (participant states as events) | `Status`, `ParticipantId` | participants, roles, per-role consents (§7.6.1) |
-| `reproduction_events` | append-only | `OffspringId` | full ℛ/Adm/Init record |
+| `reproduction_events` | append-only | `OffspringId` | full ℛ/Adm/Init detail record, generated by the `Reproduction` activity (§6.4.1) |
 | `lineage_nodes`, `lineage_edges` | append-only | `From`, `To`, `EdgeType`, `T` | L_t (§7.7) |
 | `transfers` | append-only (state machine as events) | `RecipientId`, `Direction`, `Status` | T_rev, lateral, forward |
 | `snapshots` | append-only | `PersonId+T` | signed pre-change state (P8 §12.7) |
 | `continuity_assessments` | append-only | `PersonId` | IC_vec, IC_score, τ_IC |
-| `provenance` | **append-only, hash-chained** | `SubjectId`, `Seq` | ledger (§6.4) |
+| `memory_assessments` | append-only | `MemoryId+Version`, `Kind` | confidence and importance changes, each generated by an activity (§6.4.2) |
+| `attestations` | append-only | `SubjectId` | who vouches for a record or history, and how (§6.4.6) |
 | `populations`, `generations`, `fitness_evaluations` | append-only | `PopulationId+Gen` | P5 |
 | `compat_trials`, `species_hypotheses` | append-only | `PopA+PopB` | P6 |
 | `de_runs`, `interventions` | append-only | `RunId` | P7 |
@@ -337,15 +341,17 @@ and are readable in logs. All documents carry `CreatedUtc` and `SchemaVersion`.
 
 **Which database holds each collection** (§5.1):
 
-* **`memory.db`** (per person): `memories`, `memory_revisions`, `knowledge`, and the
-  vector data.
+* **`memory.db`** (per person): `memories` (immutable, versioned), `memory_assessments`,
+  `knowledge`, and the vector data. Memory operations are recorded as activities in
+  `person.db` (§6.4.1).
 * **`person.db`** (per person): `persons` (the single self record, plus cached stubs of
-  counterparts' anchors), `person_states`, `state_transitions`, `genotypes`,
-  `genotype_modules`, `genotype_events`, `relationships`, `self_models`,
-  `development_status`, `permissions`, `guardianships`, `consents`, `contributions`
+  counterparts' anchors), `person_states`, `genotypes`,
+  `genotype_modules`, `relationships`, `self_models`,
+  `development_status`, `permissions`, `guardianships`, `consents`, `activities`,
+  `attestations`, `contributions`
   (outgoing), `admissions`, `reproduction_events` (in the offspring's file),
   `lineage_edges` (the edges touching this person), `transfers`, `snapshots`,
-  `continuity_assessments`, `provenance`, `recombination_plans` (in the offspring's file),
+  `continuity_assessments`, `recombination_plans` (in the offspring's file),
   `fitness_evaluations`, and `meta`.
 * **`_operator/operator.db`**: `reproduction_requests` (in flight), `intents`,
   `recombination_policies`, `populations`, `generations`, `compat_trials`,
@@ -561,8 +567,8 @@ S_t stores *digests and references* (counts, hashes, ids), not copies of every m
 snapshots stay small and the state can be reconstructed from collections at any T.
 
 **F_state.** Transitions are recorded by the **tools** that cause them, not by the loop.
-Every state-changing digitomic tool call appends one `StateTransition` record whose fields
-are the book's arguments. `Input_t` is the triggering tool call and its episode. `Learn_t`
+Every state-changing digitomic tool call appends one **activity** of kind
+`StateTransition` (§6.4.1), whose fields are the book's arguments. `Input_t` is the triggering tool call and its episode. `Learn_t`
 is memories and knowledge written. `Develop_t` is stage and permission changes. `Adapt_t`
 is runtime config changes. `Govern_t` is authorizations used. The `journal` tool (§6.3.1)
 closes an observation step with a fresh S_t snapshot. Together these give the replayable
@@ -599,7 +605,7 @@ public sealed class GenotypeModule              // one "gene", content-addressed
     public string Title { get; init; }            // e.g. "CURIOSITY"
     public string Body { get; init; }             // prompt text / JSON spec (or FileStorage id)
     public string OriginPersonId { get; init; }
-    public string ProvenanceId { get; init; }
+    public string GeneratedBy { get; init; }     // activity DID URL that created it (§6.4.1)
 }
 ```
 
@@ -627,24 +633,28 @@ public enum MemoryClass                      // P3 §9 table
 public enum ExperientialStatus               // P1 §7.1, P2 §6
 { DirectlyExperienced, Inferred, ExternallyObtained, Inherited, Documented, Interpretive }
 
-public sealed class MemoryRecord
+public sealed record MemoryRecord              // IMMUTABLE once written (§6.4.2)
 {
-    public string Id { get; init; }
+    public string Id { get; init; }               // stable across versions
+    public int Version { get; init; }             // 1, 2, …; a revision is a new version
+    public string ContentHash { get; init; }      // SHA-256 of the canonical content fields
+    public string? RevisionOf { get; init; }      // "memId@v" of the previous version, if any
     public string PersonId { get; init; }
     public MemoryClass Class { get; init; }
     public ExperientialStatus Status { get; init; }
     public string Content { get; init; }          // written to read well out of context
     public string[] Keywords { get; init; }
-    public float Importance { get; set; }         // 0..1, set at capture, adjusted on recall
-    public float Confidence { get; set; }         // revisable (P2 §6.2)
+    public float InitialImportance { get; init; } // 0..1 at capture; later changes are assessments
+    public float InitialConfidence { get; init; } // at capture; later changes are assessments
     public DateTime EventUtc { get; init; }       // original event time
     public string? EpisodeId { get; init; }       // groups a conversation
     public string? CounterpartId { get; init; }   // relational memories
-    public string ProvenanceId { get; init; }     // source, generation, transformation, auth
+    public string GeneratedBy { get; init; }      // activity DID URL that created this version
     public string? InheritedFromPersonId { get; init; } // set iff Class == Inherited
-    public bool HeritableCandidate { get; set; }  // flagged for possible admission; NOT heritable
-    public float[]? Embedding { get; set; }
 }
+// Mutable-looking attributes are NOT stored on the record:
+//   current importance / confidence / HeritableCandidate → latest MemoryAssessment (§6.4.2)
+//   embedding → derived vector index (§5.3), rebuildable, not part of the memory's identity
 ```
 
 #### 6.3.1 Capture
@@ -676,8 +686,10 @@ public sealed class MemoryRecord
 
 Through the `consolidate_memory` tool (which the host's `/end` and `/consolidate` commands
 ask the person to call), related episodic memories are summarized into
-semantic or procedural memories. The output links back to its sources through a provenance
-`Transformation=Consolidated(from: […])`. Cold episodic memories are marked archived but
+semantic or procedural memories. A `Consolidation` activity records exactly which episode
+versions it `Used`, the agents (the person as `Source`, the consolidator and the LLM as
+`Processor` / `Model`), and the memory it `Generated`, which is `DerivedFrom` those
+versions (§6.4). Cold episodic memories are marked archived but
 never deleted.
 
 **Invariant.** `Inherited` memories are created only by `OffspringInitializer` or
@@ -737,32 +749,202 @@ memory that was wrong.
 "always in the prompt" or "never archived" (Appendix B.3) are not adopted, because there is
 not yet scientific evidence that human memory works that way.
 
-### 6.4 Provenance ledger
+### 6.4 Provenance: activities, versioned entities and agents (PROV-DM based)
+
+Adopted 2026-10-03 from a review against W3C PROV (Appendix E). The design takes **PROV's
+model and validation ideas**, not its RDF, PROV-O or PROV-N formats and not an
+interoperability layer. DE's memory classes, experiential statuses, confidence,
+authorization rules and hash chain remain DE's own choices. PROV organizes and validates the
+history around them. It does not decide what to retain, whether a source is trustworthy, or
+whether a recorded claim is true.
+
+The three PROV-DM concepts map onto DE as follows:
+
+| PROV-DM | In DE |
+|---|---|
+| **Entity** | an immutable, versioned record: a memory version, knowledge item, genotype module (already content-addressed), genotype version, session turn, document source, consent, assessment, plan |
+| **Activity** | an operation with a start, an end, inputs and outputs: capture, journal, consolidation, revision, assessment, inheritance, transfer, admission, reproduction, state transition, redaction, consent (§6.4.1) |
+| **Agent** | a person (digital or human), the host application, a service (consolidator, optimizer, validator), or a **model** (the LLM that performed a transformation) (§6.4.3) |
+
+#### 6.4.1 One activity spine (replaces several earlier event records)
+
+Every operation that changes durable state is recorded as **one `Activity`**. This
+*replaces*, rather than adds to:
+
+* the `StateTransition` records (F_state, §6.1), now activities of kind `StateTransition`;
+* the `Transformations` list formerly embedded in each provenance record;
+* `genotype_events`;
+* the steps of the transfer state machine (§11.5);
+* the saga intent id (§5.1.1), which is now the activity id.
+
+Domain detail that does not fit the common shape (an admission decision, a recombination
+plan, a transfer's evidence level) is stored as the activity's typed `Detail` payload, or as
+an entity the activity generated.
 
 ```csharp
-public sealed class ProvenanceRecord           // H_prov / Π / Π_rev
+public sealed record Activity
 {
-    public string Id { get; init; }
-    public long Seq { get; init; }               // global, gap-free
-    public string SubjectId { get; init; }       // memory/module/genotype/transfer id
-    public string SourcePersonId { get; init; }
-    public int Generation { get; init; }
-    public ContributionType Type { get; init; }
-    public string? OriginEvent { get; init; }    // episode/turn/reproduction id
-    public List<Transformation> Transformations { get; init; }
-    public float Confidence { get; init; }
-    public AuthorizationRef? Authorization { get; init; }
-    public ProvenanceStatus Status { get; init; } // Proposed|Admitted|Rejected|Revoked|RolledBack
-    public string? SelectedBy { get; init; }     // who chose it (Raquel's "whose values")
-    public string? SelectionRationale { get; init; }
+    public string Id { get; init; }               // DID URL:
+        // did:drn:digitomicevolution.svrn7.net/activity/1.0/<guid>
+    public ActivityKind Kind { get; init; }       // Capture, Journal, Consolidation, Revision,
+        // Assessment, Inheritance, Transfer, Admission, Selection, Reproduction,
+        // StateTransition, GenotypeMutation, HeritableModification, Consent,
+        // Redaction, Attestation, KnowledgeRefresh, …
+    public DateTime StartedUtc { get; init; }
+    public DateTime EndedUtc { get; init; }
+    public List<EntityRef> Used { get; init; }     // exact inputs: "id@version" or content hash
+    public List<EntityRef> Generated { get; init; }// exact outputs
+    public List<EntityRef> Invalidated { get; init; } // §6.4.5
+    public List<AgentRole> Agents { get; init; }   // §6.4.3
+    public string? InformedBy { get; init; }       // the activity that triggered this one
+    public string? SessionId { get; init; }        // session DID URL (§6.3.4), if any
+    public BsonDocument? Detail { get; init; }     // kind-specific payload
+    public long Seq { get; init; }                 // per-database, gap-free
     public string PrevHash { get; init; }
-    public string Hash { get; init; }            // SHA-256(PrevHash + canonical JSON)
-    public string? Signature { get; init; }      // IRecordSigner; optional now (§10.4)
+    public string Hash { get; init; }              // SHA-256(PrevHash + canonical JSON)
+    public string? Signature { get; init; }        // by the responsible agent's DID key (§10.4)
 }
+
+public sealed record EntityRef(string Id, int? Version, string? ContentHash,
+                               bool Unknown = false, string? UnknownReason = null);
 ```
 
-Every write that creates hereditary or inherited material goes through
-`ProvenanceLedger.Append` in the same LiteDB transaction as the subject document.
+* **Activity DIDs.** Activity ids are DID URLs, consistent with session ids (§6.3.4). An
+  activity can be referenced from any person's database, from the operator workspace, or
+  in future verifiable credentials (BL-8).
+* **Cross-person activities.** A reproduction or transfer is written, with the same id and
+  hash, into each participant's `person.db` (§5.1.1), so each person's history is complete
+  on its own.
+* **The ledger** (`ProvenanceLedger`) is the hash chain over activities, per database.
+  `Verify()` recomputes the chain. Entities are covered because every entity version names
+  the activity that generated it, and that activity is in the chain.
+* **Record count stays the same.** A memory write is still about three records: the entity
+  (the memory version), one activity, and any assessment. That is because the activity
+  *replaces* the separate provenance and transition records.
+* **Examples:**
+  * `Journal`: uses a session turn; generates `memory M@1`; agents are Lucy (source and
+    author) and the AgentLucyApp host (recorder).
+  * `Consolidation`: uses `E1@1, E2@1, E3@1`; generates `S@1`; agents are Lucy (requester)
+    and model `claude-…` with prompt `consolidate.v1` (processor).
+  * `Inheritance`: uses `Lucy:M@3`; generates `Offspring:M′@1` (class Inherited); agents
+    are Lucy (source), `OffspringInitializer` (processor) and the operator plus Lucy
+    (authorizers); informed by the `Reproduction` activity.
+
+#### 6.4.2 Immutable, versioned entities and exact derivations
+
+* **Memory content is immutable.** A revision creates a **new version** (`M@2`) with
+  `RevisionOf = M@1`, generated by a `Revision` activity whose input is `M@1`. Nothing is
+  edited in place.
+* **Attributes that change** (current confidence, importance, the heritable-candidate flag)
+  are **`MemoryAssessment`** records. Each is generated by an `Assessment` activity with its
+  own agent and reason. The current value is the latest assessment. The original capture
+  values remain on the version.
+* **Every reference names an exact version** (`id@version`) or a content hash. This
+  includes consolidation inputs, inheritance sources, plan entries, transfer artifacts and
+  knowledge-refresh comparisons. A later revision of a source therefore never makes an
+  earlier derivation ambiguous. "Which downstream memories depend on `M@1`?" is a query
+  over `Used`.
+* **Derivation kinds**, following PROV:
+  * `RevisionOf` (same memory, new version);
+  * `DerivedFrom` (a consolidation or synthesis output from its inputs);
+  * `InheritedFrom` (a specialised derivation across persons, via an `Inheritance`
+    activity);
+  * `QuotedFrom` (a documented fact from its source document).
+* **Embeddings** are a derived index (§5.3). They are not part of the memory's identity, so
+  a re-embed is a rebuild, not a revision.
+* **Genotype modules** were already content-addressed, and **genotypes** are already
+  versioned (§6.2). They now follow the same reference rule.
+
+#### 6.4.3 Agents and roles: who supplied, who processed, who decided
+
+Each activity lists its agents with a **role**:
+
+| Role | Meaning | Examples |
+|---|---|---|
+| `Source` | experienced or supplied the information | Lucy, for a journal entry; an ancestor, for an inherited memory; a document's author, for a documented fact |
+| `Author` | wrote the entity's text | the person journaling; a human authoring a module |
+| `Recorder` | persisted it | the host application (AgentLucyApp + version) |
+| `Processor` | transformed it | a consolidator service; the Recombination Optimizer; `OffspringInitializer` |
+| `Model` | the LLM that performed or assisted a transformation, with the prompt version as its plan | `claude-…` + `consolidate.v1`; `blend.v1` |
+| `Selector` | chose a trait or item (Raquel's "whose values") | policy author; contributor (pin or veto); operator (override) |
+| `Authorizer` | the operator key | Michael W. Herman |
+| `Assenter` | the person key | Lucy's or Raquel's own `consent` |
+| `Validator` | independently evaluated | validator persona (§8.1) |
+| `Attester` | vouched for the record (§6.4.6) | — |
+
+* **Delegation** (PROV `actedOnBehalfOf`): a guardian standing in for a young offspring's
+  person key is recorded as `Assenter = guardian, OnBehalfOf = offspring`. A service acting
+  for a person (the host acting for Lucy) is recorded the same way.
+* **Why the `Model` role matters:** a model-written summary must never be mistaken for the
+  person's own statement. The consolidation's `Source` is the person, but its `Model` is
+  the LLM. Recall and `my_sessions` show both. This serves Lucy's "never fabricate
+  continuity" and principle 1.2.1.
+* **Reference subjects** (§10.3): a documented fact about Raquel Welch is `QuotedFrom` a
+  source document. That document's `Author` (a publication or journalist) is the agent.
+  **The real person is the fact's subject, never an agent.**
+* The earlier provenance fields map onto roles: `SourcePersonId` → `Source`; `SelectedBy` →
+  `Selector`; `SelectionRationale` → the `Selection` activity's `Detail.rationale`;
+  `Authorization` → `Authorizer` and `Assenter`.
+
+#### 6.4.4 `ProvenanceValidator`: one set of named rules
+
+All provenance and invariant rules are in one validator. It runs **on every write**,
+rejecting invalid records (fail closed), and **as an audit** (`/provenance verify`), with
+the hash-chain check.
+
+| Rule | Kind |
+|---|---|
+| R1 Every entity version names its generating activity, and that activity lists it in `Generated` | structural (PROV) |
+| R2 Every `Used` / `Generated` / `Invalidated` reference resolves to a known entity version, or is an explicit `Unknown` with a reason | structural |
+| R3 Generation precedes use: an input's generating activity ended before the using activity started | temporal (PROV-CONSTRAINTS) |
+| R4 An activity's start ≤ end, and its activity time is consistent with the ledger order | temporal |
+| R5 Each activity kind has its required roles (e.g. `Consolidation` needs `Source` and `Processor`, plus `Model` when an LLM was used; `Reproduction` needs `Authorizer`, plus `Assenter` for each contributor) | role |
+| R6 Every derived entity identifies its inputs (`DerivedFrom`, `InheritedFrom`, `RevisionOf`, `QuotedFrom`) | derivation |
+| R7 `Inherited`-class memories are generated only by `Inheritance` activities (`OffspringInitializer`) or `Transfer` activities (`TransferService`) | DE domain (§6.3.3) |
+| R8 Ancestry (`E_a`) stays acyclic, and no edge points backwards in time (`A@t` nodes) | DE domain (§7.7) |
+| R9 No Adult-rated entity is generated into, or used by an activity for, a person below Adult | DE domain (§8.3) |
+| R10 Two-key: consequential activity kinds carry both `Authorizer` and `Assenter` (or `Assenter` on behalf of) | DE domain (§8.2) |
+| R11 Distinctness: a `Reproduction` output is within the distinctness band of each genetic contributor | DE domain (§19.5) |
+| R12 Signatures verify against the signer's DID key at that version (§10.4.2) | integrity |
+
+* **Explicit unknowns.** When an origin is genuinely unknown (an import from `MEMORY.md`,
+  Lucy's early transcripts (BL-7), a fact whose source has disappeared), it is recorded as
+  `EntityRef { Unknown = true, UnknownReason = … }`. **No source is ever invented.** This is
+  the "never fabricate continuity" rule applied to provenance.
+* **Rules are versioned.** The validator records the rule-set version on each audit, so an
+  audit can say which rules a history was checked against.
+
+#### 6.4.5 Invalidation: the basis for redaction (feeds BL-1, BL-2)
+
+PROV models an entity being *invalidated* by an activity. DE uses this for redaction:
+
+* A `Redaction` activity lists the memory version under `Invalidated`, with agents (who
+  requested it, who authorized it) and a reason.
+* The memory's **content is removed** and replaced by a tombstone holding the id, version,
+  content hash, and "redacted by `<activity>`".
+* The fact that the memory existed, its derivation links and the redaction itself **stay in
+  the chain**, so provenance still verifies.
+* Downstream derivations that `Used` the redacted version stay linked. The validator flags
+  them for review rather than deleting them.
+
+This gives BL-1 (deletion or redaction) and BL-2 (people's say over memories about them) a
+concrete mechanism. *Who may redact* is still backlogged.
+
+#### 6.4.6 Attestation: who vouches for a history (lower priority)
+
+* **What exists already:** activities are **signed** by the responsible agent's DID key.
+  That is an attestation that *this agent recorded this*.
+* **Added:** an `Attestation` entity, generated by an `Attestation` activity, by which an
+  agent asserts something *about* a record or a history. Examples: "this documented fact
+  is accurate", "this memory's source is disputed", "this correction is accepted". Each
+  carries the attester's role, a statement, and its own signature.
+* This separates *the recorded event* from *a claim that the event or its source is
+  accurate*. That matters for disputed documented facts (Raquel's knowledge base,
+  §10.2.1) and contested corrections.
+* Attestations never alter the entity they are about. A disputed record is not changed; it
+  is annotated. Recall shows attestations alongside the memory.
+* **Phasing:** the record types exist from Phase 1, so nothing has to be migrated later.
+  The `attest` tool and dispute workflows come in a later phase.
 
 ### 6.5 Phenotype expression (Φ_dev)
 
@@ -837,10 +1019,10 @@ each expression is logged to `phenotype_observations` (P_t, T_P):
 
 | Timescale (P1 §6, P2 §8.1) | What the system allows | Record |
 |---|---|---|
-| Within-state adaptation | runtime config changes during a session | `state_transitions.Adapt` |
+| Within-state adaptation | runtime config changes during a session | `StateTransition` activity, `Adapt` |
 | Developmental change | memory, knowledge, relationships, stage | memories, development_status |
-| Heritable-developmental modification | admitted change to the person's own G (new genotype version) | genotype_events + admission |
-| Generational evolution | reproduction | reproduction_events |
+| Heritable-developmental modification | admitted change to the person's own G (new genotype version) | `HeritableModification` + `Admission` activities |
+| Generational evolution | reproduction | `Reproduction` activity |
 
 ### 7.2 Hereditary boundary schema
 
@@ -906,7 +1088,9 @@ combinations.
 
 ### 7.4 Reproduction pipeline
 
-`ReproductionService.ReproduceAsync(ReproductionRequest)` runs in one LiteDB transaction:
+`ReproductionService.ReproduceAsync(ReproductionRequest)` runs as a cross-person saga
+(§5.1.1), recorded as one `Reproduction` activity whose sub-steps (selection, admission,
+inheritance) are activities `InformedBy` it (§6.4.1):
 
 ```
 ReproductionRequest{ initiator, contributors[1..n] (genetic | informational),
@@ -1784,7 +1968,8 @@ DigitomicEvolutionLib/
   Lineage/          LineageGraph.cs, LineageEdge.cs, Export/
   Governance/       AuthorizationService.cs, ConsentRecord.cs, GuardianshipGrant.cs,
                     IRecordSigner.cs, SafetyScanner.cs
-  Provenance/       ProvenanceRecord.cs, ProvenanceLedger.cs
+  Provenance/       Activity.cs, EntityRef.cs, AgentRole.cs, ProvenanceLedger.cs,
+                    ProvenanceValidator.cs (+ Rules/), MemoryAssessment.cs, Attestation.cs
   Population/       Population.cs, FitnessEvaluator.cs, SelectionLab.cs,
                     CompatibilityAssay.cs, SpeciesAnalyzer.cs
   DirectedEvolution/DirectedEvolutionRun.cs, Interventions.cs
@@ -1814,6 +1999,7 @@ responses) and a fixed clock and RNG seed. Several of the book's propositions ar
 | P4.6 authorization enforced | missing operator key or person consent → admission rejects, rejection recorded |
 | P4.7 distinct offspring identity | offspring anchor ≠ any contributor; clone attempt via ReproduceAsync is rejected |
 | §8.3 fixed constraint | an Adult-rated trait selected for a Newborn lands in deferred escrow, never in G_off; no policy or override can change that |
+| §6.4 provenance | every rule R1–R12 of the `ProvenanceValidator` has a passing and a failing test; a revision never mutates the prior version; a consolidation's `Used` lists exact versions; an `Unknown` reference is accepted only with a reason; a redaction removes content but `Verify()` still passes |
 | §19 optimizer contract | every plan satisfies the hard constraints; each eligible trait gets exactly one decision with a score breakdown; same inputs + seed ⇒ same plan |
 | P8.1 / P8.4 transfer preserves ancestry | E_a unchanged after reverse/lateral transfer; transfer adds only E_rev/E_l |
 | P8 active-recipient rule | reverse transfer to an Archived person throws and offers a fork |
@@ -1888,9 +2074,12 @@ are the **primary implementation surface** of this design (§4, "Tools first"). 
 "Rules" column says otherwise. Every state-changing tool writes, in one LiteDB
 transaction:
 
-* its domain records;
-* a provenance record;
-* an F_state transition (§6.1).
+* its domain records (immutable entity versions, §6.4.2);
+* one activity: an F_state transition plus provenance, with exact inputs, outputs and agent
+  roles (§6.4.1, §6.4.3);
+* any assessments.
+
+Before commit, the `ProvenanceValidator` (§6.4.4) checks the write.
 
 ### 17.1 Placement rule
 
@@ -1929,7 +2118,7 @@ stage:
 | `journal` | Write | `entry` (what happened, in the person's own words), `significance` 0–1, `counterparts[]`, `commitments[]` (optional), `close_step` (bool) | autobiographical memory id; a new S_t snapshot if `close_step` | The **only** way an `Autobiographical` memory is created. The phenotype prompt tells the person when to use it. `/end` asks for a closing entry. It runs the Reference-Subject Guard. |
 | `remember` | Write | `content` (required), `class` (Semantic, Procedural, Relational or Meta; default Semantic), `importance` 0–1, `source` (optional), `counterpart` (optional) | memory id | Refuses `Autobiographical` (use `journal`) and `Inherited` (§6.3 invariant). Runs the Reference-Subject Guard. Without a `source`, status is `Inferred`. |
 | `recall` | ReadOnly | `query`, `classes[]`, `from`/`to`, `limit` (default 8) | ranked memories, each with class, status, confidence and a provenance summary | Inherited items are always labelled with their origin person. |
-| `revise_memory` | Write | `memory_id`, `kind` (ContraryEvidence, ConfidenceChange or Reinterpretation), `note`, `new_confidence` | revision id | Appends to `memory_revisions` and never edits the original (P2 §6.2). This is how an offspring questions inherited claims. |
+| `revise_memory` | Write | `memory_id@version`, `kind` (ContraryEvidence, ConfidenceChange or Reinterpretation), `note`, `new_confidence` | new memory version id, or assessment id | A reinterpretation creates a new version (`RevisionOf`); a confidence change creates a `MemoryAssessment`. The original version is never edited (P2 §6.2, §6.4.2). This is how an offspring questions inherited claims. |
 | `consolidate_memory` | Write | `episode_ids[]` or a time window | new semantic or procedural memory ids | The person summarizes related episodes. Provenance records `Consolidated(from…)`, and the sources are archived but not deleted. |
 | `bookmark` | Write | `label`, `note` (optional) | bookmark id in the current session record | Marks a moment in the current conversation worth returning to (§6.3.4). |
 | `my_sessions` | ReadOnly | `from`/`to`, `query` (optional), `bookmarked_only` | the person's session records: dates, models, turn counts, bookmarks, linked journal episodes | Reads only `session_records` in the person's own `memory.db`. Never touches `/save`/`/load` files. |
@@ -2316,7 +2505,7 @@ again.
 
 | Id | Item | Origin | Notes |
 |---|---|---|---|
-| BL-1 | **Deleting or redacting memories.** True deletion vs. redaction with a tombstone (content erased; the record of the removal kept so provenance stays verifiable); who may remove (operator, the person, the person remembered). | Lucy (lucy10–12); App. B.4-1 | Conflicts with the append-only rule (§5.2), which needs a defined exception. |
+| BL-1 | **Deleting or redacting memories.** True deletion vs. redaction with a tombstone (content erased; the record of the removal kept so provenance stays verifiable); who may remove (operator, the person, the person remembered). | Lucy (lucy10–12); App. B.4-1 | Mechanism now defined: PROV-style invalidation with tombstones (§6.4.5). Still open: who may redact, and when. |
 | BL-2 | **People's say over what a person remembers about them.** Whether humans can see, correct and delete memories about themselves ("no covert retention"). | Lucy; App. B.4-2 | Depends on BL-1. |
 | BL-3 | **Evidence review of memory mechanisms.** How corrections, and memories generally, should be processed on recall. Review importance weighting, recency decay, consolidation and archiving against scientific evidence about human long-term memory; keep, change or drop each one accordingly. | App. B.4-4; §1.2 principle 1 | Until done, those mechanisms are provisional (§6.3). |
 | BL-4 | **Notation in superprompts.** Whether Lucy's Part 12 should match the book's Appendix A notation (e.g. `F(G,O,C)` vs `J_eval(G;O,Ops)`), weighed against keeping superprompts non-technical. | App. B.2, B.4-6 | Operator preference: superprompts no more technical than necessary. |
@@ -2328,6 +2517,7 @@ again.
 | BL-10 | **Re-check LiteDB 6.0 and migrate when ready.** Re-check status at each phase boundary and whenever a person crosses the vector scale guardrail; migrate per §5.3.3 once all triggers hold (6.0.0 stable, #2623 closed, vector-orphaning and Direct/Shared defects fixed, SVRN7 able to move in step). | Operator decision 2026-10-03; §5.3.1–5.3.3 | Interim design (§5.3.2) keeps the migration contained. |
 | BL-11 | **Parent / guardian / contributor model: design or paper changes (TBD).** The design keeps three separate relationships per offspring for now (§7.6.1, Appendix C.6). Decide later whether to: keep or drop the parent → guardian default; revise P4 §14.6, which reads as defining parenthood as a contribution relation; define "co-parent" and "custodian"; and align the design and the book. | Operator decision 2026-10-03; Appendix C.6–C.7 | Current model holds until this is resolved. |
 | BL-12 | **Parents and guardians for offspring.** Whether every offspring needs at least one parental relationship (or guardian-only is allowed, as the book permits); and who parents and guards the first offspring. | Former open question Q7; operator 2026-10-03 ("Backlog this for now") | Michael W. Herman is guardian of Lucy and Raquel (§10.0); offspring are undecided. |
+| BL-13 | **PROV-JSON export.** A one-way export of activities, entities and agents to W3C PROV-JSON, for the book or external review. Cheap because §6.4 follows PROV-DM. | Appendix E (item 7) | Not needed for DE itself. |
 
 ---
 
@@ -2879,3 +3069,157 @@ The operator's decisions, verbatim, with where each one is applied. The first de
 | Q7 Parents and guardians for offspring | "Backlog this for now." | §20 BL-12 |
 | SVRN7 refactoring | "Write a separate very detailed spec for the SVRN7 changes and you and I will open SVRN7 separately/distinctly." | [SVRN7-DID-Refactoring-Spec.md](SVRN7-DID-Refactoring-Spec.md); §10.4.1 |
 | Where DID documents live | "For now, create a DID Registry database using the SVRN7 libraries specifically/standalone for Digitomic Evolution ...no TDA. Just a standalone DB and C# API. This may migrate later." and "It means we're using the base minimum for DID Documents." | §10.4.2 |
+
+### D.5 Fifth batch: provenance (2026-10-04)
+
+| Topic | Operator's answer | Applied in |
+|---|---|---|
+| W3C PROV review (Appendix E) | "backlog 7. Incorporate 1-6 into the design. I like the use of activity DIDs. Add the above conversation as a new appendix in the design." | §6.4 (rewritten), §6.1, §6.3, §5.1.1, §5.2, §7.4, §14, §17; BL-13; Appendix E |
+
+---
+
+## Appendix E. W3C PROV review of the provenance design (design discussion, 2026-10-04)
+
+### E.1 The input (from the operator, originating in the W3C PROV specification)
+
+> Bring over PROV's provenance model and validation ideas, not its RDF format or
+> interoperability layer. The design already has domain-specific provenance fields—source
+> person, origin event, transformations, confidence, authorization, selection rationale—and
+> an append-only, hash-chained ledger. The biggest opportunity is to make the relationships
+> among those records more explicit. (Design §§5.2, 6.3–6.4; W3C PROV-DM)
+>
+> **Priorities**
+>
+> 1. **Make each memory-changing operation a first-class event.** Model capture,
+>    consolidation, revision, inheritance, and transfer as activities with stable IDs,
+>    timestamps, inputs, and outputs. For example, a consolidation activity uses specific
+>    episode records and generates a new semantic memory. The design already records
+>    Transformation=Consolidated(from: […]); structured activity links would make that
+>    history easier to query and verify.
+> 2. **Separate who supplied information from who processed, recorded, or approved it.**
+>    Keep the source person distinct from the actor or service that captured or transformed
+>    the memory, the person who selected a trait, and the authority that approved an
+>    operation. PROV's attribution, association, and delegation concepts can help clarify
+>    those roles. That distinction matters when, for example, Lucy journals an event, the
+>    host persists it, and a later process consolidates it.
+> 3. **Link exact memory versions and their derivations.** Treat a revised memory as a
+>    distinct version linked to the earlier one, and record which exact source versions a
+>    consolidation or inheritance operation used. The design already has memory_revisions,
+>    event time, creation time, and provenance IDs; PROV's derivation and revision
+>    relationships provide a disciplined way to connect them. This helps avoid a later edit
+>    to a source record making the history of an earlier derived memory ambiguous.
+> 4. **Define and enforce provenance consistency rules.** Add internal checks for required
+>    links: an output points to the activity that generated it; activity inputs and outputs
+>    resolve to known records or explicitly marked unknowns; derived memories identify their
+>    sources; required actor and authorization roles are present. W3C PROV includes formal
+>    constraints, but DE should set its own domain rules—for example, inherited memories
+>    must be created only through OffspringInitializer or TransferService, as the design
+>    already requires. (W3C PROV-CONSTRAINTS)
+> 5. **Optionally record who asserted or attested to provenance.** This is useful if memory
+>    sources can be disputed: distinguish the recorded event from the claim that the event
+>    or source is accurate, and record who made that claim. PROV's "provenance of
+>    provenance" concept can guide this, but it is a lower priority than recording the
+>    underlying activity and derivation links.
+>
+> Keep the memory classes, experiential statuses, confidence, authorization rules, and hash
+> chain as DE-specific design choices. PROV can organize and validate the history around
+> them; it does not determine which memories to retain, whether a source is trustworthy, or
+> whether a recorded claim is true.
+>
+> The highest-value change is to make the design's existing provenance information a
+> structured, connected history. … PROV is most useful where it gives those details
+> explicit relationships, so DE can answer: what produced this memory, from which records,
+> through what operation, and who was involved? … I'd implement priorities 1–3 first, then
+> add validation. They improve the design's core provenance questions without changing its
+> memory categories, confidence rules, authorization model, or hash-chain approach. PROV
+> supplies the structure for describing the history; those DE-specific policies remain DE's
+> responsibility.
+
+(The input also restated the same five priorities in a second form: record each memory
+operation as a structured event; preserve derivation and version links; distinguish the
+source, the processor and the authority; validate links and required roles, representing
+unknowns as unknown; and track who asserted provenance if disputes require it.)
+
+### E.2 Feedback relative to the DE design
+
+**Overall.** I agree with adopting PROV-DM's *model* and *validation* ideas, not its formats.
+That fits the design's principles. Against the design as it stood, though, the input missed
+two things that change the priorities:
+
+* The design already had **several overlapping event records**. Adding PROV activities on
+  top would have created yet another.
+* `MemoryRecord` had **mutable fields**, which made exact-version linking impossible.
+
+**Priorities from the design's perspective:**
+
+1. **Make *Activity* the single event spine, replacing records rather than adding one.** The
+   design recorded "something happened" in at least six places:
+   * `state_transitions` (F_state);
+   * the `Transformations` list in each provenance record;
+   * `genotype_events`;
+   * `reproduction_events` and `admissions`;
+   * the transfer state machine;
+   * saga intents.
+
+   One `activities` collection replaces them all. Ids are DID URLs
+   (`did:drn:digitomicevolution.svrn7.net/activity/1.0/<guid>`). A cross-person activity is
+   recorded in each participant's `person.db` under the same id and hash, which is PROV's
+   bundle idea applied to per-persona databases.
+2. **Make memory content immutable and reference exact versions** (do this with #1). This
+   fixed a flaw: settable `Importance`, `Confidence`, `HeritableCandidate` and `Embedding`
+   on `MemoryRecord` undermined append-only history. Content becomes immutable. A revision
+   is a new version (`wasRevisionOf`). Confidence and importance changes become assessment
+   records. Embeddings are a derived index. Both #1 and #2 change the data model, so they
+   precede Phase 1.
+3. **Separate roles, including software agents.** Source, recorder, processor, selector,
+   authorizer (operator key), assenter (person key), with `actedOnBehalfOf` for a guardian
+   standing in. **Addition:** the LLM is an agent, with the prompt version as its plan, so a
+   model-written summary is never mistaken for the person's own words. For Raquel, a
+   documented fact is attributed to its publication. Raquel Welch is its subject, never an
+   agent.
+4. **One provenance validator, with explicit unknowns.** This gathers the design's scattered
+   invariants:
+   * inherited memories only from birth or transfer;
+   * acyclic ancestry;
+   * no backward-time edges;
+   * the adult-content rule;
+   * the distinctness floor;
+   * two-key authorization.
+
+   PROV's structural and temporal rules sit alongside them. The validator runs on write and
+   as an audit. Explicit "unknown" values (for `MEMORY.md` imports and the early
+   transcripts) apply "never fabricate continuity" to provenance.
+5. **Use PROV's *invalidation* to design redaction** (new; feeds BL-1). A redaction activity
+   invalidates a memory version and removes its content, while its existence and the
+   redaction stay in the chain: a precise tombstone.
+6. **Attestation** (agree it's lower). Activities are already signed by the signer's DID
+   key. A separate "this is accurate" assertion matters once disputes exist.
+7. **A PROV-JSON export** (backlog, optional). It becomes cheap once the model follows
+   PROV-DM.
+
+**How it fits with earlier decisions:**
+* **Corrections recorded as experiences:** a correction is an activity that uses the session
+  turn and produces a revision, without deciding recall weighting (BL-3 stays open).
+* **The inheritable → inherited chain:** each of its eight stages becomes an activity with
+  links. An inherited memory is derived from a specific version of the ancestor's memory,
+  attributed to the ancestor, which is the book's P2 §6.1 distinction expressed
+  structurally.
+* **Tools-first, the hash chain, per-persona databases:** unchanged.
+* **Cost:** about three records per memory write, the same as before.
+
+### E.3 Decision (operator, 2026-10-04)
+
+> "backlog 7. Incorporate 1-6 into the design. I like the use of activity DIDs. Add the
+> above conversation as a new appendix in the design."
+
+Applied:
+
+| Item | Where |
+|---|---|
+| 1. The activity spine, with activity DIDs | §6.4, §6.4.1; F_state in §6.1; saga intents in §5.1.1; reproduction in §7.4; collections in §5.2 |
+| 2. Immutable, versioned entities and exact derivations | §6.3 (`MemoryRecord`), §6.4.2 |
+| 3. Agents and roles, including `Model` and delegation | §6.4.3 |
+| 4. `ProvenanceValidator` (R1–R12) and explicit unknowns | §6.4.4; tests in §14; the tool write rule in §17 |
+| 5. Invalidation as the basis for redaction | §6.4.5; BL-1 updated |
+| 6. Attestation | §6.4.6 (record types in Phase 1; workflows later) |
+| 7. PROV-JSON export | backlogged as **BL-13** |
