@@ -4998,7 +4998,6 @@ public class SystemPromptBuilder
     
     """;
 
-    // TODO: Raquel's system prompt text.
     private const string BasePromptRaquel = """
         # RAQUEL — Digital Personage System Prompt
         ## The Best of Everything: Past, Present, Future

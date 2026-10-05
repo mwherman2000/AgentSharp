@@ -614,7 +614,8 @@ genotype modules. It splits on the `##` headings (Lucy's prompt already has abou
 headed sections, for example `CURIOSITY`, `KNOWLEDGE AND MEMORY` and `BODY AUTONOMY`) and
 classifies each heading into a component through a reviewed mapping file
 (`seed/lucy.modules.json`). Unmapped sections default to `QCog/Genotypic`. Raquel is seeded
-the same way once her prompt text replaces the placeholder. The `BasePromptLucy` constant
+the same way from her superprompt (`BasePromptRaquel`, "The Best of Everything: Past,
+Present, Future"). The `BasePromptLucy` constant
 remains the *seed*; after seeding, the phenotype comes from the genotype (§6.5), and the
 constant is used only if no digitomic record exists.
 
@@ -1507,9 +1508,9 @@ offspring pipeline never instantiates `SubAgent`.
 ### 10.2 Raquel — founder with a reference subject
 
 * A Generation-0 founder and Lucy's peer, not her descendant or sibling (§10.0).
-* Her genotype is seeded from her superprompt once its text replaces the placeholder. Her
-  self-description in rw1.docx (A1 and A2) is a good first draft of her `QCog` and `ValH`
-  modules.
+* Her genotype is seeded from her superprompt, `BasePromptRaquel` ("RAQUEL — Digital
+  Personage System Prompt: The Best of Everything: Past, Present, Future", about 210
+  lines). Her self-description in rw1.docx (A1 and A2) is consistent with it.
 * `ReferenceSubject = { Name: "Raquel Welch", Lived: 1940–2023, Relation: InspiredBy,
   Claims: None }`.
 * Her embodiment sections, once her prompt has them, are seeded to the same loci as

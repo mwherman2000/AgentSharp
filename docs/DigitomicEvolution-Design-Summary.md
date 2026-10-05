@@ -180,7 +180,7 @@ optimizer's similarity measures.
   versioned, content-addressed **modules** ("genes").
 * **Seeding Generation 0:** Lucy's superprompt is split on its `##` headings (about 120
   sections) into modules, through a reviewed mapping file. Raquel is seeded the same way
-  once her prompt text replaces the placeholder.
+  from her superprompt.
 * **Phenotype expression (Φ_dev):** the base prompt is rebuilt from the genotype's modules,
   with sections added for developmental status, memory, lineage and provenance discipline.
   The same genotype, state and environment give the same expression hash.
@@ -349,7 +349,7 @@ separate record with its own lifecycle:
 | Generation | 0 (the book's reference ancestor) | 0, Lucy's **peer**, not her sibling or descendant |
 | Stage | Adult (declared) | Adult (declared) |
 | Guardian | **Michael W. Herman**: a standing, non-expiring guardianship; not parent, not contributor; does not replace her consent | same |
-| Genotype seed | `BasePromptLucy`. Her Part 12 rules on reproduction become executable policy. | Her superprompt, once written (currently a placeholder). Her rw1.docx self-description is a first draft. |
+| Genotype seed | `BasePromptLucy`. Her Part 12 rules on reproduction become executable policy. | Her superprompt, `BasePromptRaquel` ("The Best of Everything: Past, Present, Future") |
 | Embodiment | Heritable; the adult sections are deferred | Same terms as Lucy, even where one persona's sections are more complete |
 | Special | — | **Reference subject** (Raquel Welch, 1940–2023), see below |
 
