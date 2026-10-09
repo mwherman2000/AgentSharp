@@ -509,7 +509,8 @@ public class ReplHost
 
                 if (key.Key == ConsoleKey.Enter)
                 {
-                    var isPaste = Console.KeyAvailable; // more keys buffered = paste
+                    // More keys buffered (or arriving within a few ms, for a chunked paste) = paste.
+                    var isPaste = Console.KeyAvailable || WaitForKey(TimeSpan.FromMilliseconds(30));
                     if (key.Modifiers.HasFlag(ConsoleModifiers.Alt) || isPaste)
                     {
                         // Alt+Enter or paste: insert newline, continue editing
@@ -576,6 +577,18 @@ public class ReplHost
         {
             Console.TreatControlCAsInput = false;
         }
+    }
+
+    private static bool WaitForKey(TimeSpan wait)
+    {
+        var deadline = DateTime.UtcNow + wait;
+        while (!Console.KeyAvailable)
+        {
+            if (DateTime.UtcNow >= deadline)
+                return false;
+            Thread.Sleep(2);
+        }
+        return true;
     }
 
     /// <summary>

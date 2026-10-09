@@ -65,7 +65,7 @@ while (running)
     Console.Write($"\n{agentName}> ");
     Console.ResetColor();
 
-    var input = Console.ReadLine();
+    var input = ReadInput();
     if (input is null)
         break; // end of input
     input = input.Trim();
@@ -172,6 +172,35 @@ while (running)
 // Flush whichever trace exporter ended up active (console, or Jaeger via /jaeger).
 AgentTelemetry.Shutdown();
 return 0;
+
+// Reads one prompt. A pasted multi-line block arrives as several Enter presses, which
+// Console.ReadLine() would turn into one prompt per line, so lines that are already
+// waiting in the input buffer (or arrive within a few ms, for a chunked paste) are
+// folded into the same prompt. A paste with no trailing newline leaves its last line
+// pending until you press Enter.
+static string? ReadInput()
+{
+    var first = Console.ReadLine();
+    if (first is null || Console.IsInputRedirected)
+        return first;
+
+    var lines = new List<string> { first };
+    while (KeyArrivesWithin(TimeSpan.FromMilliseconds(30)))
+        lines.Add(Console.ReadLine() ?? "");
+    return string.Join('\n', lines);
+}
+
+static bool KeyArrivesWithin(TimeSpan wait)
+{
+    var deadline = DateTime.UtcNow + wait;
+    while (!Console.KeyAvailable)
+    {
+        if (DateTime.UtcNow >= deadline)
+            return false;
+        Thread.Sleep(2);
+    }
+    return true;
+}
 
 // Saves the conversation, plus a .docx transcript of it next to the project (same
 // as the main CLI's /save).
