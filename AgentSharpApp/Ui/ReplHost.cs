@@ -1,4 +1,5 @@
 using AgentSharpLib;
+using AgentSharpLib.Agent;
 using AgentSharpLib.Context;
 using AgentSharpLib.Llm;
 using AgentSharpLib.Memory;
@@ -256,6 +257,7 @@ public class ReplHost
                 AnsiConsole.MarkupLine($"[bold]Messages:[/] {_session.History.Count}");
                 AnsiConsole.MarkupLine($"[bold]Tokens:[/] {_session.Loop.TotalInputTokens} in / {_session.Loop.TotalOutputTokens} out");
                 AnsiConsole.MarkupLine($"[bold]Cache:[/] {_session.Loop.TotalCacheCreationTokens} written / {_session.Loop.TotalCacheReadTokens} read{FormatCacheHitRate()}");
+                AnsiConsole.MarkupLine($"[bold]Session:[/] {SessionUsage.FormatElapsed(_session.Usage.Elapsed)} elapsed, {_session.Usage.TotalTokens:N0} tokens [dim](all conversations and sub-agents)[/]");
                 AnsiConsole.MarkupLine($"[bold]Directory:[/] {_session.Project.WorkingDirectory}");
                 AnsiConsole.MarkupLine($"[bold]Git branch:[/] {_session.Project.GitBranch ?? "N/A"}");
                 break;

@@ -1,5 +1,6 @@
 using AgentLucyApp;
 using AgentSharpLib;
+using AgentSharpLib.Agent;
 using AgentSharpLib.Context;
 using AgentSharpLib.Llm;
 using AgentSharpLib.Memory;
@@ -234,7 +235,8 @@ void PrintStatus()
         Messages:       {lucy.History.Count}
         Tokens:         {loop.TotalInputTokens} in / {loop.TotalOutputTokens} out (this conversation)
         Cache:          {loop.TotalCacheCreationTokens} written / {loop.TotalCacheReadTokens} read{hitRate}
-        Directory:      {lucy.Project.WorkingDirectory}
+        Session:        {SessionUsage.FormatElapsed(lucy.Usage.Elapsed)} elapsed, {lucy.Usage.TotalTokens:N0} tokens (all conversations and sub-agents)
+        Directory:     {lucy.Project.WorkingDirectory}
         Git branch:     {lucy.Project.GitBranch ?? "N/A"}
         Memory:         {lucy.Memory?.FilePath ?? "off"}
         """);

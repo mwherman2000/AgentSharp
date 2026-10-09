@@ -33,6 +33,11 @@ public sealed class AgentSession
     public int MaxTokens { get; }
     public int MaxIterations { get; }
 
+    /// <summary>Elapsed time and tokens consumed over the whole session -- every
+    /// conversation (across <see cref="Reset"/> and <see cref="Restore"/>) and every
+    /// sub-agent. <see cref="Loop"/>'s own totals cover only the current conversation.</summary>
+    public SessionUsage Usage { get; }
+
     /// <summary>The active persona name passed to --Superprompt / <see cref="Reset"/>;
     /// null means the default. Ignored while a custom system prompt is in use.</summary>
     public string? SuperPrompt => _superPrompt;
@@ -60,8 +65,10 @@ public sealed class AgentSession
         int maxTokens,
         int maxIterations,
         string? superPrompt,
-        string? customSystemPrompt)
+        string? customSystemPrompt,
+        SessionUsage usage)
     {
+        Usage = usage;
         Llm = llm;
         Tools = tools;
         Approval = approval;
@@ -108,11 +115,12 @@ public sealed class AgentSession
 
     /// <summary>
     /// Write a Q&amp;A transcript of the current conversation into the project
-    /// directory and return its path. See <see cref="ConversationTranscript.Write"/>
-    /// for naming, format, and the exceptions it throws.
+    /// directory and return its path, headed by the session's elapsed time and tokens
+    /// consumed so far. See <see cref="ConversationTranscript.Write"/> for naming,
+    /// format, and the exceptions it throws.
     /// </summary>
     public string WriteTranscript(string name) =>
-        ConversationTranscript.Write(History, SystemPrompt, Project.WorkingDirectory, name);
+        ConversationTranscript.Write(History, SystemPrompt, Project.WorkingDirectory, name, Usage);
 
     private AgentLoop CreateLoop(ConversationHistory? history)
     {
@@ -120,7 +128,7 @@ public sealed class AgentSession
             ? _customSystemPrompt!
             : new SystemPromptBuilder(Project, Memory, _superPrompt).Build();
 
-        var loop = new AgentLoop(Llm, Tools, Approval, systemPrompt, history, MaxTokens, MaxIterations, Output);
+        var loop = new AgentLoop(Llm, Tools, Approval, systemPrompt, history, MaxTokens, MaxIterations, Output, Usage);
         loop.OnToolStart += (name, summary) => OnToolStart?.Invoke(name, summary);
         loop.OnToolEnd += (name, result) => OnToolEnd?.Invoke(name, result);
         return loop;

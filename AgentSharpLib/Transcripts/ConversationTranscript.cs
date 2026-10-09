@@ -19,10 +19,12 @@ public static class ConversationTranscript
     /// </summary>
     /// <param name="systemPrompt">Its first line is recorded so the transcript shows
     /// which persona produced the replies.</param>
+    /// <param name="usage">When given, the session's elapsed wall-clock time and tokens
+    /// consumed so far head the transcript.</param>
     /// <exception cref="ArgumentException"><paramref name="name"/> has no usable file name.</exception>
     /// <exception cref="IOException">The file couldn't be written.</exception>
     /// <exception cref="UnauthorizedAccessException">The file couldn't be written.</exception>
-    public static string Write(ConversationHistory history, string systemPrompt, string directory, string name)
+    public static string Write(ConversationHistory history, string systemPrompt, string directory, string name, SessionUsage? usage = null)
     {
         // Path.GetFileName strips any directory portion, so a name like "/trump14020"
         // or "../elsewhere" can't Path.Combine its way outside the directory (a leading
@@ -43,13 +45,23 @@ public static class ConversationTranscript
         var qaPairs = BuildQaPairs(history);
         var systemPromptIntro = GetFirstParagraph(systemPrompt);
         var generatedAt = DateTime.Now;
+        var sessionStats = usage is null ? "" : FormatSessionStats(usage);
 
         if (isDocx)
-            File.WriteAllBytes(path, TranscriptWriter.BuildDocx(name, systemPromptIntro, generatedAt, qaPairs));
+            File.WriteAllBytes(path, TranscriptWriter.BuildDocx(name, systemPromptIntro, generatedAt, qaPairs, sessionStats));
         else
-            File.WriteAllText(path, TranscriptWriter.BuildMarkdown(name, systemPromptIntro, generatedAt, qaPairs));
+            File.WriteAllText(path, TranscriptWriter.BuildMarkdown(name, systemPromptIntro, generatedAt, qaPairs, sessionStats));
         return path;
     }
+
+    /// <summary>
+    /// One line for the top of the transcript: session wall-clock time and total
+    /// tokens, with the input/output/cache breakdown that makes up the total.
+    /// </summary>
+    internal static string FormatSessionStats(SessionUsage usage) =>
+        $"Session: {SessionUsage.FormatElapsed(usage.Elapsed)} elapsed, {usage.TotalTokens:N0} tokens " +
+        $"({usage.InputTokens:N0} in / {usage.OutputTokens:N0} out / " +
+        $"{usage.CacheCreationTokens:N0} cache written / {usage.CacheReadTokens:N0} cache read)";
 
     /// <summary>
     /// A single user turn can span several history entries (assistant text, tool

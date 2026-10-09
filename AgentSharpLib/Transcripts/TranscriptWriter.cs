@@ -35,11 +35,17 @@ internal static class TranscriptWriter
         string title,
         string systemPromptIntro,
         DateTime generatedAt,
-        IReadOnlyList<(string Question, List<AnswerSegment> Segments)> qaPairs)
+        IReadOnlyList<(string Question, List<AnswerSegment> Segments)> qaPairs,
+        string sessionStats = "")
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# {title}");
         sb.AppendLine();
+        if (sessionStats.Length > 0)
+        {
+            sb.AppendLine($"**{sessionStats}**");
+            sb.AppendLine();
+        }
         if (systemPromptIntro.Length > 0)
         {
             foreach (var line in systemPromptIntro.Split('\n'))
@@ -78,12 +84,15 @@ internal static class TranscriptWriter
         string title,
         string systemPromptIntro,
         DateTime generatedAt,
-        IReadOnlyList<(string Question, List<AnswerSegment> Segments)> qaPairs)
+        IReadOnlyList<(string Question, List<AnswerSegment> Segments)> qaPairs,
+        string sessionStats = "")
     {
         var body = new StringBuilder();
         var hyperlinks = new List<(string Id, string Target)>();
 
         body.Append(HeadingParagraph(title, sizeHalfPoints: 44));
+        if (sessionStats.Length > 0)
+            body.Append(SimpleParagraph(sessionStats, default(RunState) with { Bold = true }));
         if (systemPromptIntro.Length > 0)
             body.Append(SimpleParagraph(systemPromptIntro, default(RunState) with { Italic = true }, quoteDepth: 1));
         body.Append(SimpleParagraph($"Transcript generated {generatedAt:yyyy-MM-dd HH:mm}", default(RunState) with { Italic = true }));

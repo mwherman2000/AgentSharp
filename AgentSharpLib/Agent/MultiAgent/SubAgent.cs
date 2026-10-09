@@ -37,7 +37,8 @@ public class SubAgent
         string systemPrompt,
         int maxTokens = AgentLoop.DefaultMaxTokens,
         int maxIterations = AgentLoop.DefaultMaxIterations,
-        IAgentOutput? output = null)
+        IAgentOutput? output = null,
+        SessionUsage? sessionUsage = null)
     {
         Id = Guid.NewGuid().ToString("N")[..8];
         Name = name;
@@ -66,7 +67,7 @@ public class SubAgent
                 isolatedTools.Register(tool);
         }
 
-        _loop = new AgentLoop(llm, isolatedTools, approval, subAgentPrompt, maxTokens: maxTokens, maxIterations: maxIterations, output: output);
+        _loop = new AgentLoop(llm, isolatedTools, approval, subAgentPrompt, maxTokens: maxTokens, maxIterations: maxIterations, output: output, sessionUsage: sessionUsage);
     }
 
     /// <summary>

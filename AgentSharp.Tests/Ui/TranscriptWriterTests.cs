@@ -40,6 +40,38 @@ public class TranscriptWriterTests
     }
 
     [Fact]
+    public void BuildMarkdown_SessionStatsFollowTitle()
+    {
+        var md = TranscriptWriter.BuildMarkdown("t", "intro", DateTime.Now, SamplePairs, "Session: 0:01:02 elapsed, 42 tokens");
+
+        var lines = md.Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Length > 0).ToList();
+        Assert.Equal("# t", lines[0]);
+        Assert.Equal("**Session: 0:01:02 elapsed, 42 tokens**", lines[1]);
+    }
+
+    [Fact]
+    public void BuildMarkdown_NoSessionStatsWhenNoneGiven()
+    {
+        var md = TranscriptWriter.BuildMarkdown("t", "", DateTime.Now, SamplePairs);
+
+        Assert.DoesNotContain("Session:", md);
+    }
+
+    [Fact]
+    public void FormatSessionStats_IncludesElapsedTotalAndBreakdown()
+    {
+        var usage = new AgentSharpLib.Agent.SessionUsage();
+        usage.Add(inputTokens: 1000, outputTokens: 200, cacheCreationTokens: 30, cacheReadTokens: 4);
+        usage.Add(inputTokens: 1000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0);
+
+        var stats = ConversationTranscript.FormatSessionStats(usage);
+
+        Assert.StartsWith("Session: 0:00:", stats);
+        Assert.Contains($"{2234:N0} tokens", stats);
+        Assert.Contains($"{2000:N0} in / 200 out / 30 cache written / 4 cache read", stats);
+    }
+
+    [Fact]
     public void BuildDocx_ProducesWellFormedOpenXmlPackage()
     {
         var bytes = TranscriptWriter.BuildDocx("My Title", "You are a helpful assistant.", DateTime.Now, SamplePairs);

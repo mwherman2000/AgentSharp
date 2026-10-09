@@ -30,6 +30,7 @@ public class AgentOrchestrator
     private readonly int _maxIterations;
     private readonly int _maxConcurrentSubAgents;
     private readonly IAgentOutput _output;
+    private readonly SessionUsage? _sessionUsage;
     private readonly ConcurrentDictionary<string, SubAgent> _agents = new();
 
     /// <summary>Default cap on how many sub-agents RunParallelAsync actually runs at
@@ -51,7 +52,8 @@ public class AgentOrchestrator
         int maxTokens = AgentLoop.DefaultMaxTokens,
         int maxIterations = AgentLoop.DefaultMaxIterations,
         int maxConcurrentSubAgents = DefaultMaxConcurrentSubAgents,
-        IAgentOutput? output = null)
+        IAgentOutput? output = null,
+        SessionUsage? sessionUsage = null)
     {
         _llm = llm;
         _tools = tools;
@@ -61,6 +63,7 @@ public class AgentOrchestrator
         _maxIterations = maxIterations;
         _maxConcurrentSubAgents = maxConcurrentSubAgents;
         _output = output ?? NullAgentOutput.Instance;
+        _sessionUsage = sessionUsage;
     }
 
     /// <summary>
@@ -69,7 +72,7 @@ public class AgentOrchestrator
     /// </summary>
     public SubAgent Spawn(string name, string task)
     {
-        var agent = new SubAgent(name, task, _llm, _tools, _approval, _systemPrompt, _maxTokens, _maxIterations, _output);
+        var agent = new SubAgent(name, task, _llm, _tools, _approval, _systemPrompt, _maxTokens, _maxIterations, _output, _sessionUsage);
         _agents[agent.Id] = agent;
         return agent;
     }

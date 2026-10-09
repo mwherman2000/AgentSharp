@@ -151,7 +151,8 @@ public class AgentLoop
         ConversationHistory? history = null,
         int maxTokens = DefaultMaxTokens,
         int maxIterations = DefaultMaxIterations,
-        IAgentOutput? output = null)
+        IAgentOutput? output = null,
+        SessionUsage? sessionUsage = null)
     {
         _llm = llm;
         _tools = tools;
@@ -161,7 +162,12 @@ public class AgentLoop
         _maxTokens = maxTokens;
         _maxIterations = maxIterations;
         _output = output ?? NullAgentOutput.Instance;
+        _sessionUsage = sessionUsage;
     }
+
+    /// <summary>Session-wide meter that every LLM call's usage is also reported to,
+    /// or null when this loop isn't part of a metered session.</summary>
+    private readonly SessionUsage? _sessionUsage;
 
     /// <summary>
     /// Run one turn of the agent loop: process a user message through
@@ -391,6 +397,7 @@ public class AgentLoop
             _totalOutputTokens += lastOutputTokens;
             _totalCacheCreationTokens += lastCacheCreationTokens;
             _totalCacheReadTokens += lastCacheReadTokens;
+            _sessionUsage?.Add(lastInputTokens, lastOutputTokens, lastCacheCreationTokens, lastCacheReadTokens);
             turnActivity?.SetTag("turn.total_input_tokens", _totalInputTokens);
             turnActivity?.SetTag("turn.total_output_tokens", _totalOutputTokens);
             turnActivity?.SetTag("turn.total_cache_creation_tokens", _totalCacheCreationTokens);
@@ -564,6 +571,7 @@ public class AgentLoop
             _totalOutputTokens += response.OutputTokens;
             _totalCacheCreationTokens += response.CacheCreationInputTokens;
             _totalCacheReadTokens += response.CacheReadInputTokens;
+            _sessionUsage?.Add(response.InputTokens, response.OutputTokens, response.CacheCreationInputTokens, response.CacheReadInputTokens);
             turnActivity?.SetTag("turn.total_input_tokens", _totalInputTokens);
             turnActivity?.SetTag("turn.total_output_tokens", _totalOutputTokens);
             turnActivity?.SetTag("turn.total_cache_creation_tokens", _totalCacheCreationTokens);
