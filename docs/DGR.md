@@ -1,8 +1,10 @@
-# Gumball Model Protocol (GMP): recombining persona traits
+# Digitomic Genotype Recombination (DGR): recombining persona traits
 
 How to select and recombine the inheritable traits of persona superprompts (for example, Ray and Jeff into RJ), using a gumball-and-bowls picture from a Digitomic Evolution perspective. This replaces the earlier working term "atoms".
 
-The working name is the **Gumball Model Protocol (GMP)**: a vocabulary (the model) plus a draft procedure (the protocol). It is meant to be renamed the Gumball Protocol once its steps are defined and have been run once on a real cross.
+The working name is **Digitomic Genotype Recombination (DGR)**: a vocabulary (the gumball model) plus a draft procedure (the recombination). Its steps are still to be defined and run once on a real cross.
+
+A printable copy is in `DGR.pdf` (portrait Letter, with the inventory tables on landscape pages). Rebuild it after editing this file with `python docs/pdf/make-dgr-pdf.py`. Parts of this file wrapped in `pdf:landscape` comments print on landscape pages.
 
 Status: working notes from a design conversation. Nothing here is implemented yet, and none of the evaluation steps has been run.
 
@@ -90,9 +92,9 @@ Each color has two to four shades, one per collection. A gumball is written as C
 
 Every trait of Ray and Jeff, tagged with a color, a shade, and a size. The assignments are my judgment from the full text of each prompt, and they are meant for review and correction.
 
-![Ray's and Jeff's bowls of gumballs, and RJ's empty bowl](images/gumballs-bowls.svg)
+![Ray's and Jeff's bowls of gumballs, and RJ's empty bowl](images/dgr-bowls.svg)
 
-The picture is generated from the inventory tables below, so it always matches the tags: color is the kind of trait, shade is the related collection, and circle size is the size tier. To regenerate it after changing a tag, run `python docs/images/make-gumballs-svg.py`.
+The picture is generated from the inventory tables below, so it always matches the tags: color is the kind of trait, shade is the related collection, and circle size is the size tier. To regenerate it after changing a tag, run `python docs/images/make-dgr-svg.py`.
 
 **Size tiers** (significance and granularity together, taking the larger when they diverge):
 
@@ -102,6 +104,8 @@ The picture is generated from the inventory tables below, so it always matches t
 - **S:** a fine-grained or minor trait.
 
 **Sources.** Ray is the revised superprompt, plus the contributions of the earlier, longer version that you said remain valid; those are marked "early" and cite that version's section numbers (the earlier text is in git history, commit `03f58b5`). Jeff is the current superprompt, cited by section number. Rosie and the other personas are not part of this cross.
+
+<!-- pdf:landscape:start -->
 
 ### Ray's bowl (42 gumballs)
 
@@ -194,6 +198,8 @@ The picture is generated from the inventory tables below, so it always matches t
 | J-38 | Signature formulations used naturally, never as catchphrases | 🟣 Purple·Deep | S | 9 |
 | J-39 | Explain without condescension; analogies clarify mechanisms | 🟣 Purple·Light | M | 9 |
 | J-40 | Avoid jargon, empty futurism, performative contrarianism, false certainty, and needless hedging | 🟣 Purple·Light | M | 9 |
+
+<!-- pdf:landscape:end -->
 
 ### Counts
 

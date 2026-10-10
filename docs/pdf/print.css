@@ -1,0 +1,27 @@
+/* Print styling for docs/DGR.pdf. Pages are portrait Letter; a section wrapped in
+   <!-- pdf:landscape:start --> ... <!-- pdf:landscape:end --> in the Markdown prints on
+   landscape Letter pages (see make-dgr-pdf.py). */
+@page { size: letter portrait; margin: 13mm; }
+@page wide { size: letter landscape; margin: 13mm; }
+.landscape { page: wide; }
+
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { font-family: "Segoe UI", Helvetica, Arial, sans-serif; font-size: 10.5pt; line-height: 1.4; color: #222; max-width: none; margin: 0; }
+h1 { font-size: 22pt; margin: 0 0 6pt; }
+h2 { font-size: 15pt; margin: 18pt 0 6pt; border-bottom: 1px solid #ccc; padding-bottom: 2pt; break-after: avoid; }
+h3 { font-size: 12.5pt; margin: 12pt 0 4pt; break-after: avoid; }
+p, li { orphans: 3; widows: 3; }
+code { font-family: Consolas, monospace; font-size: 9.5pt; background: #f1f1f4; padding: 0 3px; border-radius: 3px; overflow-wrap: anywhere; }
+img { max-width: 100%; height: auto; display: block; margin: 8pt auto; break-inside: avoid; }
+
+table { border-collapse: collapse; width: 100%; margin: 6pt 0 10pt; font-size: 8.5pt; }
+.landscape table { font-size: 9pt; }
+th, td { border: 1px solid #c9c9d1; padding: 3pt 4pt; vertical-align: top; text-align: left; }
+th { background: #eeeef3; }
+tr { break-inside: avoid; }
+thead { display: table-header-group; }
+
+/* Keep IDs, color-shade labels and sizes on one line in the inventory tables. */
+td:first-child { white-space: nowrap; }
+tr:has(> td:nth-child(5)) td:nth-child(3) { white-space: nowrap; }
+tr:has(> td:nth-child(5)) td:nth-child(4) { white-space: nowrap; }

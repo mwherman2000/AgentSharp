@@ -1,8 +1,8 @@
-"""Draw Ray's, Jeff's and RJ's (empty) gumball bowls from the inventory in docs/gumballs.md.
+"""Draw Ray's, Jeff's and RJ's (empty) gumball bowls from the inventory in docs/DGR.md.
 
 Color = trait type, shade = related collection, size = significance and granularity.
 Only the inventory tables are read, so the picture cannot drift from the tags.
-Regenerate with: python docs/images/make-gumballs-svg.py
+Regenerate with: python docs/images/make-dgr-svg.py
 """
 import colorsys
 import math
@@ -13,8 +13,8 @@ import sys
 from xml.sax.saxutils import escape
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DOC = os.path.join(HERE, "..", "gumballs.md")
-OUT = os.path.join(HERE, "gumballs-bowls.svg")
+DOC = os.path.join(HERE, "..", "DGR.md")
+OUT = os.path.join(HERE, "dgr-bowls.svg")
 
 HUES = {"Red": 2, "Orange": 28, "Yellow": 50, "Green": 125, "Blue": 212, "Purple": 275, "Pink": 332}
 LABELS = {
@@ -126,7 +126,7 @@ def main():
         parts.append(f'<text x="{x + 52}" y="{sy + 38}" font-size="13" font-weight="600" fill="#2b2b33">{name}</text>')
         parts.append(f'<text x="{x + 52}" y="{sy + 54}" font-size="11.5" fill="#5a5a66">{desc}</text>')
         x += 255
-    parts.append(f'<text x="40" y="{sy + 92}" font-size="11.5" fill="#5a5a66">Generated from the inventory tables in gumballs.md. Hover a gumball in a browser for its trait.</text>')
+    parts.append(f'<text x="40" y="{sy + 92}" font-size="11.5" fill="#5a5a66">Generated from the inventory tables in DGR.md. Hover a gumball in a browser for its trait.</text>')
     parts.append("</svg>")
 
     open(OUT, "w", encoding="utf-8").write("\n".join(parts))
