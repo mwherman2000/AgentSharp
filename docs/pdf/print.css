@@ -25,3 +25,9 @@ thead { display: table-header-group; }
 td:first-child { white-space: nowrap; }
 tr:has(> td:nth-child(5)) td:nth-child(3) { white-space: nowrap; }
 tr:has(> td:nth-child(5)) td:nth-child(4) { white-space: nowrap; }
+
+/* Color markers: inline images (one SVG per color, same template) standing in for circle emoji. */
+img[width="14"] { display: inline; width: 1.05em; height: 1.05em; margin: 0 0.2em 0 0.15em; vertical-align: -0.2em; break-inside: auto; }
+
+/* Proposed-RJ table (six columns): keep the From column on one line. */
+tr:has(> td:nth-child(6)) td:nth-child(5) { white-space: nowrap; }
