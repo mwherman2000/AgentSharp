@@ -1,6 +1,8 @@
-# Gumballs: recombining persona traits
+# Gumball Model Protocol (GMP): recombining persona traits
 
 How to select and recombine the inheritable traits of persona superprompts (for example, Ray and Jeff into RJ), using a gumball-and-bowls picture from a Digitomic Evolution perspective. This replaces the earlier working term "atoms".
+
+The working name is the **Gumball Model Protocol (GMP)**: a vocabulary (the model) plus a draft procedure (the protocol). It is meant to be renamed the Gumball Protocol once its steps are defined and have been run once on a real cross.
 
 Status: working notes from a design conversation. Nothing here is implemented yet, and none of the evaluation steps has been run.
 
