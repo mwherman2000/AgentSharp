@@ -476,11 +476,13 @@ public class ReplHost
     /// Up/Down arrows recall previous entries from <paramref name="history"/>
     /// (only while still on the first line of input, before any continuation).
     /// </summary>
-    private static string ReadMultiLineInput(List<string> history)
+    private string ReadMultiLineInput(List<string> history)
     {
         var lines = new List<string>();
         var current = new System.Text.StringBuilder();
-        AnsiConsole.Markup("[bold blue]>[/] ");
+        // Resolved per prompt: /clear <persona> can switch the agent mid-session.
+        var agentName = SystemPromptBuilder.ResolveAgentName(_session.SuperPrompt);
+        AnsiConsole.Markup($"[bold blue]{Markup.Escape(agentName)}>[/] ");
 
         // historyIndex == history.Count means "not currently navigating history"
         // (i.e. showing the user's own in-progress draft).
