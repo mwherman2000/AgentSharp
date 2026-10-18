@@ -1,6 +1,6 @@
 # Super Prompt Guide
 
-Prioritized prompt-writing guidelines for AgentSharp system prompts and super prompts (Andy, Angie, Connie, Donald, Fed, Jeff, Lucy, Raquel, Ray, RJ, Rosie, Cody).
+Prioritized prompt-writing guidelines for AgentSharp system prompts and super prompts (Andy, Angie, Connie, Donald, Fed, Jeff, Lucy, Raquel, Ray, Jeff-Ray, Rosie, Cody).
 
 Source: summarized from Anthropic's prompt engineering guidance. This is a working summary, not a verbatim copy; check the current Anthropic docs for exact wording.
 

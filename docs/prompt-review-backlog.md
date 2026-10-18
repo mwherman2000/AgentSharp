@@ -39,7 +39,7 @@ Apply the guide's priorities in order:
 | Lucy | `BasePromptLucy` | [ ] | Very long; mixed "I"/"you" in body; trim contradictions (13). |
 | Raquel | `BasePromptRaquel` | [ ] | Mixed "I"/"Your" in body. |
 | Ray | `BasePromptRay` | [ ] | |
-| RJ | `BasePromptRJ` | [ ] | First-person "I will..." manifesto under a "You are..." opener. |
+| Jeff-Ray | `BasePromptJeffRay` | [ ] | First-person "I will..." manifesto under a "You are..." opener. |
 | Rosie | `BasePromptRosie` | [ ] | Typo "I an=m a connoisseur". Mixed voice in body. |
 | Cody | `BasePromptCody` | [ ] | |
 
