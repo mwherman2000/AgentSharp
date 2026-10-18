@@ -119,8 +119,8 @@ public sealed class AgentSession
     /// consumed so far. See <see cref="ConversationTranscript.Write"/> for naming,
     /// format, and the exceptions it throws.
     /// </summary>
-    public string WriteTranscript(string name) =>
-        ConversationTranscript.Write(History, SystemPrompt, Project.WorkingDirectory, name, Usage);
+    public string WriteTranscript(string name, TranscriptOptions? options = null) =>
+        ConversationTranscript.Write(History, SystemPrompt, Project.WorkingDirectory, name, Usage, options);
 
     private AgentLoop CreateLoop(ConversationHistory? history)
     {

@@ -5,6 +5,7 @@ using AgentSharpLib.Context;
 using AgentSharpLib.Llm;
 using AgentSharpLib.Memory;
 using AgentSharpLib.Telemetry;
+using AgentSharpLib.Transcripts;
 
 // ============================================================================
 // AgentLucyApp - a minimal chat with Lucy, built only on AgentSharpLib.
@@ -138,8 +139,11 @@ while (running)
                 break;
             case "/transcribe":
                 if (argument is null)
-                    Console.WriteLine("Usage: /transcribe <name>   (.md by default, or <name>.docx)");
-                else if (TryWriteTranscript(argument) is { } path)
+                    Console.WriteLine($"Usage: {TranscriptOptions.Usage}   (.md by default, or <name>.docx)");
+                else if (TranscriptOptions.Parse(argument, out var transcriptName, out var transcriptError) is not { } transcriptOptions
+                         || transcriptName.Length == 0)
+                    Console.WriteLine($"{transcriptError ?? "Missing transcript name."} Usage: {TranscriptOptions.Usage}");
+                else if (TryWriteTranscript(transcriptName, transcriptOptions) is { } path)
                     Console.WriteLine($"Transcript written: {path}");
                 break;
             default:
@@ -293,11 +297,11 @@ void HandleMemory(string? argument)
     Console.WriteLine("Usage: /memory [clear]");
 }
 
-string? TryWriteTranscript(string name)
+string? TryWriteTranscript(string name, TranscriptOptions? options = null)
 {
     try
     {
-        return lucy.WriteTranscript(name);
+        return lucy.WriteTranscript(name, options);
     }
     catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
     {
@@ -318,7 +322,9 @@ static void PrintHelp(string agentName)
           /status              Model, tools, token usage, directory
           /model               Show the current provider and model
           /memory, /mem [clear]  Show {agentName}'s MEMORY.md, or delete it
-          /transcribe <name>   Write a Q&A transcript (<name>.md, or <name>.docx)
+          /transcribe <name> [--tools] [--no-thinking]
+                               Write a Q&A transcript (<name>.md, or <name>.docx);
+                               --tools adds tool calls and results, --no-thinking omits thoughts
           /exit, /quit, /q     Quit
           Ctrl+C               Interrupt {agentName} mid-reply (at the prompt: quit)
 

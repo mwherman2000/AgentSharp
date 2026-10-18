@@ -286,10 +286,16 @@ public class ReplHost
             case CommandType.Transcript:
                 if (string.IsNullOrWhiteSpace(command.Argument))
                 {
-                    AnsiConsole.MarkupLine("[yellow]Usage: /transcribe <name>[/]");
+                    AnsiConsole.MarkupLine($"[yellow]Usage: {Markup.Escape(TranscriptOptions.Usage)}[/]");
                     break;
                 }
-                var transcriptPath = WriteTranscript(command.Argument);
+                var transcriptOptions = TranscriptOptions.Parse(command.Argument, out var transcriptName, out var transcriptError);
+                if (transcriptOptions is null || transcriptName.Length == 0)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(transcriptError ?? "Missing transcript name.")} Usage: {Markup.Escape(TranscriptOptions.Usage)}[/]");
+                    break;
+                }
+                var transcriptPath = WriteTranscript(transcriptName, transcriptOptions);
                 if (transcriptPath is not null)
                     AnsiConsole.MarkupLine($"[green]Transcript written:[/] {transcriptPath}");
                 break;
@@ -331,11 +337,11 @@ public class ReplHost
     /// <see cref="AgentSession.WriteTranscript"/>) and returns its path, or reports
     /// the problem and returns null.
     /// </summary>
-    private string? WriteTranscript(string name)
+    private string? WriteTranscript(string name, TranscriptOptions? options = null)
     {
         try
         {
-            return _session.WriteTranscript(name);
+            return _session.WriteTranscript(name, options);
         }
         catch (ArgumentException ex)
         {
@@ -451,7 +457,7 @@ public class ReplHost
             .AddRow("/status", "Model, tools, token usage, directory")
             .AddRow("/model", "Show the current provider and model")
             .AddRow("/memory, /mem [[clear]]", "Show MEMORY.md, or delete it")
-            .AddRow("/transcribe <name>", "Write a Q&A transcript (<name>.md, or <name>.docx)")
+            .AddRow("/transcribe <name> [[--tools]] [[--no-thinking]]", "Write a Q&A transcript (<name>.md, or <name>.docx); --tools adds tool calls and results, --no-thinking omits thoughts")
             .AddRow("/exit, /quit, /q", "Quit")
             .AddRow("Ctrl+C", "Interrupt the agent mid-reply (at the prompt: quit)");
 

@@ -11,9 +11,10 @@ namespace AgentSharpLib.Transcripts;
 /// <summary>
 /// A single piece of an assistant's turn in a /transcribe transcript: either a plain
 /// reply segment or a recorded "think" tool call, tagged so both renderers below can
-/// format thoughts (blockquoted/indented) differently from actual replies.
+/// format thoughts (blockquoted/indented) differently from actual replies. A tool
+/// segment (IsTool) carries a pre-formatted Markdown tool call or result.
 /// </summary>
-internal readonly record struct AnswerSegment(bool IsThought, string Text);
+internal readonly record struct AnswerSegment(bool IsThought, string Text, bool IsTool = false);
 
 /// <summary>
 /// Renders a ReplHost /transcribe Q&amp;A transcript to either Markdown or a Word

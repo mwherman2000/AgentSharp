@@ -6,7 +6,8 @@ namespace AgentSharpLib.Transcripts;
 /// <summary>
 /// Writes a clean Q&amp;A transcript of a conversation -- the user's typed prompts, the
 /// assistant's full text replies, and any "think" tool calls (rendered as
-/// blockquoted/indented thoughts), with none of the other tool-call/tool-result noise.
+/// blockquoted/indented thoughts). Other tool calls and their results are left out
+/// unless <see cref="TranscriptOptions.IncludeToolCalls"/> is set.
 /// </summary>
 public static class ConversationTranscript
 {
@@ -24,7 +25,9 @@ public static class ConversationTranscript
     /// <exception cref="ArgumentException"><paramref name="name"/> has no usable file name.</exception>
     /// <exception cref="IOException">The file couldn't be written.</exception>
     /// <exception cref="UnauthorizedAccessException">The file couldn't be written.</exception>
-    public static string Write(ConversationHistory history, string systemPrompt, string directory, string name, SessionUsage? usage = null)
+    /// <param name="options">What to include besides prompts and replies; defaults to
+    /// thinking only (see <see cref="TranscriptOptions"/>).</param>
+    public static string Write(ConversationHistory history, string systemPrompt, string directory, string name, SessionUsage? usage = null, TranscriptOptions? options = null)
     {
         // Path.GetFileName strips any directory portion, so a name like "/trump14020"
         // or "../elsewhere" can't Path.Combine its way outside the directory (a leading
@@ -42,7 +45,7 @@ public static class ConversationTranscript
             : $"{safeName}.md";
         var path = Path.Combine(directory, fileName);
 
-        var qaPairs = BuildQaPairs(history);
+        var qaPairs = BuildQaPairs(history, options);
         var systemPromptIntro = GetFirstParagraph(systemPrompt);
         var generatedAt = DateTime.Now;
         var sessionStats = usage is null ? "" : FormatSessionStats(usage);
@@ -69,16 +72,29 @@ public static class ConversationTranscript
     /// are merged into one answer, in original order, until the next real user
     /// prompt starts a new pair.
     /// </summary>
-    internal static List<(string Question, List<AnswerSegment> Segments)> BuildQaPairs(ConversationHistory history)
+    internal static List<(string Question, List<AnswerSegment> Segments)> BuildQaPairs(ConversationHistory history, TranscriptOptions? options = null)
     {
+        options ??= new TranscriptOptions();
         var qaPairs = new List<(string Question, List<AnswerSegment> Segments)>();
         string? currentQuestion = null;
         var segments = new List<AnswerSegment>();
+        // Tool results only carry the id of the call they answer, so remember each
+        // call's name (and skip the results of "think" calls, which are never shown).
+        var toolNames = new Dictionary<string, string>();
 
         foreach (var message in history.Messages)
         {
             if (message.Role == MessageRole.User)
             {
+                if (options.IncludeToolCalls && currentQuestion is not null)
+                {
+                    foreach (var result in message.Content.OfType<ToolResultBlock>())
+                    {
+                        if (toolNames.TryGetValue(result.ToolUseId, out var toolName) && toolName != "think")
+                            segments.Add(new AnswerSegment(false, FormatToolResult(toolName, result), IsTool: true));
+                    }
+                }
+
                 // Tool-result messages are also role "user" but carry no TextBlock --
                 // only messages with actual typed text are real prompts.
                 var text = string.Join("\n\n", message.Content.OfType<TextBlock>().Select(b => b.Text));
@@ -100,8 +116,14 @@ public static class ConversationTranscript
                             segments.Add(new AnswerSegment(false, tb.Text));
                             break;
                         case ToolUseBlock { Name: "think" } thinkBlock:
-                            if (ExtractThought(thinkBlock) is { } thought)
+                            toolNames[thinkBlock.Id] = thinkBlock.Name;
+                            if (options.IncludeThinking && ExtractThought(thinkBlock) is { } thought)
                                 segments.Add(new AnswerSegment(true, thought));
+                            break;
+                        case ToolUseBlock toolBlock:
+                            toolNames[toolBlock.Id] = toolBlock.Name;
+                            if (options.IncludeToolCalls)
+                                segments.Add(new AnswerSegment(false, FormatToolCall(toolBlock), IsTool: true));
                             break;
                     }
                 }
@@ -111,6 +133,31 @@ public static class ConversationTranscript
             qaPairs.Add((currentQuestion, segments));
 
         return qaPairs;
+    }
+
+    private const int MaxToolTextLength = 2000;
+
+    private static string FormatToolCall(ToolUseBlock block) =>
+        $"**Tool call:** `{block.Name}`\n\n" +
+        FencedBlock(block.ParseError is { } err ? $"(invalid input: {err})" : block.Input.GetRawText(), "json");
+
+    private static string FormatToolResult(string toolName, ToolResultBlock result) =>
+        $"**Tool result:** `{toolName}`{(result.IsError ? " (error)" : "")}\n\n" +
+        FencedBlock(result.Content.Length > 0 ? result.Content : "(empty)", "");
+
+    /// <summary>
+    /// A fenced code block of <paramref name="text"/>, capped at
+    /// <see cref="MaxToolTextLength"/> characters so one huge file read can't swamp the
+    /// transcript. The fence is lengthened if the text itself contains backtick runs.
+    /// </summary>
+    private static string FencedBlock(string text, string language)
+    {
+        if (text.Length > MaxToolTextLength)
+            text = text[..MaxToolTextLength] + $"\n... (truncated, {text.Length:N0} characters total)";
+
+        var fence = "```";
+        while (text.Contains(fence)) fence += "`";
+        return $"{fence}{language}\n{text}\n{fence}";
     }
 
     /// <summary>
