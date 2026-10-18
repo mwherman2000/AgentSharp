@@ -210,6 +210,14 @@ static bool KeyArrivesWithin(TimeSpan wait)
 // as the main CLI's /save).
 async Task SaveAsync(string? id)
 {
+    // --tools / --no-thinking only shape the .docx transcript written with the save;
+    // they are stripped before the id reaches the session file.
+    if (TranscriptOptions.Parse(id ?? "", out var saveId, out var saveError) is not { } saveOptions)
+    {
+        Console.WriteLine($"{saveError} Usage: /save [id] [--tools] [--no-thinking]");
+        return;
+    }
+    id = saveId.Length > 0 ? saveId : null;
     var savedId = await sessions.SaveAsync(lucy.History, id);
     if (savedId is null)
     {
@@ -217,7 +225,7 @@ async Task SaveAsync(string? id)
         return;
     }
     Console.WriteLine($"Session saved: {savedId}");
-    if (TryWriteTranscript($"{savedId}.docx") is { } path)
+    if (TryWriteTranscript($"{savedId}.docx", saveOptions) is { } path)
         Console.WriteLine($"Transcript written: {path}");
 }
 
@@ -316,7 +324,8 @@ static void PrintHelp(string agentName)
         Commands:
           /help, /h, /?        Show this help
           /clear, /cls         Start a new conversation with {agentName}
-          /save [id]           Save this conversation (and a .docx transcript)
+          /save [id] [--tools] [--no-thinking]
+                               Save this conversation (and a .docx transcript; the flags shape the transcript only)
           /load, /resume <id>  Continue a saved conversation
           /sessions, /ls       List saved conversations
           /status              Model, tools, token usage, directory

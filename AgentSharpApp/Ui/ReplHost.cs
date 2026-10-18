@@ -210,11 +210,19 @@ public class ReplHost
                 break;
 
             case CommandType.Save:
-                var sessionId = await _sessions.SaveAsync(_session.History, command.Argument);
+                // --tools / --no-thinking only shape the .docx transcript written with the
+                // save; they are stripped before the id reaches the session file.
+                var saveOptions = TranscriptOptions.Parse(command.Argument ?? "", out var saveId, out var saveError);
+                if (saveOptions is null)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(saveError!)} Usage: /save [[id]] [[--tools]] [[--no-thinking]][/]");
+                    break;
+                }
+                var sessionId = await _sessions.SaveAsync(_session.History, saveId.Length > 0 ? saveId : null);
                 if (sessionId is not null)
                 {
                     AnsiConsole.MarkupLine($"[green]Session saved:[/] {sessionId}");
-                    var savedTranscriptPath = WriteTranscript($"{sessionId}.docx");
+                    var savedTranscriptPath = WriteTranscript($"{sessionId}.docx", saveOptions);
                     if (savedTranscriptPath is not null)
                         AnsiConsole.MarkupLine($"[green]Transcript written:[/] {savedTranscriptPath}");
                 }
@@ -451,7 +459,7 @@ public class ReplHost
             .AddColumn("Description")
             .AddRow("/help, /h, /?", "Show this help")
             .AddRow("/clear, /cls [[persona]]", $"Start a new conversation; optionally switch persona ({string.Join(", ", SystemPromptBuilder.AvailableSuperPrompts)})")
-            .AddRow("/save [[id]]", "Save this conversation (and a .docx transcript)")
+            .AddRow("/save [[id]] [[--tools]] [[--no-thinking]]", "Save this conversation (and a .docx transcript; the flags shape the transcript only)")
             .AddRow("/load, /resume <id>", "Continue a saved conversation")
             .AddRow("/sessions, /ls", "List saved conversations")
             .AddRow("/status", "Model, tools, token usage, directory")
