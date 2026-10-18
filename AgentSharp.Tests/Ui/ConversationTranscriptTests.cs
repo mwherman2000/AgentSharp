@@ -145,12 +145,12 @@ public class ConversationTranscriptTests : IDisposable
         Assert.Contains("Tool call:", xml);
         Assert.Contains("read_file", xml);
         Assert.Contains("Tool result:", xml);
-        Assert.Contains("<w:sz w:val=\"20\"/>", xml); // tool text is 10pt
+        Assert.Contains("<w:sz w:val=\"18\"/>", xml); // tool text is 9pt
 
         var plainDocx = ConversationTranscript.Write(SampleHistory(), "prompt", _dir, "plain.docx");
         using var plainArchive = System.IO.Compression.ZipFile.OpenRead(plainDocx);
         using var plainReader = new StreamReader(plainArchive.GetEntry("word/document.xml")!.Open());
-        Assert.DoesNotContain("<w:sz w:val=\"20\"/>", plainReader.ReadToEnd());
+        Assert.DoesNotContain("<w:sz w:val=\"18\"/>", plainReader.ReadToEnd());
 
         var plain = File.ReadAllText(ConversationTranscript.Write(SampleHistory(), "prompt", _dir, "plain"));
         Assert.DoesNotContain("Tool call:", plain);

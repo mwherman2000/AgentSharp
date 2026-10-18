@@ -25,8 +25,8 @@ internal readonly record struct AnswerSegment(bool IsThought, string Text, bool 
 /// </summary>
 internal static class TranscriptWriter
 {
-    /// <summary>Tool call and tool result segments are set smaller than the reply text: 10pt, in half-points.</summary>
-    private const int ToolTextSize = 20;
+    /// <summary>Tool call and tool result segments are set smaller than the reply text: 9pt, in half-points.</summary>
+    private const int ToolTextSize = 18;
 
     private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
         .UsePipeTables()
