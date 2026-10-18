@@ -25,6 +25,9 @@ internal readonly record struct AnswerSegment(bool IsThought, string Text, bool 
 /// </summary>
 internal static class TranscriptWriter
 {
+    /// <summary>Tool call and tool result segments are set smaller than the reply text: 10pt, in half-points.</summary>
+    private const int ToolTextSize = 20;
+
     private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
         .UsePipeTables()
         .UseTaskLists()
@@ -118,6 +121,10 @@ internal static class TranscriptWriter
                     body.Append(SimpleParagraph("Thinking...", default(RunState) with { Bold = true, Italic = true }, quoteDepth: 1));
                     AppendMarkdown(body, segment.Text, hyperlinks, quoteDepth: 1, forceItalic: true);
                 }
+                else if (segment.IsTool)
+                {
+                    AppendMarkdown(body, segment.Text, hyperlinks, quoteDepth: 0, size: ToolTextSize);
+                }
                 else
                 {
                     AppendMarkdown(body, segment.Text, hyperlinks, quoteDepth: 0);
@@ -156,10 +163,10 @@ internal static class TranscriptWriter
     /// deep even before any Markdown blockquote inside it adds more); QuoteBlock
     /// nesting inside the text adds further levels on top of that.
     /// </summary>
-    private static void AppendMarkdown(StringBuilder body, string markdown, List<(string Id, string Target)> hyperlinks, int quoteDepth, bool forceItalic = false)
+    private static void AppendMarkdown(StringBuilder body, string markdown, List<(string Id, string Target)> hyperlinks, int quoteDepth, bool forceItalic = false, int? size = null)
     {
         var document = Markdown.Parse(markdown, MarkdownPipeline);
-        var baseState = forceItalic ? default(RunState) with { Italic = true } : default(RunState);
+        var baseState = (forceItalic ? default(RunState) with { Italic = true } : default(RunState)) with { Size = size };
         RenderBlocks(document, body, hyperlinks, quoteDepth, baseState);
     }
 
@@ -182,11 +189,11 @@ internal static class TranscriptWriter
 
                 case FencedCodeBlock { Info.Length: > 0 } fenced:
                     body.Append(SimpleParagraph(fenced.Info, default(RunState) with { Mono = true, Size = 16 }, quoteDepth));
-                    AppendCodeBlock(body, fenced, quoteDepth);
+                    AppendCodeBlock(body, fenced, quoteDepth, baseState.Size);
                     break;
 
                 case CodeBlock codeBlock:
-                    AppendCodeBlock(body, codeBlock, quoteDepth);
+                    AppendCodeBlock(body, codeBlock, quoteDepth, baseState.Size);
                     break;
 
                 case QuoteBlock quote:
@@ -327,7 +334,7 @@ internal static class TranscriptWriter
         body.Append("</w:tbl><w:p/>");
     }
 
-    private static void AppendCodeBlock(StringBuilder body, CodeBlock block, int quoteDepth)
+    private static void AppendCodeBlock(StringBuilder body, CodeBlock block, int quoteDepth, int? size = null)
     {
         var lines = block.Lines.Lines?.Where(l => l.Slice.Text != null).Select(l => l.Slice.ToString()).ToArray()
             ?? Array.Empty<string>();
@@ -348,7 +355,7 @@ internal static class TranscriptWriter
         {
             if (i > 0) body.Append("<w:r><w:br/></w:r>");
             if (lines[i].Length > 0)
-                AppendRun(body, lines[i], default(RunState) with { Mono = true });
+                AppendRun(body, lines[i], default(RunState) with { Mono = true, Size = size });
         }
         if (lines.Length == 0)
             body.Append("<w:r><w:t xml:space=\"preserve\"></w:t></w:r>");
