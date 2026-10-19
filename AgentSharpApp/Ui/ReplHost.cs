@@ -496,7 +496,8 @@ public class ReplHost
         var current = new System.Text.StringBuilder();
         // Resolved per prompt: /clear <persona> can switch the agent mid-session.
         var agentName = SystemPromptBuilder.ResolveAgentName(_session.SuperPrompt);
-        AnsiConsole.Markup($"[bold blue]{Markup.Escape(agentName)}>[/] ");
+        // Numbered like the Q&A pairs in a transcript, e.g. "21 Ray Pando>".
+        AnsiConsole.Markup($"[bold blue]{_session.History.QuestionCount + 1} {Markup.Escape(agentName)}>[/] ");
 
         // historyIndex == history.Count means "not currently navigating history"
         // (i.e. showing the user's own in-progress draft).

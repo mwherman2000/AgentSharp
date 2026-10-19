@@ -63,7 +63,8 @@ var running = true;
 while (running)
 {
     Console.ForegroundColor = ConsoleColor.Magenta;
-    Console.Write($"\n{agentName}> ");
+    // Numbered like the Q&A pairs in a transcript, e.g. "21 Lucy Pando> ".
+    Console.Write($"\n{lucy.History.QuestionCount + 1} {agentName}> ");
     Console.ResetColor();
 
     var input = ReadInput();

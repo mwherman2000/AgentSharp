@@ -14,6 +14,14 @@ public class ConversationHistory
     public IReadOnlyList<ChatMessage> Messages => _messages;
     public int Count => _messages.Count;
 
+    /// <summary>
+    /// How many questions the user has asked so far -- user messages with typed text,
+    /// not tool results. It is the number of Q&amp;A pairs a transcript would show, so
+    /// the next question is <c>QuestionCount + 1</c>.
+    /// </summary>
+    public int QuestionCount
+        => _messages.Count(m => m.Role == MessageRole.User && m.Content.OfType<TextBlock>().Any(b => b.Text.Length > 0));
+
     public void AddUserMessage(string text)
         => Add(ChatMessage.UserText(text));
 

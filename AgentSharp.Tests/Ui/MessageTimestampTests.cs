@@ -28,6 +28,20 @@ public class MessageTimestampTests : IDisposable
     }
 
     [Fact]
+    public void QuestionCount_CountsTypedQuestions_NotToolResultsOrReplies()
+    {
+        var history = new ConversationHistory();
+        Assert.Equal(0, history.QuestionCount);
+
+        history.AddUserMessage("one");
+        history.AddAssistantMessage([new TextBlock { Text = "a" }]);
+        history.AddToolResults([new ToolResultBlock { ToolUseId = "t", Content = "ok" }]);
+        history.AddUserMessage("two");
+
+        Assert.Equal(2, history.QuestionCount); // the next prompt is "3 <agent>>"
+    }
+
+    [Fact]
     public async Task SavedSession_RoundTripsTimestamps()
     {
         var history = new ConversationHistory();
