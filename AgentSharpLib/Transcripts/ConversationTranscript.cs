@@ -45,15 +45,16 @@ public static class ConversationTranscript
             : $"{safeName}.md";
         var path = Path.Combine(directory, fileName);
 
-        var qaPairs = BuildQaPairs(history, options);
+        var askedAt = new List<DateTimeOffset?>();
+        var qaPairs = BuildQaPairs(history, options, askedAt);
         var systemPromptIntro = GetFirstParagraph(systemPrompt);
         var generatedAt = DateTime.Now;
         var sessionStats = usage is null ? "" : FormatSessionStats(usage);
 
         if (isDocx)
-            File.WriteAllBytes(path, TranscriptWriter.BuildDocx(name, systemPromptIntro, generatedAt, qaPairs, sessionStats));
+            File.WriteAllBytes(path, TranscriptWriter.BuildDocx(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt));
         else
-            File.WriteAllText(path, TranscriptWriter.BuildMarkdown(name, systemPromptIntro, generatedAt, qaPairs, sessionStats));
+            File.WriteAllText(path, TranscriptWriter.BuildMarkdown(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt));
         return path;
     }
 
@@ -72,8 +73,11 @@ public static class ConversationTranscript
     /// are merged into one answer, in original order, until the next real user
     /// prompt starts a new pair.
     /// </summary>
-    internal static List<(string Question, List<AnswerSegment> Segments)> BuildQaPairs(ConversationHistory history, TranscriptOptions? options = null)
+    /// <param name="askedAt">When given, receives one entry per returned pair: when the user
+    /// asked that question (null for a session saved before timestamps were recorded).</param>
+    internal static List<(string Question, List<AnswerSegment> Segments)> BuildQaPairs(ConversationHistory history, TranscriptOptions? options = null, List<DateTimeOffset?>? askedAt = null)
     {
+        DateTimeOffset? currentAskedAt = null;
         options ??= new TranscriptOptions();
         var qaPairs = new List<(string Question, List<AnswerSegment> Segments)>();
         string? currentQuestion = null;
@@ -101,8 +105,12 @@ public static class ConversationTranscript
                 if (text.Length == 0) continue;
 
                 if (currentQuestion is not null)
+                {
                     qaPairs.Add((currentQuestion, segments));
+                    askedAt?.Add(currentAskedAt);
+                }
 
+                currentAskedAt = message.Timestamp;
                 currentQuestion = CapitalizeFirstLetter(text);
                 segments = new List<AnswerSegment>();
             }
@@ -130,7 +138,10 @@ public static class ConversationTranscript
             }
         }
         if (currentQuestion is not null)
+        {
             qaPairs.Add((currentQuestion, segments));
+            askedAt?.Add(currentAskedAt);
+        }
 
         return qaPairs;
     }

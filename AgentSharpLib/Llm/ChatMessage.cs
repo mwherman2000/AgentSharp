@@ -77,6 +77,14 @@ public record ChatMessage
     public required IReadOnlyList<ContentBlock> Content { get; init; }
 
     /// <summary>
+    /// When the message was added to the conversation (stamped by ConversationHistory).
+    /// Null for messages restored from a session saved before timestamps were recorded.
+    /// Local bookkeeping only -- never sent to a provider.
+    /// </summary>
+    [JsonIgnore]
+    public DateTimeOffset? Timestamp { get; init; }
+
+    /// <summary>
     /// Create a simple user text message.
     /// </summary>
     public static ChatMessage UserText(string text) => new()

@@ -15,20 +15,31 @@ public class ConversationHistory
     public int Count => _messages.Count;
 
     public void AddUserMessage(string text)
-        => _messages.Add(ChatMessage.UserText(text));
+        => Add(ChatMessage.UserText(text));
 
     public void AddAssistantMessage(ChatMessage message)
-        => _messages.Add(message);
+        => Add(message);
 
     public void AddAssistantMessage(IReadOnlyList<ContentBlock> content)
-        => _messages.Add(new ChatMessage
+        => Add(new ChatMessage
         {
             Role = MessageRole.Assistant,
             Content = content
         });
 
     public void AddToolResults(IEnumerable<ToolResultBlock> results)
-        => _messages.Add(ChatMessage.ToolResults(results));
+        => Add(ChatMessage.ToolResults(results));
+
+    /// <summary>Appends a new message, stamping it with the current time unless it already has one.</summary>
+    private void Add(ChatMessage message)
+        => _messages.Add(message.Timestamp is null ? message with { Timestamp = DateTimeOffset.Now } : message);
+
+    /// <summary>
+    /// Appends a message read back from a saved session exactly as it was, keeping its
+    /// original timestamp -- or none, for a session saved before timestamps were recorded.
+    /// </summary>
+    public void AddRestored(ChatMessage message)
+        => _messages.Add(message);
 
     public void Clear()
         => _messages.Clear();

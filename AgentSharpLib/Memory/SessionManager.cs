@@ -108,11 +108,11 @@ public class SessionManager
         foreach (var chatMsg in chatMessages)
         {
             if (chatMsg.Role == MessageRole.Assistant)
-                history.AddAssistantMessage(chatMsg);
+                history.AddRestored(chatMsg);
             else if (chatMsg.Content.Any(b => b is ToolResultBlock))
-                history.AddToolResults(chatMsg.Content.OfType<ToolResultBlock>());
+                history.AddRestored(ChatMessage.ToolResults(chatMsg.Content.OfType<ToolResultBlock>()) with { Timestamp = chatMsg.Timestamp });
             else
-                history.AddUserMessage(chatMsg.GetText());
+                history.AddRestored(ChatMessage.UserText(chatMsg.GetText()) with { Timestamp = chatMsg.Timestamp });
         }
 
         return history;
@@ -158,6 +158,7 @@ public class SessionManager
     private static SerializedMessage SerializeMessage(ChatMessage msg) => new()
     {
         Role = msg.Role,
+        Timestamp = msg.Timestamp,
         Content = msg.Content.Select(SerializeContentBlock).ToList()
     };
 
@@ -206,7 +207,7 @@ public class SessionManager
             }
         }
 
-        return new ChatMessage { Role = msg.Role, Content = blocks };
+        return new ChatMessage { Role = msg.Role, Content = blocks, Timestamp = msg.Timestamp };
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -228,6 +229,8 @@ public record SessionData
 public record SerializedMessage
 {
     public required string Role { get; init; }
+    /// <summary>Absent in sessions saved before timestamps were recorded.</summary>
+    public DateTimeOffset? Timestamp { get; init; }
     public required List<JsonElement> Content { get; init; }
 }
 

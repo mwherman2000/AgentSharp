@@ -40,7 +40,8 @@ internal static class TranscriptWriter
         string systemPromptIntro,
         DateTime generatedAt,
         IReadOnlyList<(string Question, List<AnswerSegment> Segments)> qaPairs,
-        string sessionStats = "")
+        string sessionStats = "",
+        IReadOnlyList<DateTimeOffset?>? askedAt = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# {title}");
@@ -64,6 +65,11 @@ internal static class TranscriptWriter
             var (question, segments) = qaPairs[i];
             sb.AppendLine($"## Q{i + 1}");
             sb.AppendLine();
+            if (FormatAskedAt(askedAt, i) is { } asked)
+            {
+                sb.AppendLine($"_{asked}_");
+                sb.AppendLine();
+            }
             sb.AppendLine(question);
             sb.AppendLine();
             sb.AppendLine($"## A{i + 1}");
@@ -75,6 +81,12 @@ internal static class TranscriptWriter
         }
         return sb.ToString();
     }
+
+    /// <summary>The local-time stamp shown under a question's heading, or null if it has none.</summary>
+    private static string? FormatAskedAt(IReadOnlyList<DateTimeOffset?>? askedAt, int index) =>
+        askedAt is not null && index < askedAt.Count && askedAt[index] is { } t
+            ? t.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : null;
 
     private static string FormatSegmentMarkdown(AnswerSegment segment)
     {
@@ -89,7 +101,8 @@ internal static class TranscriptWriter
         string systemPromptIntro,
         DateTime generatedAt,
         IReadOnlyList<(string Question, List<AnswerSegment> Segments)> qaPairs,
-        string sessionStats = "")
+        string sessionStats = "",
+        IReadOnlyList<DateTimeOffset?>? askedAt = null)
     {
         var body = new StringBuilder();
         var hyperlinks = new List<(string Id, string Target)>();
@@ -105,6 +118,8 @@ internal static class TranscriptWriter
         {
             var (question, segments) = qaPairs[i];
             body.Append(HeadingParagraph($"Q{i + 1}", sizeHalfPoints: 28));
+            if (FormatAskedAt(askedAt, i) is { } asked)
+                body.Append(SimpleParagraph(asked, default(RunState) with { Italic = true }));
             AppendMarkdown(body, question, hyperlinks, quoteDepth: 0);
             body.Append(HeadingParagraph($"A{i + 1}", sizeHalfPoints: 28));
 
