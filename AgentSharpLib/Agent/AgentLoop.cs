@@ -174,6 +174,17 @@ public class AgentLoop
     /// as many LLM calls and tool executions as needed until the model
     /// produces a final text response (stop_reason: "end_turn").
     /// </summary>
+    /// <summary>
+    /// Adds a user-role prompt to the history. A prompt the user didn't type (a loop nudge or
+    /// a /save or /load checkpoint) is also echoed to the console, numbered like a typed one.
+    /// </summary>
+    private void AddUserPrompt(string text, PromptKind kind = PromptKind.Std)
+    {
+        _history.AddUserMessage(text, kind);
+        if (kind != PromptKind.Std)
+            _output.SystemPrompt(kind, _history.QuestionCount, text);
+    }
+
     public async Task<string> RunTurnStreamingAsync(string userMessage, CancellationToken ct = default, PromptKind kind = PromptKind.Std)
     {
         _turnNumber++;
@@ -182,7 +193,7 @@ public class AgentLoop
         using var turnActivity = AgentTelemetry.Source.StartActivity("agent.turn");
         turnActivity?.SetTag("turn.number", _turnNumber);
         turnActivity?.SetTag("turn.mode", "streaming");
-        _history.AddUserMessage(userMessage, kind);
+        AddUserPrompt(userMessage, kind);
 
         var fullResponseText = new StringBuilder();
         int iterations = 0;
@@ -383,7 +394,7 @@ public class AgentLoop
                     {
                         new TextBlock { Text = $"[Error during response: {ex.Message}]" }
                     });
-                    _history.AddUserMessage(
+                    AddUserPrompt(
                         "The previous request failed with an error. Please try a different approach.",
                         kind: PromptKind.Sys);
                     continue;
@@ -475,7 +486,7 @@ public class AgentLoop
         using var turnActivity = AgentTelemetry.Source.StartActivity("agent.turn");
         turnActivity?.SetTag("turn.number", _turnNumber);
         turnActivity?.SetTag("turn.mode", "non-streaming");
-        _history.AddUserMessage(userMessage, kind);
+        AddUserPrompt(userMessage, kind);
 
         var fullResponseText = new StringBuilder();
         int iterations = 0;
@@ -555,7 +566,7 @@ public class AgentLoop
                 {
                     new TextBlock { Text = $"[Error during response: {ex.Message}]" }
                 });
-                _history.AddUserMessage(
+                AddUserPrompt(
                     "The previous request failed with an error. Please try a different approach.",
                         kind: PromptKind.Sys);
                 continue;
@@ -703,7 +714,7 @@ public class AgentLoop
             _stallNudged = true;
             _repeatedToolBatchCount = 0;
             _output.Warning($"The model has issued the same tool call {timesInARow} times in a row -- nudging it to change approach.");
-            _history.AddUserMessage(
+            AddUserPrompt(
                 "You have issued the same tool call several times in a row and gotten the same result " +
                 "each time. Stop repeating it. Re-check the actual paths and the working directory: " +
                 "write_file, read_file and edit_file resolve a relative path against the process working " +
@@ -775,7 +786,7 @@ public class AgentLoop
             }
 
             _output.Warning($"The model has written the same file {count} times this turn -- nudging it to stop and verify.");
-            _history.AddUserMessage(
+            AddUserPrompt(
                 $"You have called write_file for \"{tripped}\" {count} times this turn. {diskState} " +
                 $"The file tools resolve a relative path against the working directory {Directory.GetCurrentDirectory()}; " +
                 "a `cd` inside a run_shell command does not move them, so a cd'd script can look somewhere other than " +
@@ -851,7 +862,7 @@ public class AgentLoop
     private void AddMaxTokensNudge()
     {
         _output.Warning("Response was cut off by the output token limit. Asking the model to continue...");
-        _history.AddUserMessage("Your previous response was cut off because it reached the output token limit. Please continue where you left off.", kind: PromptKind.Sys);
+        AddUserPrompt("Your previous response was cut off because it reached the output token limit. Please continue where you left off.", kind: PromptKind.Sys);
     }
 
     /// <summary>

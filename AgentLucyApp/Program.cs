@@ -260,7 +260,7 @@ async Task LoadAsync(string? id)
         return;
     }
     lucy.Restore(history);
-    Console.WriteLine($"Session loaded: {id} ({history.Count} messages)");
+    Console.WriteLine($"Session loaded: {id} ({history.Count} messages, {history.QuestionCount} questions)");
     // A normal turn, so the marker and the reply become part of the conversation.
     await RunTurnAsync($"Resumed (/load) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}", kind: PromptKind.Chk);
 }

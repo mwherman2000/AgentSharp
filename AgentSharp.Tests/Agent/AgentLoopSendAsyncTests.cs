@@ -365,4 +365,36 @@ public class AgentLoopSendAsyncTests
         Assert.Contains("same tool call", sys[0].GetText());
         Assert.Equal(PromptKind.Std, UserTexts(loop).First().Kind);
     }
+
+    /// <summary>Records SystemPrompt calls; every other IAgentOutput member does nothing.</summary>
+    public class EchoRecorder : System.Reflection.DispatchProxy
+    {
+        public List<(PromptKind Kind, int Number, string Text)> Echoes { get; } = new();
+
+        protected override object? Invoke(System.Reflection.MethodInfo? targetMethod, object?[]? args)
+        {
+            if (targetMethod?.Name == nameof(AgentSharpLib.Output.IAgentOutput.SystemPrompt))
+                Echoes.Add(((PromptKind)args![0]!, (int)args[1]!, (string)args[2]!));
+            return null;
+        }
+    }
+
+    [Fact]
+    public async Task NonTypedPrompts_AreEchoedToTheConsoleWithTheirNumber_TypedOnesAreNot()
+    {
+        var output = System.Reflection.DispatchProxy.Create<AgentSharpLib.Output.IAgentOutput, EchoRecorder>();
+        var recorder = (EchoRecorder)(object)output;
+        var llm = new FakeLlmClient()
+            .Enqueue(TextResponse("partial", stopReason: "max_tokens"))
+            .Enqueue(TextResponse(" done"))
+            .Enqueue(TextResponse("resumed ok"));
+        var loop = new AgentLoop(llm, new ToolRegistry(), new ApprovalGate(), "system prompt", output: output);
+
+        await loop.RunTurnNonStreamingAsync("go");                                            // 1 typed, 2 sys nudge
+        await loop.RunTurnNonStreamingAsync("Resumed (/load) now", kind: PromptKind.Chk);     // 3 chk
+
+        Assert.Equal([(PromptKind.Sys, 2), (PromptKind.Chk, 3)], recorder.Echoes.Select(e => (e.Kind, e.Number)));
+        Assert.Contains("cut off", recorder.Echoes[0].Text);
+        Assert.Equal("Resumed (/load) now", recorder.Echoes[1].Text);
+    }
 }

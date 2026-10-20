@@ -1,3 +1,4 @@
+using AgentSharpLib.Llm;
 using AgentSharpLib.Agent.MultiAgent;
 using AgentSharpLib.Output;
 
@@ -17,6 +18,10 @@ internal sealed class ConsoleAgentOutput : IAgentOutput
     public void Trace(string text) => WriteLine(text, ConsoleColor.DarkGray);
     public void Info(string message) => WriteLine(message, ConsoleColor.DarkGray);
     public void Warning(string message) => WriteLine(message, ConsoleColor.Yellow);
+    // Echoed like a typed prompt ("21 sys> ..."), but yellow (loop nudge) or cyan (checkpoint).
+    public void SystemPrompt(PromptKind kind, int number, string text) =>
+        WriteLine($"{Environment.NewLine}{number} {kind.ToCode()}> {text}", kind == PromptKind.Chk ? ConsoleColor.Cyan : ConsoleColor.Yellow);
+
     public void Error(string message) => WriteLine($"{Environment.NewLine}Error: {message}", ConsoleColor.Red);
 
     public void TransientError(Exception exception) =>

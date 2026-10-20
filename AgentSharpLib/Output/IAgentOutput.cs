@@ -1,3 +1,4 @@
+using AgentSharpLib.Llm;
 using AgentSharpLib.Agent.MultiAgent;
 
 namespace AgentSharpLib.Output;
@@ -39,6 +40,12 @@ public interface IAgentOutput
     /// <summary>A transient failure the loop is about to retry, with full exception
     /// detail for diagnosis.</summary>
     void TransientError(Exception exception);
+
+    /// <summary>A prompt the user didn't type was added to the conversation (a loop nudge,
+    /// kind sys, or a /save or /load checkpoint, kind chk). <paramref name="number"/> is its
+    /// number in the conversation, as in the prompt "21 Ray Pando>". Echo it like a typed
+    /// prompt, in a different color; the default does nothing.</summary>
+    void SystemPrompt(PromptKind kind, int number, string text) { }
 
     /// <summary>A Write-risk tool was run without prompting.</summary>
     void ToolAutoApproved(string toolName);

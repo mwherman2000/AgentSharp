@@ -261,7 +261,7 @@ public class ReplHost
                     break;
                 }
                 _session.Restore(history);
-                AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages)");
+                AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages, {history.QuestionCount} questions)");
                 // A normal turn, so the marker and the agent's reply become part of the conversation.
                 await RunTurnAsync($"Resumed (/load) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}", ct, kind: PromptKind.Chk);
                 break;

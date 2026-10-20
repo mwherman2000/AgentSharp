@@ -1,3 +1,4 @@
+using AgentSharpLib.Llm;
 using AgentSharpLib.Agent.MultiAgent;
 using AgentSharpLib.Output;
 using Spectre.Console;
@@ -37,6 +38,13 @@ public sealed class SpectreAgentOutput : IAgentOutput
 
     public void Warning(string message) =>
         AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(message)}[/]");
+
+    // Echoed like a typed prompt ("21 sys> ..."), but yellow (loop nudge) or cyan (checkpoint).
+    public void SystemPrompt(PromptKind kind, int number, string text)
+    {
+        var color = kind == PromptKind.Chk ? "aqua" : "yellow";
+        AnsiConsole.MarkupLine($"\n[bold {color}]{number} {kind.ToCode()}>[/] [{color}]{Markup.Escape(text)}[/]");
+    }
 
     public void Error(string message) =>
         AnsiConsole.MarkupLine($"\n[red]Error:[/] {Markup.Escape(message)}");
