@@ -261,6 +261,8 @@ async Task LoadAsync(string? id)
     }
     lucy.Restore(history);
     Console.WriteLine($"Session loaded: {id} ({history.Count} messages)");
+    // A normal turn, so the marker and the reply become part of the conversation.
+    await RunTurnAsync($"Resumed (/load) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}");
 }
 
 void PrintSessions()
@@ -343,7 +345,7 @@ static void PrintHelp(string agentName)
           /clear, /cls         Start a new conversation with {agentName}
           /save [id] [--tools] [--no-thinking]
                                Send a "Checkpoint (/save)" prompt, wait for the reply, then save (and a .docx transcript; the flags shape the transcript only)
-          /load, /resume <id>  Continue a saved conversation
+          /load, /resume <id>  Continue a saved conversation (sends a "Resumed (/load)" prompt)
           /sessions, /ls       List saved conversations
           /status              Model, tools, token usage, directory
           /model               Show the current provider and model

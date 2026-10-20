@@ -262,6 +262,8 @@ public class ReplHost
                 }
                 _session.Restore(history);
                 AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages)");
+                // A normal turn, so the marker and the agent's reply become part of the conversation.
+                await RunTurnAsync($"Resumed (/load) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}", ct);
                 break;
 
             case CommandType.Sessions:
@@ -478,7 +480,7 @@ public class ReplHost
             .AddRow("/help, /h, /?", "Show this help")
             .AddRow("/clear, /cls [[persona]]", $"Start a new conversation; optionally switch persona ({string.Join(", ", SystemPromptBuilder.AvailableSuperPrompts)})")
             .AddRow("/save [[id]] [[--tools]] [[--no-thinking]]", "Send a \"Checkpoint (/save)\" prompt, wait for the reply, then save the conversation (and a .docx transcript; the flags shape the transcript only)")
-            .AddRow("/load, /resume <id>", "Continue a saved conversation")
+            .AddRow("/load, /resume <id>", "Continue a saved conversation (sends a \"Resumed (/load)\" prompt and shows the reply)")
             .AddRow("/sessions, /ls", "List saved conversations")
             .AddRow("/status", "Model, tools, token usage, directory")
             .AddRow("/model", "Show the current provider and model")
