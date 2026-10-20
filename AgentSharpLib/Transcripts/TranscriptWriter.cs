@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using AgentSharpLib.Llm;
 using Markdig;
 using Markdig.Extensions.Tables;
 using Markdig.Extensions.TaskLists;
@@ -42,7 +43,7 @@ internal static class TranscriptWriter
         IReadOnlyList<(string Question, List<AnswerSegment> Segments)> qaPairs,
         string sessionStats = "",
         IReadOnlyList<DateTimeOffset?>? askedAt = null,
-        IReadOnlyList<bool>? isSystem = null)
+        IReadOnlyList<PromptKind>? kinds = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# {title}");
@@ -64,7 +65,7 @@ internal static class TranscriptWriter
         for (int i = 0; i < qaPairs.Count; i++)
         {
             var (question, segments) = qaPairs[i];
-            sb.AppendLine($"## {PromptLabel(isSystem, i)}");
+            sb.AppendLine($"## {PromptLabel(kinds, i)}");
             sb.AppendLine();
             if (FormatAskedAt(askedAt, i) is { } asked)
             {
@@ -83,9 +84,9 @@ internal static class TranscriptWriter
         return sb.ToString();
     }
 
-    /// <summary>"Q21" for a prompt the user typed, "S21" for one the app generated.</summary>
-    private static string PromptLabel(IReadOnlyList<bool>? isSystem, int index) =>
-        (isSystem is not null && index < isSystem.Count && isSystem[index] ? "S" : "Q") + (index + 1);
+    /// <summary>"Q21" for a prompt the user typed, "S21" for a loop-generated one, "C21" for a /save or /load checkpoint.</summary>
+    private static string PromptLabel(IReadOnlyList<PromptKind>? kinds, int index) =>
+        (kinds is not null && index < kinds.Count ? kinds[index].ToLabel() : 'Q') + (index + 1).ToString();
 
     /// <summary>The local-time stamp shown under a question's heading, or null if it has none.</summary>
     private static string? FormatAskedAt(IReadOnlyList<DateTimeOffset?>? askedAt, int index) =>
@@ -108,7 +109,7 @@ internal static class TranscriptWriter
         IReadOnlyList<(string Question, List<AnswerSegment> Segments)> qaPairs,
         string sessionStats = "",
         IReadOnlyList<DateTimeOffset?>? askedAt = null,
-        IReadOnlyList<bool>? isSystem = null)
+        IReadOnlyList<PromptKind>? kinds = null)
     {
         var body = new StringBuilder();
         var hyperlinks = new List<(string Id, string Target)>();
@@ -123,7 +124,7 @@ internal static class TranscriptWriter
         for (int i = 0; i < qaPairs.Count; i++)
         {
             var (question, segments) = qaPairs[i];
-            body.Append(HeadingParagraph(PromptLabel(isSystem, i), sizeHalfPoints: 28));
+            body.Append(HeadingParagraph(PromptLabel(kinds, i), sizeHalfPoints: 28));
             if (FormatAskedAt(askedAt, i) is { } asked)
                 body.Append(SimpleParagraph(asked, default(RunState) with { Italic = true }));
             AppendMarkdown(body, question, hyperlinks, quoteDepth: 0);

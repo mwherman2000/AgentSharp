@@ -93,31 +93,34 @@ public class MessageTimestampTests : IDisposable
     }
 
     [Fact]
-    public async Task SystemPrompts_AreCounted_SavedAsSys_AndLabelledSInTheTranscript()
+    public async Task PromptKinds_AreCounted_Saved_AndLabelledInTheTranscript()
     {
         var history = new ConversationHistory();
         history.AddUserMessage("typed");
         history.AddAssistantMessage([new TextBlock { Text = "a1" }]);
-        history.AddUserMessage("The previous request failed with an error.", isSystem: true);
+        history.AddUserMessage("The previous request failed with an error.", kind: PromptKind.Sys);
         history.AddAssistantMessage([new TextBlock { Text = "a2" }]);
+        history.AddUserMessage("Checkpoint (/save) 2026-10-19 10:00:00", PromptKind.Chk);
+        history.AddAssistantMessage([new TextBlock { Text = "a2b" }]);
         history.AddUserMessage("typed again");
         history.AddAssistantMessage([new TextBlock { Text = "a3" }]);
 
-        Assert.Equal(3, history.QuestionCount); // sys prompts number like any other
+        Assert.Equal(4, history.QuestionCount); // sys prompts number like any other
 
         var sessions = new SessionManager(_dir);
         await sessions.SaveAsync(history, "s2");
         var json = await File.ReadAllTextAsync(Path.Combine(_dir, "sessions", "s2.json"));
         var kinds = JsonDocument.Parse(json).RootElement.GetProperty("messages").EnumerateArray()
             .Where(m => m.TryGetProperty("kind", out _)).Select(m => m.GetProperty("kind").GetString());
-        Assert.Equal(["std", "sys", "std"], kinds);
+        Assert.Equal(["std", "sys", "chk", "std"], kinds);
 
         var loaded = await sessions.LoadAsync("s2");
-        Assert.Equal([false, true, false], loaded!.Messages.Where(m => m.Role == MessageRole.User).Select(m => m.IsSystem));
+        Assert.Equal([PromptKind.Std, PromptKind.Sys, PromptKind.Chk, PromptKind.Std], loaded!.Messages.Where(m => m.Role == MessageRole.User).Select(m => m.Kind));
 
         var md = File.ReadAllText(ConversationTranscript.Write(loaded, "prompt", _dir, "t2")).Replace("\r\n", "\n");
         Assert.Contains("## Q1\n", md);
         Assert.Contains("## S2\n", md);
-        Assert.Contains("## Q3\n", md);
+        Assert.Contains("## C3\n", md);
+        Assert.Contains("## Q4\n", md);
     }
 }

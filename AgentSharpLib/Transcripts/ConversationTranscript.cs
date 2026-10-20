@@ -46,16 +46,16 @@ public static class ConversationTranscript
         var path = Path.Combine(directory, fileName);
 
         var askedAt = new List<DateTimeOffset?>();
-        var isSystem = new List<bool>();
-        var qaPairs = BuildQaPairs(history, options, askedAt, isSystem);
+        var kinds = new List<PromptKind>();
+        var qaPairs = BuildQaPairs(history, options, askedAt, kinds);
         var systemPromptIntro = GetFirstParagraph(systemPrompt);
         var generatedAt = DateTime.Now;
         var sessionStats = usage is null ? "" : FormatSessionStats(usage);
 
         if (isDocx)
-            File.WriteAllBytes(path, TranscriptWriter.BuildDocx(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt, isSystem));
+            File.WriteAllBytes(path, TranscriptWriter.BuildDocx(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt, kinds));
         else
-            File.WriteAllText(path, TranscriptWriter.BuildMarkdown(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt, isSystem));
+            File.WriteAllText(path, TranscriptWriter.BuildMarkdown(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt, kinds));
         return path;
     }
 
@@ -76,12 +76,12 @@ public static class ConversationTranscript
     /// </summary>
     /// <param name="askedAt">When given, receives one entry per returned pair: when the user
     /// asked that question (null for a session saved before timestamps were recorded).</param>
-    /// <param name="isSystem">When given, receives one entry per returned pair: whether the
-    /// app generated that prompt ("sys") rather than the user typing it ("std").</param>
-    internal static List<(string Question, List<AnswerSegment> Segments)> BuildQaPairs(ConversationHistory history, TranscriptOptions? options = null, List<DateTimeOffset?>? askedAt = null, List<bool>? isSystem = null)
+    /// <param name="kinds">When given, receives one entry per returned pair: which kind of prompt it was
+    /// (typed, loop-generated, or a /save or /load checkpoint).</param>
+    internal static List<(string Question, List<AnswerSegment> Segments)> BuildQaPairs(ConversationHistory history, TranscriptOptions? options = null, List<DateTimeOffset?>? askedAt = null, List<PromptKind>? kinds = null)
     {
         DateTimeOffset? currentAskedAt = null;
-        var currentIsSystem = false;
+        var currentKind = PromptKind.Std;
         options ??= new TranscriptOptions();
         var qaPairs = new List<(string Question, List<AnswerSegment> Segments)>();
         string? currentQuestion = null;
@@ -112,11 +112,11 @@ public static class ConversationTranscript
                 {
                     qaPairs.Add((currentQuestion, segments));
                     askedAt?.Add(currentAskedAt);
-                    isSystem?.Add(currentIsSystem);
+                    kinds?.Add(currentKind);
                 }
 
                 currentAskedAt = message.Timestamp;
-                currentIsSystem = message.IsSystem;
+                currentKind = message.Kind;
                 currentQuestion = CapitalizeFirstLetter(text);
                 segments = new List<AnswerSegment>();
             }
@@ -147,7 +147,7 @@ public static class ConversationTranscript
         {
             qaPairs.Add((currentQuestion, segments));
             askedAt?.Add(currentAskedAt);
-            isSystem?.Add(currentIsSystem);
+            kinds?.Add(currentKind);
         }
 
         return qaPairs;

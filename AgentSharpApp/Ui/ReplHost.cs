@@ -91,7 +91,7 @@ public class ReplHost
     /// Sends one message through the agent loop and waits until the reply is complete and
     /// recorded in the history. Returns false if the turn was interrupted or failed.
     /// </summary>
-    private async Task<bool> RunTurnAsync(string input, CancellationToken ct, bool isSystem = false)
+    private async Task<bool> RunTurnAsync(string input, CancellationToken ct, PromptKind kind = PromptKind.Std)
     {
         _turnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var historyCountBeforeTurn = _session.History.Count;
@@ -101,7 +101,7 @@ public class ReplHost
             AnsiConsole.Write(new Rule($"[dim]Turn {_turnCount}[/]").RuleStyle("dim"));
             AnsiConsole.WriteLine();
 
-            await _session.SendAsync(input, _turnCts.Token, isSystem);
+            await _session.SendAsync(input, _turnCts.Token, kind);
             return true;
         }
         catch (OperationCanceledException)
@@ -231,7 +231,7 @@ public class ReplHost
                 }
                 // Checkpoint first: a normal turn, so the marker and the agent's reply are part
                 // of the conversation (and the transcript) before it is written out.
-                if (!await RunTurnAsync($"Checkpoint (/save) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}", ct, isSystem: true))
+                if (!await RunTurnAsync($"Checkpoint (/save) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}", ct, kind: PromptKind.Chk))
                 {
                     AnsiConsole.MarkupLine("[yellow]Checkpoint did not complete; session not saved.[/]");
                     break;
@@ -263,7 +263,7 @@ public class ReplHost
                 _session.Restore(history);
                 AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages)");
                 // A normal turn, so the marker and the agent's reply become part of the conversation.
-                await RunTurnAsync($"Resumed (/load) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}", ct, isSystem: true);
+                await RunTurnAsync($"Resumed (/load) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}", ct, kind: PromptKind.Chk);
                 break;
 
             case CommandType.Sessions:

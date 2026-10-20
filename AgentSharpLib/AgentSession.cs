@@ -88,10 +88,10 @@ public sealed class AgentSession
     /// (calling tools along the way). Streams unless <see cref="AgentFlags.SyncMode"/>
     /// is set. Returns the assistant's text for the turn.
     /// </summary>
-    public Task<string> SendAsync(string message, CancellationToken ct = default, bool isSystem = false) =>
+    public Task<string> SendAsync(string message, CancellationToken ct = default, PromptKind kind = PromptKind.Std) =>
         AgentFlags.SyncMode
-            ? Loop.RunTurnNonStreamingAsync(message, ct, isSystem)
-            : Loop.RunTurnStreamingAsync(message, ct, isSystem);
+            ? Loop.RunTurnNonStreamingAsync(message, ct, kind)
+            : Loop.RunTurnStreamingAsync(message, ct, kind);
 
     /// <summary>
     /// Start a fresh conversation. The system prompt is rebuilt, so it picks up any

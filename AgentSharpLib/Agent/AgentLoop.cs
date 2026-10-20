@@ -174,7 +174,7 @@ public class AgentLoop
     /// as many LLM calls and tool executions as needed until the model
     /// produces a final text response (stop_reason: "end_turn").
     /// </summary>
-    public async Task<string> RunTurnStreamingAsync(string userMessage, CancellationToken ct = default, bool isSystem = false)
+    public async Task<string> RunTurnStreamingAsync(string userMessage, CancellationToken ct = default, PromptKind kind = PromptKind.Std)
     {
         _turnNumber++;
         _turnToolExecutions = 0;
@@ -182,7 +182,7 @@ public class AgentLoop
         using var turnActivity = AgentTelemetry.Source.StartActivity("agent.turn");
         turnActivity?.SetTag("turn.number", _turnNumber);
         turnActivity?.SetTag("turn.mode", "streaming");
-        _history.AddUserMessage(userMessage, isSystem);
+        _history.AddUserMessage(userMessage, kind);
 
         var fullResponseText = new StringBuilder();
         int iterations = 0;
@@ -385,7 +385,7 @@ public class AgentLoop
                     });
                     _history.AddUserMessage(
                         "The previous request failed with an error. Please try a different approach.",
-                        isSystem: true);
+                        kind: PromptKind.Sys);
                     continue;
                 }
             }
@@ -467,7 +467,7 @@ public class AgentLoop
     /// max_tokens-continuation nudge, and retry/backoff with the streaming path -- only
     /// "how do we get a response out of the LLM, and how do we render it" differs.
     /// </summary>
-    public async Task<string> RunTurnNonStreamingAsync(string userMessage, CancellationToken ct = default, bool isSystem = false)
+    public async Task<string> RunTurnNonStreamingAsync(string userMessage, CancellationToken ct = default, PromptKind kind = PromptKind.Std)
     {
         _turnNumber++;
         _turnToolExecutions = 0;
@@ -475,7 +475,7 @@ public class AgentLoop
         using var turnActivity = AgentTelemetry.Source.StartActivity("agent.turn");
         turnActivity?.SetTag("turn.number", _turnNumber);
         turnActivity?.SetTag("turn.mode", "non-streaming");
-        _history.AddUserMessage(userMessage, isSystem);
+        _history.AddUserMessage(userMessage, kind);
 
         var fullResponseText = new StringBuilder();
         int iterations = 0;
@@ -557,7 +557,7 @@ public class AgentLoop
                 });
                 _history.AddUserMessage(
                     "The previous request failed with an error. Please try a different approach.",
-                        isSystem: true);
+                        kind: PromptKind.Sys);
                 continue;
             }
 
@@ -709,7 +709,7 @@ public class AgentLoop
                 "write_file, read_file and edit_file resolve a relative path against the process working " +
                 "directory, and a `cd` inside a run_shell command does not change that. Take a genuinely " +
                 "different approach, or explain what is blocking you.",
-                isSystem: true);
+                kind: PromptKind.Sys);
             return false;
         }
 
@@ -781,7 +781,7 @@ public class AgentLoop
                 "a `cd` inside a run_shell command does not move them, so a cd'd script can look somewhere other than " +
                 "where the file actually is. Stop rewriting this file. Confirm it with read_file or list_files on the " +
                 "absolute path above; if a script cannot see it, fix the path the script uses.",
-                isSystem: true);
+                kind: PromptKind.Sys);
             return false;
         }
 
@@ -851,7 +851,7 @@ public class AgentLoop
     private void AddMaxTokensNudge()
     {
         _output.Warning("Response was cut off by the output token limit. Asking the model to continue...");
-        _history.AddUserMessage("Your previous response was cut off because it reached the output token limit. Please continue where you left off.", isSystem: true);
+        _history.AddUserMessage("Your previous response was cut off because it reached the output token limit. Please continue where you left off.", kind: PromptKind.Sys);
     }
 
     /// <summary>
