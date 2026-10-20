@@ -313,4 +313,56 @@ public class AgentLoopSendAsyncTests
         Assert.Equal(50, loop.TotalCacheCreationTokens);
         Assert.Equal(150, loop.TotalCacheReadTokens);
     }
+
+    private static IEnumerable<ChatMessage> UserTexts(AgentLoop loop) =>
+        loop.History.Messages.Where(m => m.Role == MessageRole.User && m.Content.OfType<TextBlock>().Any());
+
+    [Fact]
+    public async Task MaxTokensNudge_IsRecordedAsSysPrompt_AndNumberedLikeAnyOther()
+    {
+        var llm = new FakeLlmClient()
+            .Enqueue(TextResponse("partial", stopReason: "max_tokens"))
+            .Enqueue(TextResponse(" done"));
+        var loop = new AgentLoop(llm, new ToolRegistry(), new ApprovalGate(), "system prompt");
+
+        await loop.RunTurnNonStreamingAsync("go");
+
+        Assert.Equal([PromptKind.Std, PromptKind.Sys], UserTexts(loop).Select(m => m.Kind));
+        Assert.Equal(2, loop.History.QuestionCount);
+    }
+
+    [Fact]
+    public async Task ErrorRetryNudge_IsRecordedAsSysPrompt()
+    {
+        var llm = new FakeLlmClient()
+            .EnqueueThrow(new InvalidOperationException("transient hiccup"))
+            .Enqueue(TextResponse("recovered"));
+        var loop = new AgentLoop(llm, new ToolRegistry(), new ApprovalGate(), "system prompt");
+
+        await loop.RunTurnNonStreamingAsync("hi");
+
+        var prompts = UserTexts(loop).ToList();
+        Assert.Equal([PromptKind.Std, PromptKind.Sys], prompts.Select(m => m.Kind));
+        Assert.Contains("previous request failed", prompts[1].GetText());
+    }
+
+    [Fact]
+    public async Task RepeatedToolCallNudge_IsRecordedAsSysPrompt()
+    {
+        var tools = new ToolRegistry();
+        tools.Register(new FakeTool("test_tool", ToolRiskLevel.ReadOnly, _ => ToolResult.Success("same")));
+        var llm = new FakeLlmClient();
+        for (var i = 0; i < 5; i++)
+            llm.Enqueue(ToolUseResponse($"call_{i}", "test_tool", new { x = 1 }));
+        llm.Enqueue(TextResponse("giving up"));
+        var loop = new AgentLoop(llm, tools, new ApprovalGate(), "system prompt");
+
+        await loop.RunTurnNonStreamingAsync("loop forever");
+
+        // The nudge is a text prompt; tool results (also user-role) have no text.
+        var sys = UserTexts(loop).Where(m => m.Kind == PromptKind.Sys).ToList();
+        Assert.Single(sys);
+        Assert.Contains("same tool call", sys[0].GetText());
+        Assert.Equal(PromptKind.Std, UserTexts(loop).First().Kind);
+    }
 }

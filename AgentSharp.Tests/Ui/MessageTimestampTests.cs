@@ -123,4 +123,29 @@ public class MessageTimestampTests : IDisposable
         Assert.Contains("## C3\n", md);
         Assert.Contains("## Q4\n", md);
     }
+
+    [Fact]
+    public async Task HandEditedSession_WithSysAndChkKinds_LoadsAndShowsSAndCInTheTranscript()
+    {
+        var sessionsDir = Path.Combine(_dir, "sessions");
+        Directory.CreateDirectory(sessionsDir);
+        await File.WriteAllTextAsync(Path.Combine(sessionsDir, "edited.json"), """
+            {"id":"edited","created_at":"2026-10-01T10:00:00Z","message_count":6,"messages":[
+              {"role":"user","kind":"std","content":[{"type":"text","text":"typed"}]},
+              {"role":"assistant","content":[{"type":"text","text":"a1"}]},
+              {"role":"user","kind":"sys","content":[{"type":"text","text":"The previous request failed with an error."}]},
+              {"role":"assistant","content":[{"type":"text","text":"a2"}]},
+              {"role":"user","kind":"chk","content":[{"type":"text","text":"Resumed (/load) 2026-10-19 10:00:00"}]},
+              {"role":"assistant","content":[{"type":"text","text":"a3"}]}]}
+            """);
+
+        var loaded = await new SessionManager(_dir).LoadAsync("edited");
+
+        Assert.Equal([PromptKind.Std, PromptKind.Sys, PromptKind.Chk],
+            loaded!.Messages.Where(m => m.Role == MessageRole.User).Select(m => m.Kind));
+        var md = File.ReadAllText(ConversationTranscript.Write(loaded, "prompt", _dir, "t3")).Replace("\r\n", "\n");
+        Assert.Contains("## Q1\n", md);
+        Assert.Contains("## S2\n", md);
+        Assert.Contains("## C3\n", md);
+    }
 }
