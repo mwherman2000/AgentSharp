@@ -231,7 +231,7 @@ public class ReplHost
                 }
                 // Checkpoint first: a normal turn, so the marker and the agent's reply are part
                 // of the conversation (and the transcript) before it is written out.
-                if (!await RunTurnAsync($"Checkpoint (/save) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}", ct, kind: PromptKind.Chk))
+                if (!await RunTurnAsync($"Checkpoint (/save) {LocalTime.Format(DateTimeOffset.Now, LocalTime.Seconds)}", ct, kind: PromptKind.Chk))
                 {
                     AnsiConsole.MarkupLine("[yellow]Checkpoint did not complete; session not saved.[/]");
                     break;
@@ -263,7 +263,7 @@ public class ReplHost
                 _session.Restore(history);
                 AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages, {history.QuestionCount} questions)");
                 // A normal turn, so the marker and the agent's reply become part of the conversation.
-                await RunTurnAsync($"Resumed (/load) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}", ct, kind: PromptKind.Chk);
+                await RunTurnAsync($"Resumed (/load) {LocalTime.Format(DateTimeOffset.Now, LocalTime.Seconds)}", ct, kind: PromptKind.Chk);
                 break;
 
             case CommandType.Sessions:
@@ -462,7 +462,7 @@ public class ReplHost
             .AddColumn("Created")
             .AddColumn("Messages");
         foreach (var s in sessions)
-            table.AddRow(s.Id, s.CreatedAt.ToString("yyyy-MM-dd HH:mm"), s.MessageCount.ToString());
+            table.AddRow(s.Id, LocalTime.Format(s.CreatedAt, LocalTime.Minutes), s.MessageCount.ToString());
         AnsiConsole.Write(table);
     }
 

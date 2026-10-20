@@ -62,7 +62,7 @@ public class MemoryManager
     /// </summary>
     public async Task AppendAsync(string entry)
     {
-        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+        var timestamp = LocalTime.Format(DateTime.Now, LocalTime.Minutes);
         var formattedEntry = $"\n## [{timestamp}]\n{entry}\n";
 
         await _writeLock.WaitAsync();

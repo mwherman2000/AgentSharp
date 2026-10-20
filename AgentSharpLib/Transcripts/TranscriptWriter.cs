@@ -59,7 +59,7 @@ internal static class TranscriptWriter
                 sb.AppendLine($"> {line}");
             sb.AppendLine();
         }
-        sb.AppendLine($"_Transcript generated {generatedAt:yyyy-MM-dd HH:mm}_");
+        sb.AppendLine($"_Transcript generated {LocalTime.Format(generatedAt, LocalTime.Minutes)}_");
         sb.AppendLine();
 
         for (int i = 0; i < qaPairs.Count; i++)
@@ -91,7 +91,7 @@ internal static class TranscriptWriter
     /// <summary>The local-time stamp shown under a question's heading, or null if it has none.</summary>
     private static string? FormatAskedAt(IReadOnlyList<DateTimeOffset?>? askedAt, int index) =>
         askedAt is not null && index < askedAt.Count && askedAt[index] is { } t
-            ? t.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            ? LocalTime.Format(t, LocalTime.Seconds)
             : null;
 
     private static string FormatSegmentMarkdown(AnswerSegment segment)
@@ -119,7 +119,7 @@ internal static class TranscriptWriter
             body.Append(SimpleParagraph(sessionStats, default(RunState) with { Bold = true }));
         if (systemPromptIntro.Length > 0)
             body.Append(SimpleParagraph(systemPromptIntro, default(RunState) with { Italic = true }, quoteDepth: 1));
-        body.Append(SimpleParagraph($"Transcript generated {generatedAt:yyyy-MM-dd HH:mm}", default(RunState) with { Italic = true }));
+        body.Append(SimpleParagraph($"Transcript generated {LocalTime.Format(generatedAt, LocalTime.Minutes)}", default(RunState) with { Italic = true }));
 
         for (int i = 0; i < qaPairs.Count; i++)
         {

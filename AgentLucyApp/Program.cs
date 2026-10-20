@@ -230,7 +230,7 @@ async Task SaveAsync(string? id)
     id = saveId.Length > 0 ? saveId : null;
     // Checkpoint first: a normal turn, so the marker and the reply are part of the
     // conversation (and the transcript) before it is written out.
-    if (!await RunTurnAsync($"Checkpoint (/save) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}", kind: PromptKind.Chk))
+    if (!await RunTurnAsync($"Checkpoint (/save) {LocalTime.Format(DateTimeOffset.Now, LocalTime.Seconds)}", kind: PromptKind.Chk))
     {
         Console.WriteLine("Checkpoint did not complete; session not saved.");
         return;
@@ -262,7 +262,7 @@ async Task LoadAsync(string? id)
     lucy.Restore(history);
     Console.WriteLine($"Session loaded: {id} ({history.Count} messages, {history.QuestionCount} questions)");
     // A normal turn, so the marker and the reply become part of the conversation.
-    await RunTurnAsync($"Resumed (/load) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}", kind: PromptKind.Chk);
+    await RunTurnAsync($"Resumed (/load) {LocalTime.Format(DateTimeOffset.Now, LocalTime.Seconds)}", kind: PromptKind.Chk);
 }
 
 void PrintSessions()
@@ -275,7 +275,7 @@ void PrintSessions()
     }
     Console.WriteLine($"{"ID",-24} {"Created",-16} Messages");
     foreach (var s in saved)
-        Console.WriteLine($"{s.Id,-24} {s.CreatedAt:yyyy-MM-dd HH:mm} {s.MessageCount,8}");
+        Console.WriteLine($"{s.Id,-24} {LocalTime.Format(s.CreatedAt, LocalTime.Minutes)} {s.MessageCount,8}");
 }
 
 void PrintStatus()

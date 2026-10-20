@@ -1,3 +1,4 @@
+using AgentSharpLib;
 using System.Text.Json;
 using AgentSharpLib.Agent;
 using AgentSharpLib.Llm;
@@ -81,7 +82,7 @@ public class MessageTimestampTests : IDisposable
 
         var md = File.ReadAllText(ConversationTranscript.Write(history, "prompt", _dir, "t"));
 
-        var expected = $"_{asked.ToLocalTime():yyyy-MM-dd HH:mm:ss}_";
+        var expected = $"_{LocalTime.Format(asked, LocalTime.Seconds)}_";
         Assert.Contains($"## Q1\n\n{expected}\n\nFirst", md.Replace("\r\n", "\n"));
         Assert.Equal(1, md.Split(expected).Length - 1);
         Assert.Contains("## Q2\n\nSecond", md.Replace("\r\n", "\n")); // no stamp line

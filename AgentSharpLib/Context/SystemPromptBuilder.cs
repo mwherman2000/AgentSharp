@@ -95,7 +95,7 @@ public class SystemPromptBuilder
         sb.AppendLine($"- Is git repo: {_project.IsGitRepo}");
         if (_project.GitBranch is not null)
             sb.AppendLine($"- Git branch: {_project.GitBranch}");
-        sb.AppendLine($"- Current date: {DateTime.Now:yyyy-MM-dd HH:mm}");
+        sb.AppendLine($"- Current date: {LocalTime.Format(DateTime.Now, LocalTime.Minutes)}");
 
         // File tree
         if (_project.FileTreeSummary is not null)
