@@ -193,13 +193,13 @@ static bool KeyArrivesWithin(TimeSpan wait)
 
 // Sends one message and waits until the reply is complete and recorded in the history.
 // Returns false if the turn was interrupted.
-async Task<bool> RunTurnAsync(string input)
+async Task<bool> RunTurnAsync(string input, bool isSystem = false)
 {
     var historyBeforeTurn = lucy.History.Count;
     turnCts = new CancellationTokenSource();
     try
     {
-        await lucy.SendAsync(input, turnCts.Token);
+        await lucy.SendAsync(input, turnCts.Token, isSystem);
         return true;
     }
     catch (OperationCanceledException)
@@ -230,7 +230,7 @@ async Task SaveAsync(string? id)
     id = saveId.Length > 0 ? saveId : null;
     // Checkpoint first: a normal turn, so the marker and the reply are part of the
     // conversation (and the transcript) before it is written out.
-    if (!await RunTurnAsync($"Checkpoint (/save) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}"))
+    if (!await RunTurnAsync($"Checkpoint (/save) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}", isSystem: true))
     {
         Console.WriteLine("Checkpoint did not complete; session not saved.");
         return;
@@ -262,7 +262,7 @@ async Task LoadAsync(string? id)
     lucy.Restore(history);
     Console.WriteLine($"Session loaded: {id} ({history.Count} messages)");
     // A normal turn, so the marker and the reply become part of the conversation.
-    await RunTurnAsync($"Resumed (/load) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}");
+    await RunTurnAsync($"Resumed (/load) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}", isSystem: true);
 }
 
 void PrintSessions()

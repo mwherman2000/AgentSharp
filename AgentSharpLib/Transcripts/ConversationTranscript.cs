@@ -46,15 +46,16 @@ public static class ConversationTranscript
         var path = Path.Combine(directory, fileName);
 
         var askedAt = new List<DateTimeOffset?>();
-        var qaPairs = BuildQaPairs(history, options, askedAt);
+        var isSystem = new List<bool>();
+        var qaPairs = BuildQaPairs(history, options, askedAt, isSystem);
         var systemPromptIntro = GetFirstParagraph(systemPrompt);
         var generatedAt = DateTime.Now;
         var sessionStats = usage is null ? "" : FormatSessionStats(usage);
 
         if (isDocx)
-            File.WriteAllBytes(path, TranscriptWriter.BuildDocx(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt));
+            File.WriteAllBytes(path, TranscriptWriter.BuildDocx(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt, isSystem));
         else
-            File.WriteAllText(path, TranscriptWriter.BuildMarkdown(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt));
+            File.WriteAllText(path, TranscriptWriter.BuildMarkdown(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt, isSystem));
         return path;
     }
 
@@ -75,9 +76,12 @@ public static class ConversationTranscript
     /// </summary>
     /// <param name="askedAt">When given, receives one entry per returned pair: when the user
     /// asked that question (null for a session saved before timestamps were recorded).</param>
-    internal static List<(string Question, List<AnswerSegment> Segments)> BuildQaPairs(ConversationHistory history, TranscriptOptions? options = null, List<DateTimeOffset?>? askedAt = null)
+    /// <param name="isSystem">When given, receives one entry per returned pair: whether the
+    /// app generated that prompt ("sys") rather than the user typing it ("std").</param>
+    internal static List<(string Question, List<AnswerSegment> Segments)> BuildQaPairs(ConversationHistory history, TranscriptOptions? options = null, List<DateTimeOffset?>? askedAt = null, List<bool>? isSystem = null)
     {
         DateTimeOffset? currentAskedAt = null;
+        var currentIsSystem = false;
         options ??= new TranscriptOptions();
         var qaPairs = new List<(string Question, List<AnswerSegment> Segments)>();
         string? currentQuestion = null;
@@ -108,9 +112,11 @@ public static class ConversationTranscript
                 {
                     qaPairs.Add((currentQuestion, segments));
                     askedAt?.Add(currentAskedAt);
+                    isSystem?.Add(currentIsSystem);
                 }
 
                 currentAskedAt = message.Timestamp;
+                currentIsSystem = message.IsSystem;
                 currentQuestion = CapitalizeFirstLetter(text);
                 segments = new List<AnswerSegment>();
             }
@@ -141,6 +147,7 @@ public static class ConversationTranscript
         {
             qaPairs.Add((currentQuestion, segments));
             askedAt?.Add(currentAskedAt);
+            isSystem?.Add(currentIsSystem);
         }
 
         return qaPairs;

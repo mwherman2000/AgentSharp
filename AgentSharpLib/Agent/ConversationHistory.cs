@@ -22,8 +22,8 @@ public class ConversationHistory
     public int QuestionCount
         => _messages.Count(m => m.Role == MessageRole.User && m.Content.OfType<TextBlock>().Any(b => b.Text.Length > 0));
 
-    public void AddUserMessage(string text)
-        => Add(ChatMessage.UserText(text));
+    public void AddUserMessage(string text, bool isSystem = false)
+        => Add(ChatMessage.UserText(text, isSystem));
 
     public void AddAssistantMessage(ChatMessage message)
         => Add(message);

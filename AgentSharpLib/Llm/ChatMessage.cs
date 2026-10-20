@@ -85,12 +85,21 @@ public record ChatMessage
     public DateTimeOffset? Timestamp { get; init; }
 
     /// <summary>
+    /// True for a user-role text message the application generated rather than the user
+    /// typing it ("sys" vs "std" in a saved session). It is a normal prompt in every other
+    /// respect. Local bookkeeping only -- never sent to a provider.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsSystem { get; init; }
+
+    /// <summary>
     /// Create a simple user text message.
     /// </summary>
-    public static ChatMessage UserText(string text) => new()
+    public static ChatMessage UserText(string text, bool isSystem = false) => new()
     {
         Role = MessageRole.User,
-        Content = [new TextBlock { Text = text }]
+        Content = [new TextBlock { Text = text }],
+        IsSystem = isSystem
     };
 
     /// <summary>
