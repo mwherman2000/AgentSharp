@@ -155,23 +155,7 @@ while (running)
         continue;
     }
 
-    var historyBeforeTurn = lucy.History.Count;
-    turnCts = new CancellationTokenSource();
-    try
-    {
-        await lucy.SendAsync(input, turnCts.Token);
-    }
-    catch (OperationCanceledException)
-    {
-        // Drop the interrupted exchange so the next turn starts clean.
-        lucy.History.TruncateTo(historyBeforeTurn);
-        Console.WriteLine("\n(interrupted)");
-    }
-    finally
-    {
-        turnCts.Dispose();
-        turnCts = null;
-    }
+    await RunTurnAsync(input);
 }
 
 // Flush whichever trace exporter ended up active (console, or Jaeger via /jaeger).
@@ -207,6 +191,31 @@ static bool KeyArrivesWithin(TimeSpan wait)
     return true;
 }
 
+// Sends one message and waits until the reply is complete and recorded in the history.
+// Returns false if the turn was interrupted.
+async Task<bool> RunTurnAsync(string input)
+{
+    var historyBeforeTurn = lucy.History.Count;
+    turnCts = new CancellationTokenSource();
+    try
+    {
+        await lucy.SendAsync(input, turnCts.Token);
+        return true;
+    }
+    catch (OperationCanceledException)
+    {
+        // Drop the interrupted exchange so the next turn starts clean.
+        lucy.History.TruncateTo(historyBeforeTurn);
+        Console.WriteLine("\n(interrupted)");
+        return false;
+    }
+    finally
+    {
+        turnCts.Dispose();
+        turnCts = null;
+    }
+}
+
 // Saves the conversation, plus a .docx transcript of it next to the project (same
 // as the main CLI's /save).
 async Task SaveAsync(string? id)
@@ -219,6 +228,13 @@ async Task SaveAsync(string? id)
         return;
     }
     id = saveId.Length > 0 ? saveId : null;
+    // Checkpoint first: a normal turn, so the marker and the reply are part of the
+    // conversation (and the transcript) before it is written out.
+    if (!await RunTurnAsync($"Checkpoint (/save) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}"))
+    {
+        Console.WriteLine("Checkpoint did not complete; session not saved.");
+        return;
+    }
     var savedId = await sessions.SaveAsync(lucy.History, id);
     if (savedId is null)
     {
@@ -326,7 +342,7 @@ static void PrintHelp(string agentName)
           /help, /h, /?        Show this help
           /clear, /cls         Start a new conversation with {agentName}
           /save [id] [--tools] [--no-thinking]
-                               Save this conversation (and a .docx transcript; the flags shape the transcript only)
+                               Send a "Checkpoint (/save)" prompt, wait for the reply, then save (and a .docx transcript; the flags shape the transcript only)
           /load, /resume <id>  Continue a saved conversation
           /sessions, /ls       List saved conversations
           /status              Model, tools, token usage, directory

@@ -80,44 +80,55 @@ public class ReplHost
             }
 
             // Regular message -- send to agent loop
-            _turnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var historyCountBeforeTurn = _session.History.Count;
-            try
-            {
-                _turnCount++;
-                AnsiConsole.Write(new Rule($"[dim]Turn {_turnCount}[/]").RuleStyle("dim"));
-                AnsiConsole.WriteLine();
-
-                await _session.SendAsync(input, _turnCts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                // Roll back so the interrupted user message and any partial
-                // assistant/tool-result messages don't linger in history.
-                _session.History.TruncateTo(historyCountBeforeTurn);
-                AnsiConsole.MarkupLine(_turnCts.IsCancellationRequested && !ct.IsCancellationRequested
-                    ? "\n[yellow]Interrupted (Ctrl+C). Returning to prompt.[/]"
-                    : "\n[yellow]Cancelled. OperationCanceledException[/]");
-            }
-            catch (HttpRequestException ex)
-            {
-                AnsiConsole.MarkupLine($"\n[red]API Error:[/] {Markup.Escape(ex.Message)}");
-                AnsiConsole.MarkupLine("[dim]Check your API key and network connection.[/]");
-            }
-            catch (Exception ex)
-            {
-                AnsiConsole.MarkupLine($"\n[red]Error:[/] {Markup.Escape(ex.Message)}");
-            }
-            finally
-            {
-                var completedCts = _turnCts;
-                _turnCts = null;
-                completedCts.Dispose();
-            }
+            await RunTurnAsync(input, ct);
         }
 
         Console.CancelKeyPress -= OnCancelKeyPress;
         AnsiConsole.MarkupLine("[dim]Goodbye![/]");
+    }
+
+    /// <summary>
+    /// Sends one message through the agent loop and waits until the reply is complete and
+    /// recorded in the history. Returns false if the turn was interrupted or failed.
+    /// </summary>
+    private async Task<bool> RunTurnAsync(string input, CancellationToken ct)
+    {
+        _turnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var historyCountBeforeTurn = _session.History.Count;
+        try
+        {
+            _turnCount++;
+            AnsiConsole.Write(new Rule($"[dim]Turn {_turnCount}[/]").RuleStyle("dim"));
+            AnsiConsole.WriteLine();
+
+            await _session.SendAsync(input, _turnCts.Token);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            // Roll back so the interrupted user message and any partial
+            // assistant/tool-result messages don't linger in history.
+            _session.History.TruncateTo(historyCountBeforeTurn);
+            AnsiConsole.MarkupLine(_turnCts.IsCancellationRequested && !ct.IsCancellationRequested
+                ? "\n[yellow]Interrupted (Ctrl+C). Returning to prompt.[/]"
+                : "\n[yellow]Cancelled. OperationCanceledException[/]");
+        }
+        catch (HttpRequestException ex)
+        {
+            AnsiConsole.MarkupLine($"\n[red]API Error:[/] {Markup.Escape(ex.Message)}");
+            AnsiConsole.MarkupLine("[dim]Check your API key and network connection.[/]");
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"\n[red]Error:[/] {Markup.Escape(ex.Message)}");
+        }
+        finally
+        {
+            var completedCts = _turnCts;
+            _turnCts = null;
+            completedCts.Dispose();
+        }
+        return false;
     }
 
     /// <summary>
@@ -216,6 +227,13 @@ public class ReplHost
                 if (saveOptions is null)
                 {
                     AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(saveError!)} Usage: /save [[id]] [[--tools]] [[--no-thinking]][/]");
+                    break;
+                }
+                // Checkpoint first: a normal turn, so the marker and the agent's reply are part
+                // of the conversation (and the transcript) before it is written out.
+                if (!await RunTurnAsync($"Checkpoint (/save) {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}", ct))
+                {
+                    AnsiConsole.MarkupLine("[yellow]Checkpoint did not complete; session not saved.[/]");
                     break;
                 }
                 var sessionId = await _sessions.SaveAsync(_session.History, saveId.Length > 0 ? saveId : null);
@@ -459,7 +477,7 @@ public class ReplHost
             .AddColumn("Description")
             .AddRow("/help, /h, /?", "Show this help")
             .AddRow("/clear, /cls [[persona]]", $"Start a new conversation; optionally switch persona ({string.Join(", ", SystemPromptBuilder.AvailableSuperPrompts)})")
-            .AddRow("/save [[id]] [[--tools]] [[--no-thinking]]", "Save this conversation (and a .docx transcript; the flags shape the transcript only)")
+            .AddRow("/save [[id]] [[--tools]] [[--no-thinking]]", "Send a \"Checkpoint (/save)\" prompt, wait for the reply, then save the conversation (and a .docx transcript; the flags shape the transcript only)")
             .AddRow("/load, /resume <id>", "Continue a saved conversation")
             .AddRow("/sessions, /ls", "List saved conversations")
             .AddRow("/status", "Model, tools, token usage, directory")
