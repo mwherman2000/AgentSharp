@@ -17,6 +17,7 @@ namespace AgentSharpApp.Ui;
 public class ReplHost
 {
     private readonly AgentSession _session;
+    private const int StartupSessionLimit = 10;
     private readonly SessionManager _sessions;
     private int _turnCount;
     private readonly List<string> _inputHistory = new();
@@ -35,7 +36,7 @@ public class ReplHost
     public async Task RunAsync(CancellationToken ct = default)
     {
         PrintWelcome();
-        PrintSessions();
+        PrintSessions(StartupSessionLimit);
 
         Console.CancelKeyPress += OnCancelKeyPress;
 
@@ -447,11 +448,14 @@ public class ReplHost
     /// <summary>
     /// Lists saved sessions, same as the /sessions command. Also run once at
     /// startup, right after the welcome banner, so returning users see what's
-    /// available to /load without having to ask.
+    /// available to /load without having to ask. Startup shows only the most
+    /// recent <paramref name="limit"/>; /sessions shows them all.
     /// </summary>
-    private void PrintSessions()
+    private void PrintSessions(int? limit = null)
     {
         var sessions = _sessions.ListSessions();
+        var total = sessions.Count;
+        if (limit is { } max) sessions = sessions.Take(max).ToList();
         if (sessions.Count == 0)
         {
             AnsiConsole.MarkupLine("[dim]No saved sessions.[/]");
@@ -464,6 +468,8 @@ public class ReplHost
         foreach (var s in sessions)
             table.AddRow(s.Id, LocalTime.Format(s.CreatedAt, LocalTime.Minutes), s.MessageCount.ToString());
         AnsiConsole.Write(table);
+        if (sessions.Count < total)
+            AnsiConsole.MarkupLine($"[dim]Showing the {sessions.Count} most recent of {total} saved sessions; /sessions lists all.[/]");
     }
 
     /// <summary>Shared by both /help tables so their columns line up.</summary>
