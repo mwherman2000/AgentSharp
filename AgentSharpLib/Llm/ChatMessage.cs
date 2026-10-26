@@ -92,6 +92,9 @@ public record ChatMessage
     [JsonIgnore]
     public PromptKind Kind { get; init; }
 
+    /// <summary>An assistant-role record of an API error, so it survives /save and shows in transcripts.</summary>
+    public static ChatMessage AssistantError(string text) => AssistantText(text) with { Kind = PromptKind.Err };
+
     /// <summary>
     /// Create a simple user text message.
     /// </summary>
@@ -163,15 +166,18 @@ public enum PromptKind
     Sys,
     /// <summary>The automatic "Checkpoint (/save)" and "Resumed (/load)" prompts.</summary>
     Chk,
+    /// <summary>An assistant-role record of an API error that ended the turn (E21 in transcripts).</summary>
+    Err,
 }
 
 public static class PromptKinds
 {
-    /// <summary>The value stored in a saved session: "std", "sys" or "chk".</summary>
+    /// <summary>The value stored in a saved session: "std", "sys", "chk" or "err".</summary>
     public static string ToCode(this PromptKind kind) => kind switch
     {
         PromptKind.Sys => "sys",
         PromptKind.Chk => "chk",
+        PromptKind.Err => "err",
         _ => "std",
     };
 
@@ -180,14 +186,16 @@ public static class PromptKinds
     {
         "sys" => PromptKind.Sys,
         "chk" => PromptKind.Chk,
+        "err" => PromptKind.Err,
         _ => PromptKind.Std,
     };
 
-    /// <summary>The letter that prefixes the number in a transcript: Q, S or C.</summary>
+    /// <summary>The letter that prefixes the number in a transcript: Q, S, C or E.</summary>
     public static char ToLabel(this PromptKind kind) => kind switch
     {
         PromptKind.Sys => 'S',
         PromptKind.Chk => 'C',
+        PromptKind.Err => 'E',
         _ => 'Q',
     };
 }

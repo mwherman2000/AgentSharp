@@ -25,6 +25,9 @@ public class ConversationHistory
     public void AddUserMessage(string text, PromptKind kind = PromptKind.Std)
         => Add(ChatMessage.UserText(text, kind));
 
+    public void AddAssistantError(string text)
+        => Add(ChatMessage.AssistantError(text));
+
     public void AddAssistantMessage(ChatMessage message)
         => Add(message);
 

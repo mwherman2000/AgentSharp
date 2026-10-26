@@ -365,6 +365,7 @@ public class AgentLoop
                 llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 _output.Error(ex.Message);
                 _output.Info(AuthOrConfigHint(ex.Message));
+                _history.AddAssistantError($"Error: {ex.Message}\n{AuthOrConfigHint(ex.Message)}");
                 break;
             }
             catch (Exception ex)
@@ -540,6 +541,7 @@ public class AgentLoop
                 llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 _output.Error(ex.Message);
                 _output.Info(AuthOrConfigHint(ex.Message));
+                _history.AddAssistantError($"Error: {ex.Message}\n{AuthOrConfigHint(ex.Message)}");
                 break;
             }
             catch (Exception ex)

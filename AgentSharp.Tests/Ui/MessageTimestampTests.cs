@@ -149,4 +149,28 @@ public class MessageTimestampTests : IDisposable
         Assert.Contains("## S2\n", md);
         Assert.Contains("## C3\n", md);
     }
+
+    [Fact]
+    public async Task ApiError_IsRecordedAsErr_SavedAndShownAsEntryWithThePromptsNumber()
+    {
+        var history = new ConversationHistory();
+        history.AddUserMessage("typed");
+        history.AddAssistantMessage([new TextBlock { Text = "a1" }]);
+        history.AddUserMessage("asked again");
+        history.AddAssistantError("Error: credit balance is too low");
+
+        Assert.Equal(2, history.QuestionCount); // an error doesn't take a prompt number
+
+        await new SessionManager(_dir).SaveAsync(history, "err");
+        var loaded = await new SessionManager(_dir).LoadAsync("err");
+        Assert.Equal(PromptKind.Err, loaded!.Messages[^1].Kind);
+        Assert.Contains("\"err\"", await File.ReadAllTextAsync(Path.Combine(_dir, "sessions", "err.json")));
+
+        var md = File.ReadAllText(ConversationTranscript.Write(loaded, "prompt", _dir, "t4")).Replace("\r\n", "\n");
+        Assert.Contains("## Q2\n", md);
+        Assert.Contains("## E2\n\n", md);
+        Assert.Contains("Error: credit balance is too low", md);
+        Assert.DoesNotContain("## A3", md);
+        Assert.DoesNotContain("## E3", md);
+    }
 }

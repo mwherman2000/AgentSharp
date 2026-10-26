@@ -74,7 +74,8 @@ internal static class TranscriptWriter
             }
             sb.AppendLine(question);
             sb.AppendLine();
-            sb.AppendLine($"## A{i + 1}");
+            if (IsError(kinds, i)) continue;
+            sb.AppendLine($"## A{PromptNumber(kinds, i)}");
             sb.AppendLine();
             sb.AppendLine(segments.Count > 0
                 ? string.Join("\n\n", segments.Select(FormatSegmentMarkdown))
@@ -86,7 +87,19 @@ internal static class TranscriptWriter
 
     /// <summary>"Q21" for a prompt the user typed, "S21" for a loop-generated one, "C21" for a /save or /load checkpoint.</summary>
     private static string PromptLabel(IReadOnlyList<PromptKind>? kinds, int index) =>
-        (kinds is not null && index < kinds.Count ? kinds[index].ToLabel() : 'Q') + (index + 1).ToString();
+        (kinds is not null && index < kinds.Count ? kinds[index].ToLabel() : 'Q') + PromptNumber(kinds, index).ToString();
+
+    private static bool IsError(IReadOnlyList<PromptKind>? kinds, int index) =>
+        kinds is not null && index < kinds.Count && kinds[index] == PromptKind.Err;
+
+    /// <summary>The prompt number of an entry. An error entry (E21) shares the number of the prompt whose turn it ended.</summary>
+    private static int PromptNumber(IReadOnlyList<PromptKind>? kinds, int index)
+    {
+        var number = 0;
+        for (var i = 0; i <= index; i++)
+            if (!IsError(kinds, i)) number++;
+        return Math.Max(number, 1);
+    }
 
     /// <summary>The local-time stamp shown under a question's heading, or null if it has none.</summary>
     private static string? FormatAskedAt(IReadOnlyList<DateTimeOffset?>? askedAt, int index) =>
@@ -128,7 +141,8 @@ internal static class TranscriptWriter
             if (FormatAskedAt(askedAt, i) is { } asked)
                 body.Append(SimpleParagraph(asked, default(RunState) with { Italic = true }));
             AppendMarkdown(body, question, hyperlinks, quoteDepth: 0);
-            body.Append(HeadingParagraph($"A{i + 1}", sizeHalfPoints: 28));
+            if (IsError(kinds, i)) continue;
+            body.Append(HeadingParagraph($"A{PromptNumber(kinds, i)}", sizeHalfPoints: 28));
 
             if (segments.Count == 0)
             {

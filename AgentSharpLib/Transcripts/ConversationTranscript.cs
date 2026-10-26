@@ -120,6 +120,21 @@ public static class ConversationTranscript
                 currentQuestion = CapitalizeFirstLetter(text);
                 segments = new List<AnswerSegment>();
             }
+            else if (message.Role == MessageRole.Assistant && message.Kind == PromptKind.Err)
+            {
+                // An API error that ended the turn: its own entry (E21), no answer part.
+                if (currentQuestion is not null)
+                {
+                    qaPairs.Add((currentQuestion, segments));
+                    askedAt?.Add(currentAskedAt);
+                    kinds?.Add(currentKind);
+                }
+                qaPairs.Add((CapitalizeFirstLetter(string.Join("\n\n", message.Content.OfType<TextBlock>().Select(b => b.Text))), new List<AnswerSegment>()));
+                askedAt?.Add(message.Timestamp);
+                kinds?.Add(PromptKind.Err);
+                currentQuestion = null;
+                segments = new List<AnswerSegment>();
+            }
             else if (message.Role == MessageRole.Assistant)
             {
                 foreach (var block in message.Content)
