@@ -56,6 +56,7 @@ public class AgentLoop
     private void WarnIfContextNearlyFull(int inputTokens, int cacheCreationTokens, int cacheReadTokens)
     {
         var used = (long)inputTokens + cacheCreationTokens + cacheReadTokens;
+        _history.RecordPromptUsage(used); // lets /compact report real token figures
         var percent = (int)(used * 100 / Math.Max(ContextWindowTokens, 1));
         var threshold = percent >= 95 ? 95 : percent >= 80 ? 80 : 0;
         if (threshold <= _contextWarnedAt) return;
@@ -388,6 +389,7 @@ public class AgentLoop
                 llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 _output.Error(ex.Message);
                 _output.Info(AuthOrConfigHint(ex.Message));
+                RecordTooLongPrompt(ex.Message);
                 _history.AddAssistantError($"Error: {ex.Message}\n{AuthOrConfigHint(ex.Message)}");
                 break;
             }
@@ -565,6 +567,7 @@ public class AgentLoop
                 llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 _output.Error(ex.Message);
                 _output.Info(AuthOrConfigHint(ex.Message));
+                RecordTooLongPrompt(ex.Message);
                 _history.AddAssistantError($"Error: {ex.Message}\n{AuthOrConfigHint(ex.Message)}");
                 break;
             }
@@ -851,6 +854,14 @@ public class AgentLoop
     /// fix is adding credits/checking the plan, not touching the key or config at
     /// all. Also matches OpenAI's equivalent wording for the same underlying case.
     /// </summary>
+    /// <summary>A "prompt is too long: N tokens" error carries the provider's real count for this history.</summary>
+    private void RecordTooLongPrompt(string exceptionMessage)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(exceptionMessage, "prompt is too long: ([0-9]+) tokens");
+        if (match.Success && long.TryParse(match.Groups[1].Value, out var tokens))
+            _history.RecordPromptUsage(tokens);
+    }
+
     private static bool IsInsufficientCreditError(string exceptionMessage) =>
         exceptionMessage.Contains("credit balance", StringComparison.OrdinalIgnoreCase) ||
         exceptionMessage.Contains("insufficient_quota", StringComparison.OrdinalIgnoreCase) ||

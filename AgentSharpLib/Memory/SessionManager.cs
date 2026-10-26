@@ -44,6 +44,8 @@ public class SessionManager
             Id = safeId,
             CreatedAt = DateTime.UtcNow,
             MessageCount = history.Count,
+            PromptOffset = history.PromptOffset,
+            TurnOffset = history.TurnOffset,
             Messages = history.Messages.Select(SerializeMessage).ToList()
         };
 
@@ -81,6 +83,7 @@ public class SessionManager
             return null;
 
         List<ChatMessage> chatMessages;
+        int promptOffset, turnOffset;
         try
         {
             var json = await File.ReadAllTextAsync(path);
@@ -95,6 +98,8 @@ public class SessionManager
             // a field of the wrong JSON type, both plausible from a hand-edited or
             // version-skewed session file.
             chatMessages = session.Messages.Select(DeserializeMessage).ToList();
+            promptOffset = session.PromptOffset;
+            turnOffset = session.TurnOffset;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException
             or KeyNotFoundException or InvalidOperationException)
@@ -115,6 +120,7 @@ public class SessionManager
                 history.AddRestored(ChatMessage.UserText(chatMsg.GetText(), chatMsg.Kind) with { Timestamp = chatMsg.Timestamp });
         }
 
+        history.RestoreOffsets(promptOffset, turnOffset);
         return history;
     }
 
@@ -227,6 +233,9 @@ public record SessionData
     public required string Id { get; init; }
     public DateTime CreatedAt { get; init; }
     public int MessageCount { get; init; }
+    /// <summary>Prompts and turns /compact dropped from the front; absent (0) in a session never compacted.</summary>
+    public int PromptOffset { get; init; }
+    public int TurnOffset { get; init; }
     public required List<SerializedMessage> Messages { get; init; }
 }
 

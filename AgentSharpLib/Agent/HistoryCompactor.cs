@@ -3,7 +3,7 @@ using AgentSharpLib.Llm;
 namespace AgentSharpLib.Agent;
 
 /// <summary>What a /compact did: turns dropped and kept, and the estimated tokens before and after.</summary>
-public sealed record CompactResult(int TurnsDropped, int TurnsKept, long TokensBefore, long TokensAfter);
+public sealed record CompactResult(int TurnsDropped, int TurnsKept, long TokensBefore, long TokensAfter, bool Calibrated = false);
 
 /// <summary>
 /// Shrinks a conversation by dropping its oldest turns. A turn is a typed or checkpoint prompt
@@ -40,6 +40,11 @@ public static class HistoryCompactor
         var starts = TurnStarts(history.Messages);
         if (starts.Count == 0) return new CompactResult(0, 0, 0, 0);
 
+        // Real tokens per estimated token when the provider has reported a count, else 1 (plain estimate).
+        var scale = history.TokenScale;
+        var factor = scale ?? 1.0;
+        var calibrated = scale is not null;
+
         var sizes = new long[starts.Count];
         for (var t = 0; t < starts.Count; t++)
         {
@@ -68,11 +73,15 @@ public static class HistoryCompactor
         }
 
         var after = sizes.Skip(dropped).Sum();
-        if (dropped == 0) return new CompactResult(0, starts.Count, total / 4, total / 4);
+        var tokensBefore = (long)(total / 4 * factor);
+        var tokensAfter = (long)(after / 4 * factor);
+        if (dropped == 0) return new CompactResult(0, starts.Count, tokensBefore, tokensBefore, calibrated);
 
+        var firstDroppedPrompt = history.PromptOffset + 1;
         history.DropFirst(starts[dropped]);
-        history.AddCompactionNote($"Conversation compacted: dropped the {dropped} oldest turns, kept {starts.Count - dropped} (estimated tokens {total / 4:N0} -> {after / 4:N0}).");
-        return new CompactResult(dropped, starts.Count - dropped, total / 4, after / 4);
+        history.AddCompactionNote($"Conversation compacted: dropped the {dropped} oldest turns (prompts {firstDroppedPrompt}-{history.PromptOffset}), " +
+            $"kept {starts.Count - dropped} ({(calibrated ? "calibrated" : "estimated")} tokens {tokensBefore:N0} -> {tokensAfter:N0}).");
+        return new CompactResult(dropped, starts.Count - dropped, tokensBefore, tokensAfter, calibrated);
     }
 
     /// <summary>Index of the first message of each turn. Anything before the first prompt joins turn one.</summary>
@@ -87,6 +96,9 @@ public static class HistoryCompactor
         }
         return starts;
     }
+
+    /// <summary>The estimate for a whole history: characters / 4, not a real token count.</summary>
+    internal static long EstimateTokens(IEnumerable<ChatMessage> messages) => messages.Sum(EstimateChars) / 4;
 
     private static long EstimateChars(ChatMessage message)
     {

@@ -53,9 +53,9 @@ public static class ConversationTranscript
         var sessionStats = usage is null ? "" : FormatSessionStats(usage);
 
         if (isDocx)
-            File.WriteAllBytes(path, TranscriptWriter.BuildDocx(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt, kinds));
+            File.WriteAllBytes(path, TranscriptWriter.BuildDocx(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt, kinds, history.PromptOffset + 1));
         else
-            File.WriteAllText(path, TranscriptWriter.BuildMarkdown(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt, kinds));
+            File.WriteAllText(path, TranscriptWriter.BuildMarkdown(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt, kinds, history.PromptOffset + 1));
         return path;
     }
 

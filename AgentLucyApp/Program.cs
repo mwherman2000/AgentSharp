@@ -99,7 +99,7 @@ while (running)
                 var compacted = HistoryCompactor.Compact(lucy.History, compactPercent, compactDropOldest);
                 Console.WriteLine(compacted.TurnsDropped == 0
                     ? "Nothing to drop."
-                    : $"Compacted: dropped the {compacted.TurnsDropped} oldest turns, kept {compacted.TurnsKept}; estimated tokens {compacted.TokensBefore:N0} -> {compacted.TokensAfter:N0}.");
+                    : $"Compacted: dropped the {compacted.TurnsDropped} oldest turns, kept {compacted.TurnsKept}; {(compacted.Calibrated ? "calibrated" : "estimated")} tokens {compacted.TokensBefore:N0} -> {compacted.TokensAfter:N0}.");
                 break;
             case "/save":
                 await SaveAsync(argument);

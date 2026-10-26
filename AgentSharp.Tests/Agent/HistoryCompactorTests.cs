@@ -53,7 +53,7 @@ public class HistoryCompactorTests
         Assert.Equal(4, result.TurnsDropped); // 11+21+31 = 63 is under half; adding 41 makes 104
         Assert.Equal(1, result.TurnsKept);
         Assert.Equal("q5", h.Messages[0].GetText());
-        Assert.Equal(1, h.TurnCount);
+        Assert.Equal(5, h.TurnCount); // q1-q4 dropped, so numbering carries on from turn 5
     }
 
     [Fact]
@@ -81,6 +81,48 @@ public class HistoryCompactorTests
     }
 
     [Fact]
+    public void RealTokenCount_CalibratesTheReportedSizes()
+    {
+        var h = Sample();
+        h.RecordPromptUsage(1_004_382); // the provider's count for this history
+        var estimatedAll = HistoryCompactor.EstimateTokens(h.Messages);
+
+        var result = HistoryCompactor.Compact(h, 50, dropOldest: true);
+
+        Assert.True(result.Calibrated);
+        Assert.InRange(result.TokensBefore, 1_004_382 - 2, 1_004_382 + 2); // matches the real count
+        Assert.True(result.TokensAfter < result.TokensBefore / 2 + result.TokensBefore / 10);
+        Assert.True(estimatedAll < result.TokensBefore);
+        Assert.False(HistoryCompactor.Compact(Sample(), 50, dropOldest: true).Calibrated);
+    }
+
+    [Fact]
+    public async Task PromptAndTurnNumbers_NeverGoBackwards_AcrossCompactAndSaveAndLoad()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "agentsharp-num-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var h = Sample();
+            var promptsBefore = h.QuestionCount; // q1-q4, q5, nudge = 6
+            var turnsBefore = h.TurnCount;       // 5
+
+            HistoryCompactor.Compact(h, 50, dropOldest: true);
+
+            Assert.Equal(promptsBefore, h.QuestionCount);
+            Assert.Equal(turnsBefore, h.TurnCount);
+
+            await new AgentSharpLib.Memory.SessionManager(dir).SaveAsync(h, "n");
+            var loaded = await new AgentSharpLib.Memory.SessionManager(dir).LoadAsync("n");
+            Assert.Equal(promptsBefore, loaded!.QuestionCount);
+            Assert.Equal(turnsBefore, loaded.TurnCount);
+
+            loaded.AddUserMessage("next");
+            Assert.Equal(promptsBefore + 1, loaded.QuestionCount);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
+    [Fact]
     public void EmptyHistory_IsANoOp()
     {
         var result = HistoryCompactor.Compact(new ConversationHistory(), 50, dropOldest: true);
@@ -100,14 +142,14 @@ public class HistoryCompactorTests
             Assert.Contains("\"cmp\"", await File.ReadAllTextAsync(Path.Combine(dir, "sessions", "cmp.json")));
             var loaded = await new AgentSharpLib.Memory.SessionManager(dir).LoadAsync("cmp");
             Assert.Equal(PromptKind.Cmp, loaded!.Messages[^1].Kind);
-            Assert.Equal(1, loaded.TurnCount);
-            Assert.Equal(2, loaded.QuestionCount); // q5 and its loop nudge; the record takes no prompt number
+            Assert.Equal(5, loaded.TurnCount);
+            Assert.Equal(6, loaded.QuestionCount); // 4 dropped + q5 and its loop nudge; the record takes no prompt number
 
             var md = File.ReadAllText(AgentSharpLib.Transcripts.ConversationTranscript.Write(loaded, "prompt", dir, "t")).Replace("\r\n", "\n");
-            Assert.Contains("## Q1\n", md);
-            Assert.Contains("## M2\n", md); // shares the number of the last prompt (the nudge, S2)
+            Assert.Contains("## Q5\n", md); // numbering carries on past the 4 dropped prompts
+            Assert.Contains("## M6\n", md); // shares the number of the last prompt (the nudge, S6)
             Assert.Contains("Conversation compacted: dropped the 4 oldest turns", md);
-            Assert.DoesNotContain("## A3", md);
+            Assert.DoesNotContain("## A7", md);
 
             var llm = new FakeLlmClient().Enqueue(new LlmResponse { Message = ChatMessage.AssistantText("ok"), StopReason = "end_turn" });
             var loop = new AgentLoop(llm, new AgentSharpLib.Tools.ToolRegistry(), new AgentSharpLib.Safety.ApprovalGate(), "sys", history: loaded);

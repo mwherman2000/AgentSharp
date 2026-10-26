@@ -227,7 +227,7 @@ public class ReplHost
                 var compacted = HistoryCompactor.Compact(_session.History, compactPercent, compactDropOldest);
                 AnsiConsole.MarkupLine(compacted.TurnsDropped == 0
                     ? "[yellow]Nothing to drop.[/]"
-                    : $"[green]Compacted:[/] dropped the {compacted.TurnsDropped} oldest turns, kept {compacted.TurnsKept}; estimated tokens {compacted.TokensBefore:N0} -> {compacted.TokensAfter:N0}. /save first next time if you want the dropped turns kept.");
+                    : $"[green]Compacted:[/] dropped the {compacted.TurnsDropped} oldest turns, kept {compacted.TurnsKept}; {(compacted.Calibrated ? "calibrated" : "estimated")} tokens {compacted.TokensBefore:N0} -> {compacted.TokensAfter:N0}. /save first next time if you want the dropped turns kept.");
                 break;
 
             case CommandType.Save:
