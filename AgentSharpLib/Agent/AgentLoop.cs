@@ -403,6 +403,13 @@ public class AgentLoop
                 _output.Error(ex.Message);
                 _output.Info(AuthOrConfigHint(ex.Message));
                 RecordTooLongPrompt(ex.Message);
+                if (ex.Message.Contains("prompt is too long", StringComparison.OrdinalIgnoreCase))
+                {
+                    var breakdown = DescribeRequestBreakdown();
+                    _output.Info(breakdown);
+                    _history.AddAssistantError($"Error: {ex.Message}" + "\n" + AuthOrConfigHint(ex.Message) + "\n" + breakdown);
+                    break;
+                }
                 _history.AddAssistantError($"Error: {ex.Message}\n{AuthOrConfigHint(ex.Message)}");
                 break;
             }
@@ -581,6 +588,13 @@ public class AgentLoop
                 _output.Error(ex.Message);
                 _output.Info(AuthOrConfigHint(ex.Message));
                 RecordTooLongPrompt(ex.Message);
+                if (ex.Message.Contains("prompt is too long", StringComparison.OrdinalIgnoreCase))
+                {
+                    var breakdown = DescribeRequestBreakdown();
+                    _output.Info(breakdown);
+                    _history.AddAssistantError($"Error: {ex.Message}" + "\n" + AuthOrConfigHint(ex.Message) + "\n" + breakdown);
+                    break;
+                }
                 _history.AddAssistantError($"Error: {ex.Message}\n{AuthOrConfigHint(ex.Message)}");
                 break;
             }
@@ -867,6 +881,20 @@ public class AgentLoop
     /// fix is adding credits/checking the plan, not touching the key or config at
     /// all. Also matches OpenAI's equivalent wording for the same underlying case.
     /// </summary>
+    /// <summary>
+    /// Where the tokens of the request that was just rejected are going, estimated at 4 characters per
+    /// token: the system prompt, the tool definitions and the messages. Set beside the provider's own count it
+    /// shows whether the messages account for it (they should, once /compact has run) or something else does.
+    /// </summary>
+    private string DescribeRequestBreakdown()
+    {
+        var request = BuildRequest();
+        var system = (request.SystemPrompt?.Length ?? 0) / 4;
+        var tools = System.Text.Json.JsonSerializer.Serialize(request.Tools).Length / 4;
+        var messages = HistoryCompactor.EstimateTokens(request.Messages);
+        return $"Request sent: ~{system:N0} tokens of system prompt, ~{tools:N0} of tool definitions, ~{messages:N0} of messages ({request.Messages.Count} messages), estimated at 4 characters per token.";
+    }
+
     /// <summary>A "prompt is too long: N tokens" error carries the provider's real count for this history.</summary>
     private void RecordTooLongPrompt(string exceptionMessage)
     {

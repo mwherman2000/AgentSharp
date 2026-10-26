@@ -151,6 +151,26 @@ public class HistoryCompactorTests
     }
 
     [Fact]
+    public async Task PromptTooLong_RecordsTheProvidersCount_AndABreakdownOfWhatWasSent()
+    {
+        var h = Sample();
+        var llm = new FakeLlmClient().EnqueueThrow(new HttpRequestException(
+            "Anthropic API error 400 Bad Request: prompt is too long: 1004798 tokens > 1000000 maximum", null, System.Net.HttpStatusCode.BadRequest));
+        var loop = new AgentLoop(llm, new AgentSharpLib.Tools.ToolRegistry(), new AgentSharpLib.Safety.ApprovalGate(), "system prompt", history: h);
+
+        await loop.RunTurnNonStreamingAsync("hi");
+
+        var record = h.Messages[^1];
+        Assert.Equal(PromptKind.Err, record.Kind);
+        Assert.Contains("prompt is too long: 1004798 tokens", record.GetText());
+        Assert.Contains("Request sent: ~", record.GetText());
+        Assert.Contains("of messages (", record.GetText());
+        var (tokens, kind) = h.ContextTokens(); // the error record was added after the count, so it is scaled from it
+        Assert.Equal(TokenCountKind.Calibrated, kind);
+        Assert.True(tokens >= 1_004_798);
+    }
+
+    [Fact]
     public void EmptyHistory_IsANoOp()
     {
         var result = HistoryCompactor.Compact(new ConversationHistory(), 50, dropOldest: true);
