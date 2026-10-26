@@ -7,6 +7,8 @@ namespace AgentSharpLib.Agent;
 /// This is the primary state of the agent -- no separate state machine needed.
 /// Every LLM call, tool call, and result accumulates here.
 /// </summary>
+public enum TokenCountKind { Estimated, Calibrated, Actual }
+
 public class ConversationHistory
 {
     private readonly List<ChatMessage> _messages = new();
@@ -54,6 +56,23 @@ public class ConversationHistory
         if (realPromptTokens <= 0 || estimate <= 0) return;
         _realPromptTokens = realPromptTokens;
         _estimatedTokensThen = estimate;
+        _countAtRecord = _messages.Count;
+    }
+
+    private int _countAtRecord = -1;
+
+    /// <summary>
+    /// How big the conversation is in tokens: the provider's own count of the last request when nothing
+    /// has been added since (Actual), that count scaled to the history as it is now (Calibrated), or the
+    /// characters / 4 estimate when no real count has been seen yet (Estimated). The real count includes
+    /// the system prompt and tool definitions; the estimate covers the messages only.
+    /// </summary>
+    public (long Tokens, TokenCountKind Kind) ContextTokens()
+    {
+        var estimate = HistoryCompactor.EstimateTokens(_messages);
+        if (TokenScale is not { } scale) return (estimate, TokenCountKind.Estimated);
+        if (_messages.Count == _countAtRecord) return (_realPromptTokens, TokenCountKind.Actual);
+        return ((long)(estimate * scale), TokenCountKind.Calibrated);
     }
 
     /// <summary>Real tokens per estimated token, or null until a real count has been recorded.</summary>
@@ -105,6 +124,7 @@ public class ConversationHistory
         _messages.Clear();
         PromptOffset = TurnOffset = 0;
         _realPromptTokens = _estimatedTokensThen = 0;
+        _countAtRecord = -1;
     }
 
     /// <summary>
@@ -128,6 +148,7 @@ public class ConversationHistory
         PromptOffset += dropped.Count;
         TurnOffset += dropped.Count(m => m.Kind != PromptKind.Sys);
         _messages.RemoveRange(0, count);
+        _countAtRecord = -1;
     }
 
     /// <summary>

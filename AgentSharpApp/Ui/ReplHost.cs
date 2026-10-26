@@ -300,6 +300,7 @@ public class ReplHost
                 AnsiConsole.MarkupLine($"[bold]Tools:[/] {_session.Tools.All.Count} [dim]({Markup.Escape(toolNames)})[/]");
                 AnsiConsole.MarkupLine($"[bold]Turns:[/] {_session.History.TurnCount}");
                 AnsiConsole.MarkupLine($"[bold]Messages:[/] {_session.History.Count}");
+                AnsiConsole.MarkupLine($"[bold]Context:[/] {Markup.Escape(_session.Loop.DescribeContextUsage())}");
                 AnsiConsole.MarkupLine($"[bold]Tokens:[/] {_session.Loop.TotalInputTokens} in / {_session.Loop.TotalOutputTokens} out");
                 AnsiConsole.MarkupLine($"[bold]Cache:[/] {_session.Loop.TotalCacheCreationTokens} written / {_session.Loop.TotalCacheReadTokens} read{FormatCacheHitRate()}");
                 AnsiConsole.MarkupLine($"[bold]Session:[/] {SessionUsage.FormatElapsed(_session.Usage.Elapsed)} elapsed, {_session.Usage.TotalTokens:N0} tokens [dim](all conversations and sub-agents)[/]");

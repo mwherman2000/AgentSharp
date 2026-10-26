@@ -311,6 +311,7 @@ void PrintStatus()
         Max iterations: {lucy.MaxIterations}
         Tools:          {lucy.Tools.All.Count} ({tools})
         Messages:       {lucy.History.Count}
+        Context:        {loop.DescribeContextUsage()}
         Tokens:         {loop.TotalInputTokens} in / {loop.TotalOutputTokens} out (this conversation)
         Cache:          {loop.TotalCacheCreationTokens} written / {loop.TotalCacheReadTokens} read{hitRate}
         Session:        {SessionUsage.FormatElapsed(lucy.Usage.Elapsed)} elapsed, {lucy.Usage.TotalTokens:N0} tokens (all conversations and sub-agents)

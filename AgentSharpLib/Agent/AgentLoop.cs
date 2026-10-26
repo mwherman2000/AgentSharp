@@ -45,6 +45,19 @@ public class AgentLoop
     /// limit the API reports for the models this app targets.</summary>
     public int ContextWindowTokens { get; init; } = 1_000_000;
 
+    /// <summary>One line for /status: the conversation's size in tokens against the context window, and how it was arrived at.</summary>
+    public string DescribeContextUsage()
+    {
+        var (tokens, kind) = _history.ContextTokens();
+        var percent = tokens * 100 / Math.Max(ContextWindowTokens, 1);
+        return kind switch
+        {
+            TokenCountKind.Actual => $"{tokens:N0} tokens, {percent}% of {ContextWindowTokens:N0} (actual: the provider's count for the last request)",
+            TokenCountKind.Calibrated => $"~{tokens:N0} tokens, {percent}% of {ContextWindowTokens:N0} (estimated, scaled by the provider's last count)",
+            _ => $"~{tokens:N0} tokens, {percent}% of {ContextWindowTokens:N0} (estimated from message text; no provider count yet, so the real figure is likely higher)",
+        };
+    }
+
     /// <summary>The highest context-usage threshold (80 or 95) already warned about, so each is
     /// reported once. A replaced conversation (/clear, /load) gets a new loop, which starts at 0.</summary>
     private int _contextWarnedAt;

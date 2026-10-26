@@ -123,6 +123,34 @@ public class HistoryCompactorTests
     }
 
     [Fact]
+    public void ContextTokens_IsEstimated_ThenActual_ThenCalibratedOnceMessagesChange()
+    {
+        var h = Sample();
+        var (estimate, kind) = h.ContextTokens();
+        Assert.Equal(TokenCountKind.Estimated, kind);
+        Assert.Equal(HistoryCompactor.EstimateTokens(h.Messages), estimate);
+
+        h.RecordPromptUsage(1_000);
+        Assert.Equal((1_000L, TokenCountKind.Actual), h.ContextTokens());
+
+        h.AddUserMessage("more");
+        var (grown, grownKind) = h.ContextTokens();
+        Assert.Equal(TokenCountKind.Calibrated, grownKind);
+        Assert.True(grown > 1_000);
+    }
+
+    [Fact]
+    public void DescribeContextUsage_SaysWhetherTheFigureIsActualOrEstimated()
+    {
+        var h = Sample();
+        var loop = new AgentLoop(new FakeLlmClient(), new AgentSharpLib.Tools.ToolRegistry(), new AgentSharpLib.Safety.ApprovalGate(), "sys", history: h);
+        Assert.Contains("estimated from message text", loop.DescribeContextUsage());
+
+        h.RecordPromptUsage(250_000);
+        Assert.Contains("250,000 tokens, 25% of 1,000,000 (actual", loop.DescribeContextUsage());
+    }
+
+    [Fact]
     public void EmptyHistory_IsANoOp()
     {
         var result = HistoryCompactor.Compact(new ConversationHistory(), 50, dropOldest: true);
