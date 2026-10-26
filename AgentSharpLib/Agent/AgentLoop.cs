@@ -129,8 +129,18 @@ public class AgentLoop
         var threshold = percent >= 95 ? 95 : percent >= 80 ? 80 : 0;
         if (threshold <= _contextWarnedAt) return;
         _contextWarnedAt = threshold;
-        _output.Warning($"Context is {percent}% full ({used:N0} of {ContextWindowTokens:N0} tokens). " +
+        _pendingContextWarning = ($"Context is {percent}% full ({used:N0} of {ContextWindowTokens:N0} tokens). " +
             "Use /compact -50 to drop the oldest turns (or /save then /clear) soon -- once the limit is reached every request fails.");
+    }
+
+    private string? _pendingContextWarning;
+
+    /// <summary>Shows the context warning once the turn has finished, just above the next prompt, where it isn't scrolled away by the reply or tool output.</summary>
+    private void FlushContextWarning()
+    {
+        if (_pendingContextWarning is not { } warning) return;
+        _pendingContextWarning = null;
+        _output.Warning(Environment.NewLine + warning);
     }
 
     /// <summary>Running count of tool executions within the current turn only, reset
@@ -278,6 +288,12 @@ public class AgentLoop
     }
 
     public async Task<string> RunTurnStreamingAsync(string userMessage, CancellationToken ct = default, PromptKind kind = PromptKind.Std)
+    {
+        try { return await RunTurnStreamingCoreAsync(userMessage, ct, kind); }
+        finally { FlushContextWarning(); }
+    }
+
+    private async Task<string> RunTurnStreamingCoreAsync(string userMessage, CancellationToken ct = default, PromptKind kind = PromptKind.Std)
     {
         _turnNumber++;
         _turnToolExecutions = 0;
@@ -581,6 +597,12 @@ public class AgentLoop
     /// "how do we get a response out of the LLM, and how do we render it" differs.
     /// </summary>
     public async Task<string> RunTurnNonStreamingAsync(string userMessage, CancellationToken ct = default, PromptKind kind = PromptKind.Std)
+    {
+        try { return await RunTurnNonStreamingCoreAsync(userMessage, ct, kind); }
+        finally { FlushContextWarning(); }
+    }
+
+    private async Task<string> RunTurnNonStreamingCoreAsync(string userMessage, CancellationToken ct = default, PromptKind kind = PromptKind.Std)
     {
         _turnNumber++;
         _turnToolExecutions = 0;
