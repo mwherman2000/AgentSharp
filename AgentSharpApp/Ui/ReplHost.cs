@@ -502,9 +502,9 @@ public class ReplHost
         var table = new Table()
             .AddColumn("ID")
             .AddColumn("Created")
-            .AddColumn("Messages");
+            .AddColumn("Questions");
         foreach (var s in sessions)
-            table.AddRow(s.Id, LocalTime.Format(s.CreatedAt, LocalTime.Minutes), s.MessageCount.ToString());
+            table.AddRow(s.Id, LocalTime.Format(s.CreatedAt, LocalTime.Minutes), s.QuestionCount.ToString());
         AnsiConsole.Write(table);
         if (sessions.Count < total)
             AnsiConsole.MarkupLine($"[dim]Showing the {sessions.Count} most recent of {total} saved sessions; /sessions lists all.[/]");

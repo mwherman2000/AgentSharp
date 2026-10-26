@@ -152,7 +152,8 @@ public class SessionManager
                     {
                         Id = session.Id,
                         CreatedAt = session.CreatedAt,
-                        MessageCount = session.MessageCount
+                        MessageCount = session.MessageCount,
+                        QuestionCount = CountQuestions(session)
                     });
                 }
             }
@@ -164,6 +165,18 @@ public class SessionManager
         // CreatedAt is stamped on every save, so this is newest-saved first.
         return sessions.OrderByDescending(s => s.CreatedAt).ToList();
     }
+
+    /// <summary>
+    /// How many prompts the session holds, counted the way <see cref="ConversationHistory.QuestionCount"/> does: user messages
+    /// with text (not tool results), plus any /compact dropped from the front. Works on older sessions too.
+    /// </summary>
+    private static int CountQuestions(SessionData session) =>
+        session.PromptOffset + session.Messages.Count(m => m.Role == MessageRole.User && m.Content.Any(HasText));
+
+    private static bool HasText(JsonElement block) =>
+        block.ValueKind == JsonValueKind.Object
+        && block.TryGetProperty("type", out var type) && type.GetString() == "text"
+        && block.TryGetProperty("text", out var text) && !string.IsNullOrEmpty(text.GetString());
 
     private string GetSessionPath(string sessionId) =>
         Path.Combine(_sessionsDir, $"{sessionId}.json");
@@ -261,4 +274,6 @@ public record SessionInfo
     public required string Id { get; init; }
     public DateTime CreatedAt { get; init; }
     public int MessageCount { get; init; }
+    /// <summary>Prompts in the session (the number the REPL and transcripts count), a more meaningful size than messages.</summary>
+    public int QuestionCount { get; init; }
 }

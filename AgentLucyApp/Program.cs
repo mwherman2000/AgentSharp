@@ -317,9 +317,9 @@ void PrintSessions()
         Console.WriteLine("No saved sessions.");
         return;
     }
-    Console.WriteLine($"{"ID",-24} {"Created",-16} Messages");
+    Console.WriteLine($"{"ID",-24} {"Created",-16} Questions");
     foreach (var s in saved)
-        Console.WriteLine($"{s.Id,-24} {LocalTime.Format(s.CreatedAt, LocalTime.Minutes)} {s.MessageCount,8}");
+        Console.WriteLine($"{s.Id,-24} {LocalTime.Format(s.CreatedAt, LocalTime.Minutes)} {s.QuestionCount,9}");
 }
 
 void PrintStatus()

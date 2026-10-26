@@ -59,6 +59,25 @@ public class SessionManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task ListSessions_ReportsQuestions_NotMessages_IncludingOnesDroppedByCompact()
+    {
+        var history = new ConversationHistory();
+        history.AddUserMessage("first");
+        history.AddAssistantMessage([new AgentSharpLib.Llm.TextBlock { Text = "a" }]);
+        history.AddToolResults([new AgentSharpLib.Llm.ToolResultBlock { ToolUseId = "t", Content = "x" }]); // a user message, but not a question
+        history.AddUserMessage("nudge", AgentSharpLib.Llm.PromptKind.Sys);                                  // counts, like any prompt
+        history.AddUserMessage("second");
+        history.RestoreOffsets(prompts: 10, turns: 10);                                                      // 10 more were compacted away
+        await _manager.SaveAsync(history, "counted");
+
+        var info = Assert.Single(_manager.ListSessions());
+
+        Assert.Equal(5, info.MessageCount);
+        Assert.Equal(13, info.QuestionCount); // 10 dropped + first + nudge + second
+        Assert.Equal(history.QuestionCount, info.QuestionCount); // the same number /load and the prompt show
+    }
+
+    [Fact]
     public async Task ListSessions_ReturnsAllSaved()
     {
         var h1 = new ConversationHistory();
