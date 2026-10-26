@@ -280,7 +280,8 @@ async Task SaveAsync(string? id)
         Console.WriteLine($"Could not save session '{id}'.");
         return;
     }
-    Console.WriteLine($"Session saved: {savedId}");
+    await lucy.Loop.RefreshTokenCountAsync(); // the provider's own count, when it will say
+    Console.WriteLine($"Session saved: {savedId} ({lucy.History.Count} messages, {lucy.History.QuestionCount} questions, {lucy.Loop.DescribeTokenCount()})");
     if (TryWriteTranscript($"{savedId}.docx", saveOptions) is { } path)
         Console.WriteLine($"Transcript written: {path}");
 }

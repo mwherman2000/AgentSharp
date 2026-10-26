@@ -264,7 +264,8 @@ public class ReplHost
                 var sessionId = await _sessions.SaveAsync(_session.History, saveId.Length > 0 ? saveId : null);
                 if (sessionId is not null)
                 {
-                    AnsiConsole.MarkupLine($"[green]Session saved:[/] {sessionId}");
+                    await _session.Loop.RefreshTokenCountAsync(ct); // the provider's own count, when it will say
+                    AnsiConsole.MarkupLine($"[green]Session saved:[/] {Markup.Escape(sessionId)} ({_session.History.Count} messages, {_session.History.QuestionCount} questions, {_session.Loop.DescribeTokenCount()})");
                     var savedTranscriptPath = WriteTranscript($"{sessionId}.docx", saveOptions);
                     if (savedTranscriptPath is not null)
                         AnsiConsole.MarkupLine($"[green]Transcript written:[/] {savedTranscriptPath}");
