@@ -45,10 +45,51 @@ public class AgentLoop
     /// limit the API reports for the models this app targets.</summary>
     public int ContextWindowTokens { get; init; } = 1_000_000;
 
+    /// <summary>
+    /// <see cref="ConversationHistory.ContextTokens"/> plus, when it is only an estimate or a scaled count, nothing extra
+    /// (a real count already includes the system prompt and tools); an estimate gets them added.
+    /// </summary>
+    public (long Tokens, TokenCountKind Kind) EstimateContextTokens()
+    {
+        var (tokens, kind) = _history.ContextTokens();
+        return kind == TokenCountKind.Estimated ? (tokens + RequestOverheadTokens(), kind) : (tokens, kind);
+    }
+
+    /// <summary>The system prompt and tool definitions: sent with every request but not part of the history.</summary>
+    private long RequestOverheadTokens()
+    {
+        var request = BuildRequest();
+        var system = (request.SystemPrompt?.Length ?? 0) / HistoryCompactor.CharsPerProseToken;
+        var tools = System.Text.Json.JsonSerializer.Serialize(request.Tools).Length / HistoryCompactor.CharsPerStructuredToken;
+        return (long)(system + tools);
+    }
+
+    /// <summary>A short phrase for /load: "1,004,382 tokens (provider count)" or "~996,000 tokens (estimated)".</summary>
+    public string DescribeTokenCount()
+    {
+        var (tokens, kind) = EstimateContextTokens();
+        return kind switch
+        {
+            TokenCountKind.Actual => $"{tokens:N0} tokens (provider count)",
+            TokenCountKind.Calibrated => $"~{tokens:N0} tokens (scaled from the provider's count)",
+            _ => $"~{tokens:N0} tokens (estimated)",
+        };
+    }
+
+    /// <summary>
+    /// Asks the provider how big the conversation is now and records the answer, so <see cref="DescribeContextUsage"/> and
+    /// /compact report a real count. Does nothing if the provider can't or won't say.
+    /// </summary>
+    public async Task RefreshTokenCountAsync(CancellationToken ct = default)
+    {
+        var tokens = await _llm.CountPromptTokensAsync(BuildRequest(), ct);
+        if (tokens is > 0) _history.RecordPromptUsage(tokens.Value);
+    }
+
     /// <summary>One line for /status: the conversation's size in tokens against the context window, and how it was arrived at.</summary>
     public string DescribeContextUsage()
     {
-        var (tokens, kind) = _history.ContextTokens();
+        var (tokens, kind) = EstimateContextTokens();
         var percent = tokens * 100 / Math.Max(ContextWindowTokens, 1);
         return kind switch
         {
@@ -889,10 +930,10 @@ public class AgentLoop
     private string DescribeRequestBreakdown()
     {
         var request = BuildRequest();
-        var system = (request.SystemPrompt?.Length ?? 0) / 4;
-        var tools = System.Text.Json.JsonSerializer.Serialize(request.Tools).Length / 4;
+        var system = (long)((request.SystemPrompt?.Length ?? 0) / HistoryCompactor.CharsPerProseToken);
+        var tools = (long)(System.Text.Json.JsonSerializer.Serialize(request.Tools).Length / HistoryCompactor.CharsPerStructuredToken);
         var messages = HistoryCompactor.EstimateTokens(request.Messages);
-        return $"Request sent: ~{system:N0} tokens of system prompt, ~{tools:N0} of tool definitions, ~{messages:N0} of messages ({request.Messages.Count} messages), estimated at 4 characters per token.";
+        return $"Request sent: ~{system:N0} tokens of system prompt, ~{tools:N0} of tool definitions, ~{messages:N0} of messages ({request.Messages.Count} messages), estimated from the text by content type.";
     }
 
     /// <summary>A "prompt is too long: N tokens" error carries the provider's real count for this history.</summary>

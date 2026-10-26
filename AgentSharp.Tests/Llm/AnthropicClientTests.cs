@@ -123,4 +123,28 @@ public class AnthropicClientTests
         Assert.Contains("bad request", ex.Message);
         Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
     }
+
+    [Fact]
+    public async Task CountPromptTokensAsync_ReturnsInputTokens()
+    {
+        var client = MakeClient("""{ "input_tokens": 1234 }""");
+
+        Assert.Equal(1234L, await client.CountPromptTokensAsync(MakeRequest()));
+    }
+
+    [Fact]
+    public async Task CountPromptTokensAsync_OverTheLimit_ReturnsTheCountFromTheError()
+    {
+        var client = MakeClient("""{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 1004382 tokens > 1000000 maximum"}}""", HttpStatusCode.BadRequest);
+
+        Assert.Equal(1_004_382L, await client.CountPromptTokensAsync(MakeRequest()));
+    }
+
+    [Fact]
+    public async Task CountPromptTokensAsync_AnyOtherFailure_ReturnsNull()
+    {
+        var client = MakeClient("""{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}""", HttpStatusCode.Unauthorized);
+
+        Assert.Null(await client.CountPromptTokensAsync(MakeRequest()));
+    }
 }

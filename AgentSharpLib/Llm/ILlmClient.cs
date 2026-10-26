@@ -39,4 +39,11 @@ public interface ILlmClient
     /// This is the primary method used by the agent loop for real-time rendering.
     /// </summary>
     IAsyncEnumerable<StreamEvent> StreamAsync(LlmRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// The provider's own token count for <paramref name="request"/> without running it, or null when the
+    /// provider can't say (the default) or the call fails. Callers fall back to an estimate.
+    /// </summary>
+    Task<long?> CountPromptTokensAsync(LlmRequest request, CancellationToken ct = default)
+        => Task.FromResult<long?>(null);
 }

@@ -8,7 +8,7 @@ public sealed record CompactResult(int TurnsDropped, int TurnsKept, long TokensB
 /// <summary>
 /// Shrinks a conversation by dropping its oldest turns. A turn is a typed or checkpoint prompt
 /// plus everything the agent did to answer it (tool calls, results, loop nudges, errors), so a
-/// tool call is never separated from its result. Sizes are estimated (characters / 4): good
+/// tool call is never separated from its result. Sizes are estimated from the characters (by content type): good
 /// enough to split a history by percentage, though not an exact token count.
 /// </summary>
 public static class HistoryCompactor
@@ -45,12 +45,12 @@ public static class HistoryCompactor
         var factor = scale ?? 1.0;
         var calibrated = scale is not null;
 
-        var sizes = new long[starts.Count];
+        var sizes = new double[starts.Count];
         for (var t = 0; t < starts.Count; t++)
         {
             var end = t + 1 < starts.Count ? starts[t + 1] : history.Messages.Count;
             for (var i = starts[t]; i < end; i++)
-                sizes[t] += EstimateChars(history.Messages[i]);
+                sizes[t] += EstimateMessageTokens(history.Messages[i]);
         }
         var total = sizes.Sum();
 
@@ -58,14 +58,14 @@ public static class HistoryCompactor
         if (dropOldest)
         {
             // The oldest turns, until they make up at least `percent` of the total.
-            long acc = 0;
+            double acc = 0;
             while (dropped < starts.Count - 1 && acc * 100 < total * percent)
                 acc += sizes[dropped++];
         }
         else
         {
             // The newest turns, until they make up at least `percent` of the total; the rest go.
-            long acc = 0;
+            double acc = 0;
             var kept = 0;
             while (kept < starts.Count && acc * 100 < total * percent)
                 acc += sizes[starts.Count - 1 - kept++];
@@ -73,8 +73,8 @@ public static class HistoryCompactor
         }
 
         var after = sizes.Skip(dropped).Sum();
-        var tokensBefore = (long)(total / 4 * factor);
-        var tokensAfter = (long)(after / 4 * factor);
+        var tokensBefore = (long)(total * factor);
+        var tokensAfter = (long)(after * factor);
         if (dropped == 0) return new CompactResult(0, starts.Count, tokensBefore, tokensBefore, calibrated);
 
         var firstDroppedPrompt = history.PromptOffset + 1;
@@ -97,22 +97,32 @@ public static class HistoryCompactor
         return starts;
     }
 
-    /// <summary>The estimate for a whole history: characters / 4, not a real token count.</summary>
-    internal static long EstimateTokens(IEnumerable<ChatMessage> messages) => messages.Sum(EstimateChars) / 4;
+    /// <summary>Prose tokenizes at about 4 characters per token.</summary>
+    public const double CharsPerProseToken = 4.0;
 
-    private static long EstimateChars(ChatMessage message)
+    /// <summary>
+    /// Tool inputs and results (JSON, file contents, web pages, code, URLs) pack more tokens into the same
+    /// characters. 2.5 reproduced a real tool-heavy conversation (557 messages) to within 1% of the provider's count.
+    /// </summary>
+    public const double CharsPerStructuredToken = 2.5;
+
+    /// <summary>The estimate for a whole history, by content type (see the constants): not a real token count.</summary>
+    internal static long EstimateTokens(IEnumerable<ChatMessage> messages)
+        => (long)Math.Round(messages.Sum(EstimateMessageTokens));
+
+    private static double EstimateMessageTokens(ChatMessage message)
     {
-        long chars = 0;
+        double tokens = 0;
         foreach (var block in message.Content)
         {
-            chars += block switch
+            tokens += block switch
             {
-                TextBlock t => t.Text.Length,
-                ToolUseBlock u => u.Name.Length + u.Input.GetRawText().Length,
-                ToolResultBlock r => r.Content.Length,
+                TextBlock t => t.Text.Length / CharsPerProseToken,
+                ToolUseBlock u => (u.Name.Length + u.Input.GetRawText().Length) / CharsPerStructuredToken,
+                ToolResultBlock r => r.Content.Length / CharsPerStructuredToken,
                 _ => 0,
             };
         }
-        return chars;
+        return tokens;
     }
 }

@@ -16,6 +16,7 @@ public class AnthropicClient : ILlmClient
     private readonly string _model;
     private readonly TimeSpan _streamingTimeout;
     private const string ApiUrl = "https://api.anthropic.com/v1/messages";
+    private const string CountTokensUrl = "https://api.anthropic.com/v1/messages/count_tokens";
     private const string ApiVersion = "2023-06-01";
 
     /// <summary>Non-streaming requests block until the full response body has arrived,
@@ -186,15 +187,55 @@ public class AnthropicClient : ILlmClient
         }
     }
 
-    private string BuildRequestBody(LlmRequest request, bool stream)
+    /// <summary>
+    /// Asks the count_tokens endpoint how many tokens this request would use (free, and it does not run the
+    /// model). If the prompt is over the context limit the API answers 400 "prompt is too long: N tokens"; N is
+    /// the count we want, so it is returned too. Any other failure returns null.
+    /// </summary>
+    public async Task<long?> CountPromptTokensAsync(LlmRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
+
+            var content = new StringContent(BuildRequestBody(request, stream: false, countOnly: true), Encoding.UTF8, "application/json");
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, CountTokensUrl) { Content = content };
+            httpRequest.Headers.Accept.Clear();
+            httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            foreach (var header in _http.DefaultRequestHeaders)
+                httpRequest.Headers.TryAddWithoutValidation(header.Key, header.Value);
+
+            using var response = await _http.SendAsync(httpRequest, timeoutCts.Token);
+            var body = await response.Content.ReadAsStringAsync(timeoutCts.Token);
+            if (response.IsSuccessStatusCode)
+            {
+                using var doc = JsonDocument.Parse(body);
+                return doc.RootElement.TryGetProperty("input_tokens", out var n) ? n.GetInt64() : null;
+            }
+
+            var tooLong = System.Text.RegularExpressions.Regex.Match(body, "prompt is too long: ([0-9]+) tokens");
+            return tooLong.Success && long.TryParse(tooLong.Groups[1].Value, out var tokens) ? tokens : null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException or OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    private string BuildRequestBody(LlmRequest request, bool stream, bool countOnly = false)
     {
         using var ms = new MemoryStream();
         using var writer = new Utf8JsonWriter(ms);
 
         writer.WriteStartObject();
         writer.WriteString("model", _model);
-        writer.WriteNumber("max_tokens", request.MaxTokens);
-        writer.WriteBoolean("stream", stream);
+        if (!countOnly)
+        {
+            // count_tokens takes the same body minus the generation settings.
+            writer.WriteNumber("max_tokens", request.MaxTokens);
+            writer.WriteBoolean("stream", stream);
+        }
 
         // System prompt -- written as a single cached text block. The system prompt
         // (project instructions, file tree, tool summaries) is large and stable across

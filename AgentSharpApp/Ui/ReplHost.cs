@@ -278,7 +278,8 @@ public class ReplHost
                     break;
                 }
                 _session.Restore(history);
-                AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages, {history.QuestionCount} questions, ~{history.ContextTokens().Tokens:N0} tokens estimated)");
+                await _session.Loop.RefreshTokenCountAsync(ct); // the provider's own count, when it will say
+                AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages, {history.QuestionCount} questions, {_session.Loop.DescribeTokenCount()})");
                 // A normal turn, so the marker and the agent's reply become part of the conversation.
                 await RunTurnAsync($"Resumed (/load) {LocalTime.Format(DateTimeOffset.Now, LocalTime.Seconds)}", ct, kind: PromptKind.Chk);
                 break;
@@ -300,6 +301,8 @@ public class ReplHost
                 AnsiConsole.MarkupLine($"[bold]Tools:[/] {_session.Tools.All.Count} [dim]({Markup.Escape(toolNames)})[/]");
                 AnsiConsole.MarkupLine($"[bold]Turns:[/] {_session.History.TurnCount}");
                 AnsiConsole.MarkupLine($"[bold]Messages:[/] {_session.History.Count}");
+                if (_session.Loop.EstimateContextTokens().Kind != TokenCountKind.Actual)
+                    await _session.Loop.RefreshTokenCountAsync(ct);
                 AnsiConsole.MarkupLine($"[bold]Context:[/] {Markup.Escape(_session.Loop.DescribeContextUsage())}");
                 AnsiConsole.MarkupLine($"[bold]Tokens:[/] {_session.Loop.TotalInputTokens} in / {_session.Loop.TotalOutputTokens} out");
                 AnsiConsole.MarkupLine($"[bold]Cache:[/] {_session.Loop.TotalCacheCreationTokens} written / {_session.Loop.TotalCacheReadTokens} read{FormatCacheHitRate()}");

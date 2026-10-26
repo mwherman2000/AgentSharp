@@ -278,7 +278,8 @@ async Task LoadAsync(string? id)
         return;
     }
     lucy.Restore(history);
-    Console.WriteLine($"Session loaded: {id} ({history.Count} messages, {history.QuestionCount} questions, ~{history.ContextTokens().Tokens:N0} tokens estimated)");
+    await lucy.Loop.RefreshTokenCountAsync(); // the provider's own count, when it will say
+    Console.WriteLine($"Session loaded: {id} ({history.Count} messages, {history.QuestionCount} questions, {lucy.Loop.DescribeTokenCount()})");
     // A normal turn, so the marker and the reply become part of the conversation.
     await RunTurnAsync($"Resumed (/load) {LocalTime.Format(DateTimeOffset.Now, LocalTime.Seconds)}", kind: PromptKind.Chk);
 }
