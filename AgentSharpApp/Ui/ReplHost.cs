@@ -19,7 +19,6 @@ public class ReplHost
     private readonly AgentSession _session;
     private const int StartupSessionLimit = 10;
     private readonly SessionManager _sessions;
-    private int _turnCount;
     private readonly List<string> _inputHistory = new();
     private CancellationTokenSource? _turnCts;
 
@@ -98,8 +97,7 @@ public class ReplHost
         var historyCountBeforeTurn = _session.History.Count;
         try
         {
-            _turnCount++;
-            AnsiConsole.Write(new Rule($"[dim]Turn {_turnCount}[/]").RuleStyle("dim"));
+            AnsiConsole.Write(new Rule($"[dim]Turn {_session.History.TurnCount + 1}[/]").RuleStyle("dim"));
             AnsiConsole.WriteLine();
 
             await _session.SendAsync(input, _turnCts.Token, kind);
@@ -213,7 +211,6 @@ public class ReplHost
                     AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
                     break;
                 }
-                _turnCount = 0;
                 AnsiConsole.Clear();
                 PrintWelcome();
                 AnsiConsole.MarkupLine("[green]Conversation cleared.[/]");
@@ -289,7 +286,7 @@ public class ReplHost
                 AnsiConsole.MarkupLine($"[bold]Max iterations:[/] {_session.MaxIterations}");
                 var toolNames = string.Join(", ", _session.Tools.All.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal));
                 AnsiConsole.MarkupLine($"[bold]Tools:[/] {_session.Tools.All.Count} [dim]({Markup.Escape(toolNames)})[/]");
-                AnsiConsole.MarkupLine($"[bold]Turns:[/] {_turnCount}");
+                AnsiConsole.MarkupLine($"[bold]Turns:[/] {_session.History.TurnCount}");
                 AnsiConsole.MarkupLine($"[bold]Messages:[/] {_session.History.Count}");
                 AnsiConsole.MarkupLine($"[bold]Tokens:[/] {_session.Loop.TotalInputTokens} in / {_session.Loop.TotalOutputTokens} out");
                 AnsiConsole.MarkupLine($"[bold]Cache:[/] {_session.Loop.TotalCacheCreationTokens} written / {_session.Loop.TotalCacheReadTokens} read{FormatCacheHitRate()}");

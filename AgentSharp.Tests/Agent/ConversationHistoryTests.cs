@@ -94,4 +94,17 @@ public class ConversationHistoryTests
         Assert.Equal("second", history.Messages[1].GetText());
         Assert.Equal("third", history.Messages[2].GetText());
     }
+
+    [Fact]
+    public void TurnCount_CountsTypedAndCheckpointPrompts_NotLoopNudgesOrToolResults()
+    {
+        var history = new ConversationHistory();
+        history.AddUserMessage("typed");
+        history.AddUserMessage("nudge", PromptKind.Sys);
+        history.AddToolResults([new ToolResultBlock { ToolUseId = "t1", Content = "x" }]);
+        history.AddUserMessage("Checkpoint (/save) now", PromptKind.Chk);
+        history.AddUserMessage("typed again");
+
+        Assert.Equal(3, history.TurnCount);
+    }
 }

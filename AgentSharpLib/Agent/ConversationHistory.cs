@@ -22,6 +22,15 @@ public class ConversationHistory
     public int QuestionCount
         => _messages.Count(m => m.Role == MessageRole.User && m.Content.OfType<TextBlock>().Any(b => b.Text.Length > 0));
 
+    /// <summary>
+    /// How many turns have been started: typed prompts and /save, /load checkpoints. Loop-generated
+    /// (sys) prompts continue the turn they came from. Derived from the history, so a restored
+    /// conversation carries its turn count with it.
+    /// </summary>
+    public int TurnCount
+        => _messages.Count(m => m.Role == MessageRole.User && m.Kind != PromptKind.Sys
+            && m.Content.OfType<TextBlock>().Any(b => b.Text.Length > 0));
+
     public void AddUserMessage(string text, PromptKind kind = PromptKind.Std)
         => Add(ChatMessage.UserText(text, kind));
 
