@@ -90,9 +90,9 @@ internal static class TranscriptWriter
         (kinds is not null && index < kinds.Count ? kinds[index].ToLabel() : 'Q') + PromptNumber(kinds, index).ToString();
 
     private static bool IsError(IReadOnlyList<PromptKind>? kinds, int index) =>
-        kinds is not null && index < kinds.Count && kinds[index] == PromptKind.Err;
+        kinds is not null && index < kinds.Count && kinds[index] is PromptKind.Err or PromptKind.Cmp;
 
-    /// <summary>The prompt number of an entry. An error entry (E21) shares the number of the prompt whose turn it ended.</summary>
+    /// <summary>The prompt number of an entry. An error or compaction entry (E21, M21) shares the number of the prompt whose turn it ended.</summary>
     private static int PromptNumber(IReadOnlyList<PromptKind>? kinds, int index)
     {
         var number = 0;

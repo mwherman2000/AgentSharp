@@ -76,7 +76,8 @@ public class HistoryCompactorTests
         HistoryCompactor.Compact(h, 99, dropOldest: true);
 
         Assert.Equal("q5", h.Messages[0].GetText());
-        Assert.Equal(5, h.Messages.Count); // q5, answer, nudge, answer, tool results: the whole last turn
+        Assert.Equal(6, h.Messages.Count); // q5, answer, nudge, answer, tool results: the whole last turn, then the compaction record
+        Assert.Equal(PromptKind.Cmp, h.Messages[^1].Kind);
     }
 
     [Fact]
@@ -84,5 +85,35 @@ public class HistoryCompactorTests
     {
         var result = HistoryCompactor.Compact(new ConversationHistory(), 50, dropOldest: true);
         Assert.Equal(0, result.TurnsDropped);
+    }
+
+    [Fact]
+    public async Task CompactionRecord_SurvivesSaveAndLoad_AndShowsAsMInTheTranscript_NeverSentToTheModel()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "agentsharp-cmp-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var h = Sample();
+            HistoryCompactor.Compact(h, 50, dropOldest: true);
+
+            await new AgentSharpLib.Memory.SessionManager(dir).SaveAsync(h, "cmp");
+            Assert.Contains("\"cmp\"", await File.ReadAllTextAsync(Path.Combine(dir, "sessions", "cmp.json")));
+            var loaded = await new AgentSharpLib.Memory.SessionManager(dir).LoadAsync("cmp");
+            Assert.Equal(PromptKind.Cmp, loaded!.Messages[^1].Kind);
+            Assert.Equal(1, loaded.TurnCount);
+            Assert.Equal(2, loaded.QuestionCount); // q5 and its loop nudge; the record takes no prompt number
+
+            var md = File.ReadAllText(AgentSharpLib.Transcripts.ConversationTranscript.Write(loaded, "prompt", dir, "t")).Replace("\r\n", "\n");
+            Assert.Contains("## Q1\n", md);
+            Assert.Contains("## M2\n", md); // shares the number of the last prompt (the nudge, S2)
+            Assert.Contains("Conversation compacted: dropped the 4 oldest turns", md);
+            Assert.DoesNotContain("## A3", md);
+
+            var llm = new FakeLlmClient().Enqueue(new LlmResponse { Message = ChatMessage.AssistantText("ok"), StopReason = "end_turn" });
+            var loop = new AgentLoop(llm, new AgentSharpLib.Tools.ToolRegistry(), new AgentSharpLib.Safety.ApprovalGate(), "sys", history: loaded);
+            await loop.RunTurnNonStreamingAsync("next");
+            Assert.DoesNotContain(llm.Requests[0].Messages, m => m.Kind == PromptKind.Cmp);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
 }

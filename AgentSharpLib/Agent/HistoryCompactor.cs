@@ -68,7 +68,10 @@ public static class HistoryCompactor
         }
 
         var after = sizes.Skip(dropped).Sum();
-        history.DropFirst(dropped == 0 ? 0 : starts[dropped]);
+        if (dropped == 0) return new CompactResult(0, starts.Count, total / 4, total / 4);
+
+        history.DropFirst(starts[dropped]);
+        history.AddCompactionNote($"Conversation compacted: dropped the {dropped} oldest turns, kept {starts.Count - dropped} (estimated tokens {total / 4:N0} -> {after / 4:N0}).");
         return new CompactResult(dropped, starts.Count - dropped, total / 4, after / 4);
     }
 

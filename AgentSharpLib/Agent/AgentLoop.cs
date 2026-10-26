@@ -61,7 +61,7 @@ public class AgentLoop
         if (threshold <= _contextWarnedAt) return;
         _contextWarnedAt = threshold;
         _output.Warning($"Context is {percent}% full ({used:N0} of {ContextWindowTokens:N0} tokens). " +
-            "Use /save then /clear soon -- once the limit is reached every request fails.");
+            "Use /compact -50 to drop the oldest turns (or /save then /clear) soon -- once the limit is reached every request fails.");
     }
 
     /// <summary>Running count of tool executions within the current turn only, reset
@@ -672,7 +672,8 @@ public class AgentLoop
     private LlmRequest BuildRequest() => new()
     {
         SystemPrompt = _systemPrompt,
-        Messages = _history.Messages.ToList(),
+        // A /compact record is local bookkeeping for saves and transcripts, not part of the conversation.
+        Messages = _history.Messages.Where(m => m.Kind != PromptKind.Cmp).ToList(),
         Tools = _tools.GetDefinitions(),
         MaxTokens = _maxTokens
     };

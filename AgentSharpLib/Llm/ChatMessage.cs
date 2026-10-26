@@ -92,6 +92,9 @@ public record ChatMessage
     [JsonIgnore]
     public PromptKind Kind { get; init; }
 
+    /// <summary>An assistant-role record that /compact ran, so /save and transcripts show where history was dropped.</summary>
+    public static ChatMessage AssistantCompaction(string text) => AssistantText(text) with { Kind = PromptKind.Cmp };
+
     /// <summary>An assistant-role record of an API error, so it survives /save and shows in transcripts.</summary>
     public static ChatMessage AssistantError(string text) => AssistantText(text) with { Kind = PromptKind.Err };
 
@@ -168,16 +171,19 @@ public enum PromptKind
     Chk,
     /// <summary>An assistant-role record of an API error that ended the turn (E21 in transcripts).</summary>
     Err,
+    /// <summary>An assistant-role record that /compact dropped the oldest turns (M21 in transcripts). Never sent to a provider.</summary>
+    Cmp,
 }
 
 public static class PromptKinds
 {
-    /// <summary>The value stored in a saved session: "std", "sys", "chk" or "err".</summary>
+    /// <summary>The value stored in a saved session: "std", "sys", "chk", "err" or "cmp".</summary>
     public static string ToCode(this PromptKind kind) => kind switch
     {
         PromptKind.Sys => "sys",
         PromptKind.Chk => "chk",
         PromptKind.Err => "err",
+        PromptKind.Cmp => "cmp",
         _ => "std",
     };
 
@@ -187,15 +193,17 @@ public static class PromptKinds
         "sys" => PromptKind.Sys,
         "chk" => PromptKind.Chk,
         "err" => PromptKind.Err,
+        "cmp" => PromptKind.Cmp,
         _ => PromptKind.Std,
     };
 
-    /// <summary>The letter that prefixes the number in a transcript: Q, S, C or E.</summary>
+    /// <summary>The letter that prefixes the number in a transcript: Q, S, C, E or M.</summary>
     public static char ToLabel(this PromptKind kind) => kind switch
     {
         PromptKind.Sys => 'S',
         PromptKind.Chk => 'C',
         PromptKind.Err => 'E',
+        PromptKind.Cmp => 'M',
         _ => 'Q',
     };
 }

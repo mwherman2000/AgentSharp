@@ -120,9 +120,9 @@ public static class ConversationTranscript
                 currentQuestion = CapitalizeFirstLetter(text);
                 segments = new List<AnswerSegment>();
             }
-            else if (message.Role == MessageRole.Assistant && message.Kind == PromptKind.Err)
+            else if (message.Role == MessageRole.Assistant && message.Kind is PromptKind.Err or PromptKind.Cmp)
             {
-                // An API error that ended the turn: its own entry (E21), no answer part.
+                // An API error that ended the turn (E21) or a /compact record (M21): its own entry, no answer part.
                 if (currentQuestion is not null)
                 {
                     qaPairs.Add((currentQuestion, segments));
@@ -131,7 +131,7 @@ public static class ConversationTranscript
                 }
                 qaPairs.Add((CapitalizeFirstLetter(string.Join("\n\n", message.Content.OfType<TextBlock>().Select(b => b.Text))), new List<AnswerSegment>()));
                 askedAt?.Add(message.Timestamp);
-                kinds?.Add(PromptKind.Err);
+                kinds?.Add(message.Kind);
                 currentQuestion = null;
                 segments = new List<AnswerSegment>();
             }
