@@ -67,7 +67,10 @@ public class AgentLoop
     /// <summary>A short phrase for /load: "1,004,382 tokens (provider count)" or "~996,000 tokens (estimated)".</summary>
     public string DescribeTokenCount()
     {
-        var (tokens, kind) = EstimateContextTokens();
+        (long Tokens, TokenCountKind Kind) count;
+        try { count = EstimateContextTokens(); }
+        catch (Exception) { count = _history.ContextTokens(); } // never let a report line break a save or load
+        var (tokens, kind) = count;
         return kind switch
         {
             TokenCountKind.Actual => $"{tokens:N0} tokens (provider count)",
@@ -78,18 +81,29 @@ public class AgentLoop
 
     /// <summary>
     /// Asks the provider how big the conversation is now and records the answer, so <see cref="DescribeContextUsage"/> and
-    /// /compact report a real count. Does nothing if the provider can't or won't say.
+    /// /compact report a real count. Does nothing if the provider can't or won't say. It is only ever a nicety on
+    /// top of /save and /load, so it never throws: whatever goes wrong here must not stop them finishing.
     /// </summary>
     public async Task RefreshTokenCountAsync(CancellationToken ct = default)
     {
-        var tokens = await _llm.CountPromptTokensAsync(BuildRequest(), ct);
-        if (tokens is > 0) _history.RecordPromptUsage(tokens.Value);
+        try
+        {
+            var tokens = await _llm.CountPromptTokensAsync(BuildRequest(), ct);
+            if (tokens is > 0) _history.RecordPromptUsage(tokens.Value);
+        }
+        catch (Exception)
+        {
+            // Keep whatever count we had; the caller falls back to an estimate.
+        }
     }
 
     /// <summary>One line for /status: the conversation's size in tokens against the context window, and how it was arrived at.</summary>
     public string DescribeContextUsage()
     {
-        var (tokens, kind) = EstimateContextTokens();
+        (long Tokens, TokenCountKind Kind) count;
+        try { count = EstimateContextTokens(); }
+        catch (Exception) { count = _history.ContextTokens(); } // never let a report line break /status
+        var (tokens, kind) = count;
         var percent = tokens * 100 / Math.Max(ContextWindowTokens, 1);
         return kind switch
         {

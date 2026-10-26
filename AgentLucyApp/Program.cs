@@ -280,9 +280,12 @@ async Task SaveAsync(string? id)
         Console.WriteLine($"Could not save session '{id}'.");
         return;
     }
-    await lucy.Loop.RefreshTokenCountAsync(); // the provider's own count, when it will say
+    // Both files are written before anything optional: the provider's token count is a nicety (bounded to a few
+    // seconds, and it cannot throw), so it can't hold up or break the save.
+    var savedPath = TryWriteTranscript($"{savedId}.docx", saveOptions);
+    await lucy.Loop.RefreshTokenCountAsync();
     Console.WriteLine($"Session saved: {savedId} ({lucy.History.Count} messages, {lucy.History.QuestionCount} questions, {lucy.Loop.DescribeTokenCount()})");
-    if (TryWriteTranscript($"{savedId}.docx", saveOptions) is { } path)
+    if (savedPath is { } path)
         Console.WriteLine($"Transcript written: {path}");
 }
 

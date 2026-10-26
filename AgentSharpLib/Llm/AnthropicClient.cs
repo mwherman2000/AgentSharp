@@ -16,6 +16,7 @@ public class AnthropicClient : ILlmClient
     private readonly string _model;
     private readonly TimeSpan _streamingTimeout;
     private const string ApiUrl = "https://api.anthropic.com/v1/messages";
+    private static readonly TimeSpan CountTokensTimeout = TimeSpan.FromSeconds(10);
     private const string CountTokensUrl = "https://api.anthropic.com/v1/messages/count_tokens";
     private const string ApiVersion = "2023-06-01";
 
@@ -197,7 +198,7 @@ public class AnthropicClient : ILlmClient
         try
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
+            timeoutCts.CancelAfter(CountTokensTimeout); // a nicety, so never hold up the caller for long
 
             var content = new StringContent(BuildRequestBody(request, stream: false, countOnly: true), Encoding.UTF8, "application/json");
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, CountTokensUrl) { Content = content };

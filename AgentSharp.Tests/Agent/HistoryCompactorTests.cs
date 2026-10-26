@@ -230,6 +230,28 @@ public class HistoryCompactorTests
         Assert.Null(AgentSharpLib.Transcripts.ConversationTranscript.PathFor("dir", "a/"));
     }
 
+    private sealed class ThrowingCountClient : ILlmClient
+    {
+        public string ProviderName => "Throwing";
+        public string ModelId => "x";
+        public TimeSpan StreamingTimeout => TimeSpan.FromSeconds(1);
+        public TimeSpan NonStreamingTimeout => TimeSpan.FromSeconds(1);
+        public Task<LlmResponse> SendAsync(LlmRequest request, CancellationToken ct = default) => throw new NotSupportedException();
+        public IAsyncEnumerable<StreamEvent> StreamAsync(LlmRequest request, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<long?> CountPromptTokensAsync(LlmRequest request, CancellationToken ct = default) => throw new InvalidOperationException("boom");
+    }
+
+    [Fact]
+    public async Task RefreshTokenCount_NeverThrows_SoItCannotBreakASaveOrLoad()
+    {
+        var h = Sample();
+        var loop = new AgentLoop(new ThrowingCountClient(), new AgentSharpLib.Tools.ToolRegistry(), new AgentSharpLib.Safety.ApprovalGate(), "sys", history: h);
+
+        await loop.RefreshTokenCountAsync(); // must not throw
+
+        Assert.Contains("estimated", loop.DescribeTokenCount()); // falls back to the estimate
+    }
+
     [Fact]
     public void EmptyHistory_IsANoOp()
     {
