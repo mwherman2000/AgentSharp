@@ -27,7 +27,7 @@ internal sealed class ConsoleAgentOutput : IAgentOutput
     public void TransientError(Exception exception) =>
         WriteLine($"{Environment.NewLine}Error: {exception.GetType().Name}: {exception.Message}", ConsoleColor.Red);
 
-    public void ToolAutoApproved(string toolName) => WriteLine($"  [auto-approved] {toolName}", ConsoleColor.DarkGray);
+    public void ToolAutoApproved(string toolName) => WriteLine($"  [pre-approved] {toolName}", ConsoleColor.DarkGray);
     public void ToolSkipped(string toolTypeName, string reason) => WriteLine($"Skipped tool '{toolTypeName}': {reason}", ConsoleColor.DarkYellow);
 
     public void SubAgentStarted(string name, string task, bool inBatch) =>

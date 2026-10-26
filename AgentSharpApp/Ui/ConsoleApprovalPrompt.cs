@@ -77,7 +77,7 @@ public sealed class ConsoleApprovalPrompt : IApprovalPrompt
                 AnsiConsole.MarkupLine("[green]  Allowed.[/]");
                 return ApprovalResult.Allow;
             case ConsoleKey.S:
-                AnsiConsole.MarkupLine($"[green]  {Markup.Escape(request.ToolName)} will be auto-approved for this session.[/]");
+                AnsiConsole.MarkupLine($"[green]  {Markup.Escape(request.ToolName)} will be pre-approved for this session.[/]");
                 return ApprovalResult.AlwaysAllow;
             default:
                 AnsiConsole.MarkupLine("[red]  Denied.[/]");

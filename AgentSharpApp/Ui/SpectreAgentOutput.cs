@@ -58,7 +58,7 @@ public sealed class SpectreAgentOutput : IAgentOutput
     }
 
     public void ToolAutoApproved(string toolName) =>
-        AnsiConsole.MarkupLine($"[dim]  [[auto-approved]] {Markup.Escape(toolName)}[/]");
+        AnsiConsole.MarkupLine($"[dim]  [[pre-approved]] {Markup.Escape(toolName)}[/]");
 
     public void ToolSkipped(string toolTypeName, string reason) =>
         AnsiConsole.MarkupLine($"[dim yellow]Skipped tool '{Markup.Escape(toolTypeName)}': {Markup.Escape(reason)}[/]");
