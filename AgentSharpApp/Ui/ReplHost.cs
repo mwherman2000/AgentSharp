@@ -385,6 +385,10 @@ public class ReplHost
 
         _session.OnToolEnd += (name, result) =>
         {
+            // The thought itself was shown at tool start; its "Thought recorded" result is noise.
+            if (name == "think" && !result.IsError)
+                return;
+
             var output = SanitizeForTerminal(result.Output);
             if (result.IsError)
             {

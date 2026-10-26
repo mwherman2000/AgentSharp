@@ -1186,7 +1186,7 @@ public class AgentLoop
                 "list_files" => $"List files in: {(input.TryGetProperty("path", out var p) ? p.GetString() : ".")}",
                 "grep" => $"Search for: {input.GetProperty("pattern").GetString()}",
                 "run_shell" => $"Run: {input.GetProperty("command").GetString()}",
-                "think" => "Thinking...",
+                "think" => input.GetProperty("thought").GetString() ?? "Thinking...",
                 _ => input.GetRawText()
             };
         }
