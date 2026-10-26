@@ -22,6 +22,13 @@ public class SessionManager
         Directory.CreateDirectory(_sessionsDir);
     }
 
+    /// <summary>True if a session saved under <paramref name="sessionId"/> exists (the id is cleaned the same way as when saving).</summary>
+    public bool Exists(string sessionId)
+    {
+        var safeId = Path.GetFileName(sessionId);
+        return !string.IsNullOrEmpty(safeId) && File.Exists(GetSessionPath(safeId));
+    }
+
     /// <summary>
     /// Save a conversation to disk. Returns null (instead of throwing) if
     /// <paramref name="sessionId"/> isn't a usable file name or the write fails

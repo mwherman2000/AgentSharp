@@ -287,9 +287,9 @@ public class AgentLoop
             using var llmActivity = AgentTelemetry.Source.StartActivity("llm.request");
             llmActivity?.SetTag("llm.messages.count", request.Messages.Count);
             llmActivity?.SetTag("llm.tools.count", request.Tools?.Count ?? 0);
-            if (AgentFlags.RequestTrace) _output.Trace($"\n{_turnNumber}>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
+            if (AgentFlags.RequestTrace) _output.Trace($"\n{_turnNumber}>>>request: {TraceJson(request)}");
             if (AgentFlags.ToolsTrace)   _output.Trace($"\n >>request.Tools: {System.Text.Json.JsonSerializer.Serialize(request.Tools)}");
-            if (AgentFlags.HistoryTrace) _output.Trace($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(request.Messages)}");
+            if (AgentFlags.HistoryTrace) _output.Trace($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(TraceMessages(request.Messages))}");
 
             // Accumulate the streamed response
             var contentBlocks = new List<ContentBlock>();
@@ -590,9 +590,9 @@ public class AgentLoop
             using var llmActivity = AgentTelemetry.Source.StartActivity("llm.request");
             llmActivity?.SetTag("llm.messages.count", request.Messages.Count);
             llmActivity?.SetTag("llm.tools.count", request.Tools?.Count ?? 0);
-            if (AgentFlags.RequestTrace) _output.Trace($"\n{_turnNumber}>>>request: {System.Text.Json.JsonSerializer.Serialize(request)}");
+            if (AgentFlags.RequestTrace) _output.Trace($"\n{_turnNumber}>>>request: {TraceJson(request)}");
             if (AgentFlags.ToolsTrace)   _output.Trace($"\n >>request.Tools: {System.Text.Json.JsonSerializer.Serialize(request.Tools)}");
-            if (AgentFlags.HistoryTrace) _output.Trace($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(request.Messages)}");
+            if (AgentFlags.HistoryTrace) _output.Trace($"\n >>request.Messages: {System.Text.Json.JsonSerializer.Serialize(TraceMessages(request.Messages))}");
 
             // See the matching comment in RunTurnStreamingAsync: only the first
             // attempt gets the client's full configured timeout; retries after a
@@ -744,10 +744,46 @@ public class AgentLoop
     {
         SystemPrompt = _systemPrompt,
         // A /compact record is local bookkeeping for saves and transcripts, not part of the conversation.
-        Messages = _history.Messages.Where(m => m.Kind != PromptKind.Cmp).ToList(),
+        Messages = WithCompactionNote(_history.Messages.Where(m => m.Kind != PromptKind.Cmp).ToList()),
         Tools = _tools.GetDefinitions(),
         MaxTokens = _maxTokens
     };
+
+    /// <summary>
+    /// After a /compact the conversation starts mid-way. Tell the model so inside the first message of this request (a copy;
+    /// the history is untouched), instead of letting it guess from what it can see that work may have been lost. Inside an
+    /// existing message because a separate one would put two messages of the same role in a row.
+    /// </summary>
+    private List<ChatMessage> WithCompactionNote(List<ChatMessage> messages)
+    {
+        if (_history.PromptOffset == 0 || messages.Count == 0 || messages[0].Role != MessageRole.User) return messages;
+        var first = messages[0];
+        var blocks = first.Content.ToList();
+        var textAt = blocks.FindIndex(b => b is TextBlock);
+        if (textAt < 0) return messages;
+
+        var note = $"[Note from the application: this conversation was shortened with /compact. Its oldest {_history.PromptOffset} prompts and their replies were removed to save space, " +
+                   "so what follows starts part-way through. Nothing else was lost; if you need detail from the removed part, re-read the relevant files or ask the user.]";
+        blocks[textAt] = new TextBlock { Text = note + "\n\n" + ((TextBlock)blocks[textAt]).Text };
+        messages[0] = first with { Content = blocks };
+        return messages;
+    }
+
+    /// <summary>
+    /// The request as JSON for the /request, /tools and /history traces. Serializing the content blocks through their base
+    /// type drops every field but "type", so each block goes in as an object to be written by its real type.
+    /// </summary>
+    internal static string TraceJson(LlmRequest request) => System.Text.Json.JsonSerializer.Serialize(new
+    {
+        request.SystemPrompt,
+        Messages = TraceMessages(request.Messages),
+        request.Tools,
+        request.MaxTokens,
+        request.Temperature,
+    });
+
+    private static List<object> TraceMessages(IReadOnlyList<ChatMessage> messages) =>
+        messages.Select(m => (object)new { m.Role, Content = m.Content.Cast<object>().ToList() }).ToList();
 
     /// <summary>
     /// Exponential backoff schedule for retrying a failed LLM call: 500ms, 1s, 2s, ...

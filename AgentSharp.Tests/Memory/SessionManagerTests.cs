@@ -44,6 +44,21 @@ public class SessionManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task Exists_IsFalseBeforeSaving_TrueAfter_AndCleansTheIdLikeSaveDoes()
+    {
+        Assert.False(_manager.Exists("mine"));
+
+        var history = new ConversationHistory();
+        history.AddUserMessage("hello");
+        await _manager.SaveAsync(history, "mine");
+
+        Assert.True(_manager.Exists("mine"));
+        Assert.True(_manager.Exists("../../mine")); // the same file Save would write
+        Assert.False(_manager.Exists("other"));
+        Assert.False(_manager.Exists(""));
+    }
+
+    [Fact]
     public async Task ListSessions_ReturnsAllSaved()
     {
         var h1 = new ConversationHistory();

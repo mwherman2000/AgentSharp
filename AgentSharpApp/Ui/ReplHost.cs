@@ -227,7 +227,7 @@ public class ReplHost
                 var compacted = HistoryCompactor.Compact(_session.History, compactPercent, compactDropOldest);
                 AnsiConsole.MarkupLine(compacted.TurnsDropped == 0
                     ? "[yellow]Nothing to drop.[/]"
-                    : $"[green]Compacted:[/] dropped the {compacted.TurnsDropped} oldest turns, kept {compacted.TurnsKept}; {(compacted.Calibrated ? "calibrated" : "estimated")} tokens {compacted.TokensBefore:N0} -> {compacted.TokensAfter:N0}. /save first next time if you want the dropped turns kept.");
+                    : $"[green]Compacted:[/] dropped the {compacted.TurnsDropped} oldest turns, kept {compacted.TurnsKept}; {(compacted.Calibrated ? "calibrated" : "estimated")} tokens {compacted.TokensBefore:N0} -> {compacted.TokensAfter:N0}. The next request re-writes the prompt cache (~{compacted.TokensAfter:N0} tokens at the cache-write price), so compact less often rather than more. /save first next time if you want the dropped turns kept.");
                 break;
 
             case CommandType.Save:
@@ -237,6 +237,14 @@ public class ReplHost
                 if (saveOptions is null)
                 {
                     AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(saveError!)} Usage: /save [[id]] [[--tools]] [[--no-thinking]][/]");
+                    break;
+                }
+                // Saving under a name that is already taken replaces that session and its transcript for good, so
+                // ask first -- before the checkpoint turn, which would otherwise be spent on a save that is declined.
+                if (saveId.Length > 0 && SaveTargetsExist(saveId)
+                    && !AnsiConsole.Confirm($"[yellow]'{Markup.Escape(saveId)}' already exists (the saved session and/or its .docx transcript). Overwrite?[/]", defaultValue: false))
+                {
+                    AnsiConsole.MarkupLine("[yellow]Save cancelled; nothing was changed.[/]");
                     break;
                 }
                 // Checkpoint first: a normal turn, so the marker and the agent's reply are part
@@ -342,6 +350,13 @@ public class ReplHost
                 if (transcriptOptions is null || transcriptName.Length == 0)
                 {
                     AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(transcriptError ?? "Missing transcript name.")} Usage: {Markup.Escape(TranscriptOptions.Usage)}[/]");
+                    break;
+                }
+                var transcriptTarget = ConversationTranscript.PathFor(_session.Project.WorkingDirectory, transcriptName);
+                if (transcriptTarget is not null && File.Exists(transcriptTarget)
+                    && !AnsiConsole.Confirm($"[yellow]{Markup.Escape(Path.GetFileName(transcriptTarget))} already exists. Overwrite?[/]", defaultValue: false))
+                {
+                    AnsiConsole.MarkupLine("[yellow]Transcript cancelled; nothing was changed.[/]");
                     break;
                 }
                 var transcriptPath = WriteTranscript(transcriptName, transcriptOptions);
@@ -491,6 +506,10 @@ public class ReplHost
         if (sessions.Count < total)
             AnsiConsole.MarkupLine($"[dim]Showing the {sessions.Count} most recent of {total} saved sessions; /sessions lists all.[/]");
     }
+
+    /// <summary>Whether /save under this id would replace a saved session or its transcript.</summary>
+    private bool SaveTargetsExist(string id) =>
+        _sessions.Exists(id) || (ConversationTranscript.PathFor(_session.Project.WorkingDirectory, id + ".docx") is { } docx && File.Exists(docx));
 
     /// <summary>Shared by both /help tables so their columns line up.</summary>
     private const int CommandColumnWidth = 24;

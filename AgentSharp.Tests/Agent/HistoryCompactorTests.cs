@@ -171,6 +171,66 @@ public class HistoryCompactorTests
     }
 
     [Fact]
+    public async Task AfterACompact_TheModelIsToldInTheFirstMessage_ButTheHistoryIsUntouched()
+    {
+        var h = Sample();
+        var llm = new FakeLlmClient()
+            .Enqueue(new LlmResponse { Message = ChatMessage.AssistantText("one"), StopReason = "end_turn" })
+            .Enqueue(new LlmResponse { Message = ChatMessage.AssistantText("two"), StopReason = "end_turn" });
+        var loop = new AgentLoop(llm, new AgentSharpLib.Tools.ToolRegistry(), new AgentSharpLib.Safety.ApprovalGate(), "sys", history: h);
+
+        // Before: nothing was removed, so the first message goes through as written.
+        await loop.RunTurnNonStreamingAsync("hello");
+        Assert.Equal("q1", llm.Requests[0].Messages[0].GetText());
+
+        HistoryCompactor.Compact(h, 50, dropOldest: true); // drops q1-q4: 4 prompts, leaving q5 first
+        await loop.RunTurnNonStreamingAsync("again");
+
+        var first = llm.Requests[1].Messages[0].GetText();
+        Assert.StartsWith("[Note from the application:", first);
+        Assert.Contains($"oldest {h.PromptOffset} prompts", first);
+        Assert.True(h.PromptOffset > 0);
+        Assert.EndsWith(h.Messages[0].GetText(), first);
+        Assert.DoesNotContain("[Note from the application:", h.Messages[0].GetText()); // the stored history has no note
+    }
+
+    [Fact]
+    public void TraceJson_IncludesTheTextAndToolFields_NotJustTheBlockTypes()
+    {
+        var request = new LlmRequest
+        {
+            SystemPrompt = "sys",
+            Messages = [ChatMessage.UserText("what is two plus two"), new ChatMessage { Role = MessageRole.Assistant, Content = [new TextBlock { Text = "four" }] }],
+        };
+
+        var json = AgentLoop.TraceJson(request);
+
+        Assert.Contains("what is two plus two", json);
+        Assert.Contains("four", json);
+        Assert.Contains("\"type\":\"text\"", json);
+    }
+
+    [Theory]
+    [InlineData("notes", "notes.md")]
+    [InlineData("notes.md", "notes.md")]
+    [InlineData("notes.docx", "notes.docx")]
+    [InlineData("NOTES.DOCX", "NOTES.DOCX")]
+    [InlineData("../../escape", "escape.md")]
+    [InlineData("a/b/c.docx", "c.docx")]
+    public void TranscriptPathFor_MatchesWhereWriteWouldPutTheFile(string name, string expectedFileName)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "agentsharp-pathfor");
+        Assert.Equal(Path.Combine(dir, expectedFileName), AgentSharpLib.Transcripts.ConversationTranscript.PathFor(dir, name));
+    }
+
+    [Fact]
+    public void TranscriptPathFor_IsNullForANameWithNoFileName()
+    {
+        Assert.Null(AgentSharpLib.Transcripts.ConversationTranscript.PathFor("dir", ""));
+        Assert.Null(AgentSharpLib.Transcripts.ConversationTranscript.PathFor("dir", "a/"));
+    }
+
+    [Fact]
     public void EmptyHistory_IsANoOp()
     {
         var result = HistoryCompactor.Compact(new ConversationHistory(), 50, dropOldest: true);

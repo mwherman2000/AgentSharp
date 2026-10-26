@@ -99,7 +99,7 @@ while (running)
                 var compacted = HistoryCompactor.Compact(lucy.History, compactPercent, compactDropOldest);
                 Console.WriteLine(compacted.TurnsDropped == 0
                     ? "Nothing to drop."
-                    : $"Compacted: dropped the {compacted.TurnsDropped} oldest turns, kept {compacted.TurnsKept}; {(compacted.Calibrated ? "calibrated" : "estimated")} tokens {compacted.TokensBefore:N0} -> {compacted.TokensAfter:N0}.");
+                    : $"Compacted: dropped the {compacted.TurnsDropped} oldest turns, kept {compacted.TurnsKept}; {(compacted.Calibrated ? "calibrated" : "estimated")} tokens {compacted.TokensBefore:N0} -> {compacted.TokensAfter:N0}. The next request re-writes the prompt cache (~{compacted.TokensAfter:N0} tokens at the cache-write price), so compact less often rather than more.");
                 break;
             case "/save":
                 await SaveAsync(argument);
@@ -155,6 +155,9 @@ while (running)
                 else if (TranscriptOptions.Parse(argument, out var transcriptName, out var transcriptError) is not { } transcriptOptions
                          || transcriptName.Length == 0)
                     Console.WriteLine($"{transcriptError ?? "Missing transcript name."} Usage: {TranscriptOptions.Usage}");
+                else if (ConversationTranscript.PathFor(lucy.Project.WorkingDirectory, transcriptName) is { } target && File.Exists(target)
+                         && !ConfirmOverwrite(Path.GetFileName(target)))
+                    Console.WriteLine("Transcript cancelled; nothing was changed.");
                 else if (TryWriteTranscript(transcriptName, transcriptOptions) is { } path)
                     Console.WriteLine($"Transcript written: {path}");
                 break;
@@ -227,6 +230,13 @@ async Task<bool> RunTurnAsync(string input, PromptKind kind = PromptKind.Std)
     }
 }
 
+// Asks before replacing something that already exists; anything but "y" is a no.
+bool ConfirmOverwrite(string what)
+{
+    Console.Write($"{what} already exists. Overwrite? [y/N] ");
+    return string.Equals(Console.ReadLine()?.Trim(), "y", StringComparison.OrdinalIgnoreCase);
+}
+
 // Saves the conversation, plus a .docx transcript of it next to the project (same
 // as the main CLI's /save).
 async Task SaveAsync(string? id)
@@ -239,6 +249,17 @@ async Task SaveAsync(string? id)
         return;
     }
     id = saveId.Length > 0 ? saveId : null;
+    // Saving under a name that is already taken replaces that session and its transcript for good, so ask first --
+    // before the checkpoint turn, which would otherwise be spent on a save that is declined.
+    if (id is not null
+        && (sessions.Exists(id) || (ConversationTranscript.PathFor(lucy.Project.WorkingDirectory, id + ".docx") is { } docx && File.Exists(docx))))
+    {
+        if (!ConfirmOverwrite($"'{id}' (the saved session and/or its .docx transcript)"))
+        {
+            Console.WriteLine("Save cancelled; nothing was changed.");
+            return;
+        }
+    }
     // Checkpoint first: a normal turn, so the marker and the reply are part of the
     // conversation (and the transcript) before it is written out.
     var historyBeforeCheckpoint = lucy.History.Count;

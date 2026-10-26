@@ -12,6 +12,26 @@ namespace AgentSharpLib.Transcripts;
 public static class ConversationTranscript
 {
     /// <summary>
+    /// The path <see cref="Write"/> would use for <paramref name="name"/> in <paramref name="directory"/> -- so a caller can tell
+    /// whether it would replace an existing file -- or null if the name has no usable file name.
+    /// </summary>
+    public static string? PathFor(string directory, string name)
+    {
+        // Path.GetFileName strips any directory portion, so a name like "/trump14020"
+        // or "../elsewhere" can't Path.Combine its way outside the directory (a leading
+        // '/' makes the second Path.Combine argument rooted, which silently discards
+        // the directory and resolves to the drive root instead).
+        var safeName = Path.GetFileName(name);
+        if (string.IsNullOrEmpty(safeName)) return null;
+
+        // Format is chosen by the requested file's own extension -- anything else
+        // (no extension, or one we don't recognize) defaults to Markdown.
+        var keepsName = safeName.EndsWith(".docx", StringComparison.OrdinalIgnoreCase)
+                        || safeName.EndsWith(".md", StringComparison.OrdinalIgnoreCase);
+        return Path.Combine(directory, keepsName ? safeName : $"{safeName}.md");
+    }
+
+    /// <summary>
     /// Write <paramref name="history"/> to <paramref name="name"/> inside
     /// <paramref name="directory"/> and return the full path. Written as Word (.docx)
     /// when the name ends in ".docx", otherwise Markdown (".md" is appended if missing).
@@ -33,17 +53,9 @@ public static class ConversationTranscript
         // or "../elsewhere" can't Path.Combine its way outside the directory (a leading
         // '/' makes the second Path.Combine argument rooted, which silently discards
         // the directory and resolves to the drive root instead).
-        var safeName = Path.GetFileName(name);
-        if (string.IsNullOrEmpty(safeName))
-            throw new ArgumentException($"'{name}' is not a valid file name.", nameof(name));
-
-        // Format is chosen by the requested file's own extension -- anything else
-        // (no extension, or one we don't recognize) defaults to Markdown.
-        var isDocx = safeName.EndsWith(".docx", StringComparison.OrdinalIgnoreCase);
-        var fileName = isDocx || safeName.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
-            ? safeName
-            : $"{safeName}.md";
-        var path = Path.Combine(directory, fileName);
+        var path = PathFor(directory, name)
+            ?? throw new ArgumentException($"'{name}' is not a valid file name.", nameof(name));
+        var isDocx = path.EndsWith(".docx", StringComparison.OrdinalIgnoreCase);
 
         var askedAt = new List<DateTimeOffset?>();
         var kinds = new List<PromptKind>();
