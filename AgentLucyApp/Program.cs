@@ -90,6 +90,17 @@ while (running)
                 lucy.Reset();
                 Console.WriteLine("(new conversation)");
                 break;
+            case "/compact":
+                if (!HistoryCompactor.TryParse(argument, out var compactPercent, out var compactDropOldest))
+                {
+                    Console.WriteLine("Usage: /compact -N (drop the oldest turns making up at least N% of the estimated tokens) or /compact +N | N (keep the most recent turns making up at least N%); N is 1-99.");
+                    break;
+                }
+                var compacted = HistoryCompactor.Compact(lucy.History, compactPercent, compactDropOldest);
+                Console.WriteLine(compacted.TurnsDropped == 0
+                    ? "Nothing to drop."
+                    : $"Compacted: dropped the {compacted.TurnsDropped} oldest turns, kept {compacted.TurnsKept}; estimated tokens {compacted.TokensBefore:N0} -> {compacted.TokensAfter:N0}.");
+                break;
             case "/save":
                 await SaveAsync(argument);
                 break;
@@ -350,6 +361,7 @@ static void PrintHelp(string agentName)
         Commands:
           /help, /h, /?        Show this help
           /clear, /cls         Start a new conversation with {agentName}
+          /compact -N | +N | N Drop the oldest turns making up at least N% of the estimated tokens (-N), or keep the most recent turns making up at least N% (+N or N)
           /save [id] [--tools] [--no-thinking]
                                Send a "Checkpoint (/save)" prompt, wait for the reply, then save (and a .docx transcript; the flags shape the transcript only)
           /load, /resume <id>  Continue a saved conversation (sends a "Resumed (/load)" prompt)

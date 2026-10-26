@@ -76,6 +76,13 @@ public class ConversationHistory
             _messages.RemoveRange(count, _messages.Count - count);
     }
 
+    /// <summary>Removes the first <paramref name="count"/> messages (the oldest). Used by /compact.</summary>
+    public void DropFirst(int count)
+    {
+        if (count > 0)
+            _messages.RemoveRange(0, Math.Min(count, _messages.Count));
+    }
+
     /// <summary>
     /// Get the last assistant text response.
     /// </summary>

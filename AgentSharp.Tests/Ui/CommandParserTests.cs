@@ -13,6 +13,7 @@ public class CommandParserTests
     [InlineData("/q", CommandType.Exit)]
     [InlineData("/clear", CommandType.Clear)]
     [InlineData("/cls", CommandType.Clear)]
+    [InlineData("/compact", CommandType.Compact)]
     [InlineData("/save", CommandType.Save)]
     [InlineData("/sessions", CommandType.Sessions)]
     [InlineData("/ls", CommandType.Sessions)]

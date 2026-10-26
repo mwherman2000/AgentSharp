@@ -218,6 +218,18 @@ public class ReplHost
                     AnsiConsole.MarkupLine($"[green]Superprompt switched to:[/] {Markup.Escape(_session.SuperPrompt!)}");
                 break;
 
+            case CommandType.Compact:
+                if (!HistoryCompactor.TryParse(command.Argument, out var compactPercent, out var compactDropOldest))
+                {
+                    AnsiConsole.MarkupLine("[yellow]Usage: /compact -N (drop the oldest turns making up at least N% of the estimated tokens) or /compact +N | N (keep the most recent turns making up at least N%); N is 1-99.[/]");
+                    break;
+                }
+                var compacted = HistoryCompactor.Compact(_session.History, compactPercent, compactDropOldest);
+                AnsiConsole.MarkupLine(compacted.TurnsDropped == 0
+                    ? "[yellow]Nothing to drop.[/]"
+                    : $"[green]Compacted:[/] dropped the {compacted.TurnsDropped} oldest turns, kept {compacted.TurnsKept}; estimated tokens {compacted.TokensBefore:N0} -> {compacted.TokensAfter:N0}. /save first next time if you want the dropped turns kept.");
+                break;
+
             case CommandType.Save:
                 // --tools / --no-thinking only shape the .docx transcript written with the
                 // save; they are stripped before the id reaches the session file.
@@ -488,6 +500,7 @@ public class ReplHost
             .AddColumn(new TableColumn("Command").Width(CommandColumnWidth))
             .AddColumn("Description")
             .AddRow("/help, /h, /?", "Show this help")
+            .AddRow("/compact -N | +N | N", "Drop the oldest turns making up at least N% of the estimated tokens (-N), or keep only the most recent turns making up at least N% (+N or N)")
             .AddRow("/clear, /cls [[persona]]", $"Start a new conversation; optionally switch persona ({string.Join(", ", SystemPromptBuilder.AvailableSuperPrompts)})")
             .AddRow("/save [[id]] [[--tools]] [[--no-thinking]]", "Send a \"Checkpoint (/save)\" prompt, wait for the reply, then save the conversation (and a .docx transcript; the flags shape the transcript only)")
             .AddRow("/load, /resume <id>", "Continue a saved conversation (sends a \"Resumed (/load)\" prompt and shows the reply)")

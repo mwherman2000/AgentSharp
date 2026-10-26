@@ -149,6 +149,7 @@ internal class Program
             AnsiConsole.MarkupLine("  /help       Show commands");
             AnsiConsole.MarkupLine("  /exit       Exit the agent");
             AnsiConsole.MarkupLine("  /clear      Clear conversation");
+            AnsiConsole.MarkupLine("  /compact    Drop the oldest turns (-N drops N%, +N keeps N%)");
             AnsiConsole.MarkupLine("  /save       Save session");
             AnsiConsole.MarkupLine("  /load <id>  Load session");
             AnsiConsole.MarkupLine("  /sessions   List sessions");
