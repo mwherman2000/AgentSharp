@@ -370,11 +370,14 @@ public class AgentLoopSendAsyncTests
     public class EchoRecorder : System.Reflection.DispatchProxy
     {
         public List<(PromptKind Kind, int Number, string Text)> Echoes { get; } = new();
+        public List<string> Warnings { get; } = new();
 
         protected override object? Invoke(System.Reflection.MethodInfo? targetMethod, object?[]? args)
         {
             if (targetMethod?.Name == nameof(AgentSharpLib.Output.IAgentOutput.SystemPrompt))
                 Echoes.Add(((PromptKind)args![0]!, (int)args[1]!, (string)args[2]!));
+            if (targetMethod?.Name == nameof(AgentSharpLib.Output.IAgentOutput.Warning))
+                Warnings.Add((string)args![0]!);
             return null;
         }
     }
@@ -396,5 +399,25 @@ public class AgentLoopSendAsyncTests
         Assert.Equal([(PromptKind.Sys, 2), (PromptKind.Chk, 3)], recorder.Echoes.Select(e => (e.Kind, e.Number)));
         Assert.Contains("cut off", recorder.Echoes[0].Text);
         Assert.Equal("Resumed (/load) now", recorder.Echoes[1].Text);
+    }
+
+    [Fact]
+    public async Task ContextWarnings_FireOnceAt80AndOnceAt95Percent()
+    {
+        var output = System.Reflection.DispatchProxy.Create<AgentSharpLib.Output.IAgentOutput, EchoRecorder>();
+        var recorder = (EchoRecorder)(object)output;
+        var llm = new FakeLlmClient()
+            .Enqueue(TextResponse("a", inputTokens: 700_000))                          // 70%: quiet
+            .Enqueue(TextResponse("b", inputTokens: 100_000, cacheReadTokens: 750_000)) // 85%: warns
+            .Enqueue(TextResponse("c", inputTokens: 860_000))                          // 86%: already warned
+            .Enqueue(TextResponse("d", inputTokens: 960_000));                         // 96%: warns again
+        var loop = new AgentLoop(llm, new ToolRegistry(), new ApprovalGate(), "system prompt", output: output);
+
+        foreach (var q in new[] { "1", "2", "3", "4" })
+            await loop.RunTurnNonStreamingAsync(q);
+
+        Assert.Equal(2, recorder.Warnings.Count);
+        Assert.Contains("85%", recorder.Warnings[0]);
+        Assert.Contains("96%", recorder.Warnings[1]);
     }
 }

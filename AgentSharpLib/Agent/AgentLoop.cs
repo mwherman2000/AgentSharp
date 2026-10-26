@@ -41,6 +41,29 @@ public class AgentLoop
     /// stomp on each other's turn numbers in telemetry.</summary>
     private int _turnNumber;
 
+    /// <summary>The model's context window in tokens. The default matches the 1,000,000-token
+    /// limit the API reports for the models this app targets.</summary>
+    public int ContextWindowTokens { get; init; } = 1_000_000;
+
+    /// <summary>The highest context-usage threshold (80 or 95) already warned about, so each is
+    /// reported once. A replaced conversation (/clear, /load) gets a new loop, which starts at 0.</summary>
+    private int _contextWarnedAt;
+
+    /// <summary>
+    /// Warns once when the prompt just sent used 80% of the context window, and again at 95%.
+    /// There is no compaction, so past the limit every request fails and /clear is the only way out.
+    /// </summary>
+    private void WarnIfContextNearlyFull(int inputTokens, int cacheCreationTokens, int cacheReadTokens)
+    {
+        var used = (long)inputTokens + cacheCreationTokens + cacheReadTokens;
+        var percent = (int)(used * 100 / Math.Max(ContextWindowTokens, 1));
+        var threshold = percent >= 95 ? 95 : percent >= 80 ? 80 : 0;
+        if (threshold <= _contextWarnedAt) return;
+        _contextWarnedAt = threshold;
+        _output.Warning($"Context is {percent}% full ({used:N0} of {ContextWindowTokens:N0} tokens). " +
+            "Use /save then /clear soon -- once the limit is reached every request fails.");
+    }
+
     /// <summary>Running count of tool executions within the current turn only, reset
     /// to 0 at the start of each RunTurn*Async call. Tagged on every tool.* telemetry
     /// span alongside <see cref="_totalToolExecutions"/> so a trace shows both "how
@@ -406,6 +429,7 @@ public class AgentLoop
             if (!streamError)
                 consecutiveStreamErrors = 0;
 
+            WarnIfContextNearlyFull(lastInputTokens, lastCacheCreationTokens, lastCacheReadTokens);
             _totalInputTokens += lastInputTokens;
             _totalOutputTokens += lastOutputTokens;
             _totalCacheCreationTokens += lastCacheCreationTokens;
@@ -582,6 +606,7 @@ public class AgentLoop
             llmActivity?.SetTag("llm.usage.cache_creation_tokens", response.CacheCreationInputTokens);
             llmActivity?.SetTag("llm.usage.cache_read_tokens", response.CacheReadInputTokens);
 
+            WarnIfContextNearlyFull(response.InputTokens, response.CacheCreationInputTokens, response.CacheReadInputTokens);
             _totalInputTokens += response.InputTokens;
             _totalOutputTokens += response.OutputTokens;
             _totalCacheCreationTokens += response.CacheCreationInputTokens;

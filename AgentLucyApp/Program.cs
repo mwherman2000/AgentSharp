@@ -230,10 +230,17 @@ async Task SaveAsync(string? id)
     id = saveId.Length > 0 ? saveId : null;
     // Checkpoint first: a normal turn, so the marker and the reply are part of the
     // conversation (and the transcript) before it is written out.
+    var historyBeforeCheckpoint = lucy.History.Count;
     if (!await RunTurnAsync($"Checkpoint (/save) {LocalTime.Format(DateTimeOffset.Now, LocalTime.Seconds)}", kind: PromptKind.Chk))
     {
-        Console.WriteLine("Checkpoint did not complete; session not saved.");
-        return;
+        // A cancelled turn is rolled back (Ctrl+C: honour it); a failed one left the marker in
+        // the history, so save anyway.
+        if (lucy.History.Count <= historyBeforeCheckpoint)
+        {
+            Console.WriteLine("Checkpoint did not complete; session not saved.");
+            return;
+        }
+        Console.WriteLine("Checkpoint failed; saving the session anyway.");
     }
     var savedId = await sessions.SaveAsync(lucy.History, id);
     if (savedId is null)

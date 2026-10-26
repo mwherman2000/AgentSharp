@@ -232,10 +232,17 @@ public class ReplHost
                 }
                 // Checkpoint first: a normal turn, so the marker and the agent's reply are part
                 // of the conversation (and the transcript) before it is written out.
+                var historyBeforeCheckpoint = _session.History.Count;
                 if (!await RunTurnAsync($"Checkpoint (/save) {LocalTime.Format(DateTimeOffset.Now, LocalTime.Seconds)}", ct, kind: PromptKind.Chk))
                 {
-                    AnsiConsole.MarkupLine("[yellow]Checkpoint did not complete; session not saved.[/]");
-                    break;
+                    // A cancelled turn is rolled back, so this was a Ctrl+C: honour it. A failed one
+                    // (e.g. the context is full) still left the marker in the history: save anyway.
+                    if (_session.History.Count <= historyBeforeCheckpoint)
+                    {
+                        AnsiConsole.MarkupLine("[yellow]Checkpoint did not complete; session not saved.[/]");
+                        break;
+                    }
+                    AnsiConsole.MarkupLine("[yellow]Checkpoint failed; saving the session anyway.[/]");
                 }
                 var sessionId = await _sessions.SaveAsync(_session.History, saveId.Length > 0 ? saveId : null);
                 if (sessionId is not null)
