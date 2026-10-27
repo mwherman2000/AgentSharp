@@ -402,7 +402,7 @@ public class AgentLoopSendAsyncTests
     }
 
     [Fact]
-    public async Task ContextWarnings_FireOnceAt80AndOnceAt95Percent()
+    public async Task ContextWarnings_FireOnceAt80Then90AndOnceAt95Percent()
     {
         var output = System.Reflection.DispatchProxy.Create<AgentSharpLib.Output.IAgentOutput, EchoRecorder>();
         var recorder = (EchoRecorder)(object)output;
@@ -410,14 +410,35 @@ public class AgentLoopSendAsyncTests
             .Enqueue(TextResponse("a", inputTokens: 700_000))                          // 70%: quiet
             .Enqueue(TextResponse("b", inputTokens: 100_000, cacheReadTokens: 750_000)) // 85%: warns
             .Enqueue(TextResponse("c", inputTokens: 860_000))                          // 86%: already warned
-            .Enqueue(TextResponse("d", inputTokens: 960_000));                         // 96%: warns again
+            .Enqueue(TextResponse("d", inputTokens: 910_000))                          // 91%: warns
+            .Enqueue(TextResponse("e", inputTokens: 920_000))                          // 92%: already warned
+            .Enqueue(TextResponse("f", inputTokens: 960_000));                         // 96%: warns again
         var loop = new AgentLoop(llm, new ToolRegistry(), new ApprovalGate(), "system prompt", output: output);
 
-        foreach (var q in new[] { "1", "2", "3", "4" })
+        foreach (var q in new[] { "1", "2", "3", "4", "5", "6" })
             await loop.RunTurnNonStreamingAsync(q);
 
-        Assert.Equal(2, recorder.Warnings.Count);
+        Assert.Equal(3, recorder.Warnings.Count);
         Assert.Contains("85%", recorder.Warnings[0]);
-        Assert.Contains("96%", recorder.Warnings[1]);
+        Assert.Contains("91%", recorder.Warnings[1]);
+        Assert.Contains("96%", recorder.Warnings[2]);
+    }
+
+    [Fact]
+    public async Task ContextWarningForPrompt_RepeatsBeforeEveryPromptOnceOver95Percent()
+    {
+        var llm = new FakeLlmClient()
+            .Enqueue(TextResponse("a", inputTokens: 900_000))   // 90%
+            .Enqueue(TextResponse("b", inputTokens: 960_000));  // 96%
+        var loop = new AgentLoop(llm, new ToolRegistry(), new ApprovalGate(), "system prompt");
+
+        await loop.RunTurnNonStreamingAsync("1");
+        Assert.Null(loop.ContextWarningForPrompt());
+
+        await loop.RunTurnNonStreamingAsync("2");
+        Assert.Null(loop.ContextWarningForPrompt());          // the turn itself just warned
+
+        Assert.Contains("96%", loop.ContextWarningForPrompt()); // and again at every later prompt
+        Assert.Contains("96%", loop.ContextWarningForPrompt());
     }
 }

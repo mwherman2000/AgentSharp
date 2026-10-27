@@ -33,6 +33,18 @@ public class ThinkTool : ToolBase
     public override Task<ToolResult> ExecuteAsync(JsonElement input, CancellationToken ct = default)
     {
         var thought = GetRequiredString(input, "thought");
+
+        // A tool call written inside the thought is never executed; say so instead of
+        // reporting success, or the model believes its action happened.
+        if (thought.Contains("<invoke", StringComparison.OrdinalIgnoreCase) ||
+            thought.Contains("<parameter", StringComparison.OrdinalIgnoreCase) ||
+            thought.Contains("antml:", StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(ToolResult.Error(
+                "Your thought contained tool-call markup. It was NOT executed. " +
+                "Issue the tool call as a separate call, not inside a thought."));
+        }
+
         return Task.FromResult(ToolResult.Success($"Thought recorded. Continue with your plan."));
     }
 }

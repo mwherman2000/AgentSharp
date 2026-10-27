@@ -62,6 +62,14 @@ Console.CancelKeyPress += (_, e) =>
 var running = true;
 while (running)
 {
+    // Past 95% the warning precedes every prompt, not just the turn that crossed it.
+    if (lucy.Loop.ContextWarningForPrompt() is { } contextWarning)
+    {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine($"\n{contextWarning}");
+        Console.ResetColor();
+    }
+
     Console.ForegroundColor = ConsoleColor.Magenta;
     // Numbered like the Q&A pairs in a transcript, e.g. "21 Lucy Pando> ".
     Console.Write($"\n{lucy.History.QuestionCount + 1} {agentName}> ");

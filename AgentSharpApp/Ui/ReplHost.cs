@@ -41,6 +41,9 @@ public class ReplHost
 
         while (!ct.IsCancellationRequested)
         {
+            // Past 95% the warning precedes every prompt, not just the turn that crossed it.
+            if (_session.Loop.ContextWarningForPrompt() is { } contextWarning)
+                AnsiConsole.MarkupLine($"\n[yellow]{Markup.Escape(contextWarning)}[/]");
             AnsiConsole.WriteLine();
             var input = ReadMultiLineInput(_inputHistory);
 

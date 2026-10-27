@@ -113,12 +113,13 @@ public class AgentLoop
         };
     }
 
-    /// <summary>The highest context-usage threshold (80 or 95) already warned about, so each is
+    /// <summary>The highest context-usage threshold (80, 90 or 95) already warned about, so each is
     /// reported once. A replaced conversation (/clear, /load) gets a new loop, which starts at 0.</summary>
     private int _contextWarnedAt;
 
     /// <summary>
-    /// Warns once when the prompt just sent used 80% of the context window, and again at 95%.
+    /// Warns once when the prompt just sent used 80% of the context window, once at 90%, and again at 95%
+    /// (from which <see cref="ContextWarningForPrompt"/> repeats it before every prompt).
     /// There is no compaction, so past the limit every request fails and /clear is the only way out.
     /// </summary>
     private void WarnIfContextNearlyFull(int inputTokens, int cacheCreationTokens, int cacheReadTokens)
@@ -126,21 +127,47 @@ public class AgentLoop
         var used = (long)inputTokens + cacheCreationTokens + cacheReadTokens;
         _history.RecordPromptUsage(used); // lets /compact report real token figures
         var percent = (int)(used * 100 / Math.Max(ContextWindowTokens, 1));
-        var threshold = percent >= 95 ? 95 : percent >= 80 ? 80 : 0;
+        var threshold = percent >= 95 ? 95 : percent >= 90 ? 90 : percent >= 80 ? 80 : 0;
         if (threshold <= _contextWarnedAt) return;
         _contextWarnedAt = threshold;
-        _pendingContextWarning = ($"Context is {percent}% full ({used:N0} of {ContextWindowTokens:N0} tokens). " +
-            "Use /compact -50 to drop the oldest turns (or /save then /clear) soon -- once the limit is reached every request fails.");
+        _pendingContextWarning = ContextWarningText(percent, used);
     }
 
+    private string ContextWarningText(long percent, long used) =>
+        $"Context is {percent}% full ({used:N0} of {ContextWindowTokens:N0} tokens). " +
+        "Use /compact -50 to drop the oldest turns (or /save then /clear) soon -- once the limit is reached every request fails.";
+
     private string? _pendingContextWarning;
+
+    /// <summary>True once the turn's own warning has been shown, so the prompt that follows doesn't repeat it.</summary>
+    private bool _contextWarningJustShown;
 
     /// <summary>Shows the context warning once the turn has finished, just above the next prompt, where it isn't scrolled away by the reply or tool output.</summary>
     private void FlushContextWarning()
     {
         if (_pendingContextWarning is not { } warning) return;
         _pendingContextWarning = null;
+        _contextWarningJustShown = true;
         _output.Warning(Environment.NewLine + warning);
+    }
+
+    /// <summary>
+    /// The warning to show before a command prompt: once the context is 95% full it is repeated before
+    /// every prompt, with the current figures (so /compact is reflected). Null below 95%, or when
+    /// the turn that just ended already showed it.
+    /// </summary>
+    public string? ContextWarningForPrompt()
+    {
+        if (_contextWarningJustShown)
+        {
+            _contextWarningJustShown = false;
+            return null;
+        }
+        long tokens;
+        try { tokens = EstimateContextTokens().Tokens; }
+        catch (Exception) { return null; } // never let a warning line break the prompt
+        var percent = tokens * 100 / Math.Max(ContextWindowTokens, 1);
+        return percent >= 95 ? ContextWarningText(percent, tokens) : null;
     }
 
     /// <summary>Running count of tool executions within the current turn only, reset
