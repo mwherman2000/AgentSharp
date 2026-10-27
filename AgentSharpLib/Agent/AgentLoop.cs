@@ -135,7 +135,7 @@ public class AgentLoop
 
     private string ContextWarningText(long percent, long used) =>
         $"Context is {percent}% full ({used:N0} of {ContextWindowTokens:N0} tokens). " +
-        "Use /compact -50 to drop the oldest turns (or /save then /clear) soon -- once the limit is reached every request fails.";
+        "Use /compact 50 to keep the most recent 50% of turns (or /save then /clear) soon -- once the limit is reached every request fails.";
 
     private string? _pendingContextWarning;
 
