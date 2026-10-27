@@ -61,14 +61,29 @@ public static class ConversationTranscript
         var kinds = new List<PromptKind>();
         var qaPairs = BuildQaPairs(history, options, askedAt, kinds);
         var systemPromptIntro = GetFirstParagraph(systemPrompt);
+        var recalledMemory = ExtractRecalledMemory(systemPrompt);
         var generatedAt = DateTime.Now;
         var sessionStats = usage is null ? "" : FormatSessionStats(usage);
 
         if (isDocx)
-            File.WriteAllBytes(path, TranscriptWriter.BuildDocx(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt, kinds, history.PromptOffset + 1));
+            File.WriteAllBytes(path, TranscriptWriter.BuildDocx(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt, kinds, history.PromptOffset + 1, recalledMemory));
         else
-            File.WriteAllText(path, TranscriptWriter.BuildMarkdown(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt, kinds, history.PromptOffset + 1));
+            File.WriteAllText(path, TranscriptWriter.BuildMarkdown(name, systemPromptIntro, generatedAt, qaPairs, sessionStats, askedAt, kinds, history.PromptOffset + 1, recalledMemory));
         return path;
+    }
+
+    /// <summary>
+    /// The memories recalled at the start of the conversation: the "# Memory" section
+    /// SystemPromptBuilder appends last to the system prompt. Null if there is none.
+    /// </summary>
+    internal static string? ExtractRecalledMemory(string systemPrompt)
+    {
+        const string heading = "# Memory\n";
+        var normalized = systemPrompt.Replace("\r\n", "\n");
+        var index = normalized.LastIndexOf("\n" + heading, StringComparison.Ordinal);
+        if (index < 0) return null;
+        var memory = normalized[(index + 1 + heading.Length)..].Trim();
+        return memory.Length > 0 ? memory : null;
     }
 
     /// <summary>
@@ -110,7 +125,7 @@ public static class ConversationTranscript
                 {
                     foreach (var result in message.Content.OfType<ToolResultBlock>())
                     {
-                        if (toolNames.TryGetValue(result.ToolUseId, out var toolName) && toolName != "think")
+                        if (toolNames.TryGetValue(result.ToolUseId, out var toolName) && toolName is not ("think" or "remember"))
                             segments.Add(new AnswerSegment(false, FormatToolResult(toolName, result), IsTool: true));
                     }
                 }
@@ -160,6 +175,13 @@ public static class ConversationTranscript
                             toolNames[thinkBlock.Id] = thinkBlock.Name;
                             if (options.IncludeThinking && ExtractThought(thinkBlock) is { } thought)
                                 segments.Add(new AnswerSegment(true, thought));
+                            break;
+                        case ToolUseBlock { Name: "remember" } rememberBlock:
+                            // A memory save is always recorded, whether or not tool calls are included;
+                            // its "Saved to memory." result is left out.
+                            toolNames[rememberBlock.Id] = rememberBlock.Name;
+                            if (ExtractMemoryEntry(rememberBlock) is { } entry)
+                                segments.Add(new AnswerSegment(false, $"**Memory remembered:**\n\n{entry}", IsTool: true));
                             break;
                         case ToolUseBlock toolBlock:
                             toolNames[toolBlock.Id] = toolBlock.Name;
@@ -211,6 +233,14 @@ public static class ConversationTranscript
     /// Returns null if the block isn't a well-formed think call -- e.g. the LLM sent
     /// malformed input that failed to parse into a "thought" string.
     /// </summary>
+    private static string? ExtractMemoryEntry(ToolUseBlock block) =>
+        block.Input.ValueKind == System.Text.Json.JsonValueKind.Object
+        && block.Input.TryGetProperty("entry", out var entryProp)
+        && entryProp.ValueKind == System.Text.Json.JsonValueKind.String
+        && entryProp.GetString() is { Length: > 0 } entry
+            ? entry
+            : null;
+
     private static string? ExtractThought(ToolUseBlock block)
     {
         if (!block.Input.TryGetProperty("thought", out var thoughtProp) ||

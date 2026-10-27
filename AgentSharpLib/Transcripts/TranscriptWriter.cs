@@ -44,7 +44,8 @@ internal static class TranscriptWriter
         string sessionStats = "",
         IReadOnlyList<DateTimeOffset?>? askedAt = null,
         IReadOnlyList<PromptKind>? kinds = null,
-        int firstNumber = 1)
+        int firstNumber = 1,
+        string? recalledMemory = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# {title}");
@@ -62,6 +63,14 @@ internal static class TranscriptWriter
         }
         sb.AppendLine($"_Transcript generated {LocalTime.Format(generatedAt, LocalTime.Minutes)}_");
         sb.AppendLine();
+        if (recalledMemory is not null)
+        {
+            sb.AppendLine("**Memories recalled:**");
+            sb.AppendLine();
+            foreach (var line in recalledMemory.Split('\n'))
+                sb.AppendLine($"> {line}");
+            sb.AppendLine();
+        }
 
         for (int i = 0; i < qaPairs.Count; i++)
         {
@@ -124,7 +133,8 @@ internal static class TranscriptWriter
         string sessionStats = "",
         IReadOnlyList<DateTimeOffset?>? askedAt = null,
         IReadOnlyList<PromptKind>? kinds = null,
-        int firstNumber = 1)
+        int firstNumber = 1,
+        string? recalledMemory = null)
     {
         var body = new StringBuilder();
         var hyperlinks = new List<(string Id, string Target)>();
@@ -135,6 +145,11 @@ internal static class TranscriptWriter
         if (systemPromptIntro.Length > 0)
             body.Append(SimpleParagraph(systemPromptIntro, default(RunState) with { Italic = true }, quoteDepth: 1));
         body.Append(SimpleParagraph($"Transcript generated {LocalTime.Format(generatedAt, LocalTime.Minutes)}", default(RunState) with { Italic = true }));
+        if (recalledMemory is not null)
+        {
+            body.Append(SimpleParagraph("Memories recalled:", default(RunState) with { Bold = true }));
+            AppendMarkdown(body, recalledMemory, hyperlinks, quoteDepth: 1, size: ToolTextSize);
+        }
 
         for (int i = 0; i < qaPairs.Count; i++)
         {
