@@ -368,13 +368,13 @@ public class AgentBuilderTests
     {
         var session = await Isolated(new FakeStreamingLlmClient().Enqueue(Reply("one"))).WithSuperPrompt("ray").BuildAsync();
         await session.SendAsync("hi");
-        Assert.Equal("2 ray>", AgentSharpApp.Ui.ReplHost.PromptPrefix(session.History.QuestionCount + 1, session.SuperPrompt));
+        Assert.Equal("2 Ray Pando>", AgentSharpApp.Ui.ReplHost.PromptPrefix(session.History.QuestionCount + 1, session.SuperPrompt));
 
         session.Handoff("donald");
-        Assert.Equal("2 donald>", AgentSharpApp.Ui.ReplHost.PromptPrefix(session.History.QuestionCount + 1, session.SuperPrompt));
+        Assert.Equal("2 Donald J. Pando>", AgentSharpApp.Ui.ReplHost.PromptPrefix(session.History.QuestionCount + 1, session.SuperPrompt));
 
         session.Return();
-        Assert.Equal("2 ray>", AgentSharpApp.Ui.ReplHost.PromptPrefix(session.History.QuestionCount + 1, session.SuperPrompt));
+        Assert.Equal("2 Ray Pando>", AgentSharpApp.Ui.ReplHost.PromptPrefix(session.History.QuestionCount + 1, session.SuperPrompt));
     }
 
     [Fact]

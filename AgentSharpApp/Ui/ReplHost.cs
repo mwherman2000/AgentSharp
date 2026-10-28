@@ -441,11 +441,11 @@ public class ReplHost
         return null;
     }
 
-    /// <summary>The command prompt's text, numbered like the Q&amp;A pairs in a transcript and named by
-    /// nickname, as commands are, for the persona now in charge: "21 ray>". Built fresh for every prompt, so
-    /// it follows /clear, a handoff and a return. Other console text and transcripts use the full name.</summary>
+    /// <summary>The command prompt's text, numbered like the Q&amp;A pairs in a transcript and named by full
+    /// name for the persona now in charge: "21 Ray Pando>". Built fresh for every prompt, so it follows
+    /// /clear, a handoff and a return.</summary>
     public static string PromptPrefix(int number, string? superPrompt) =>
-        $"{number} {SystemPromptBuilder.ResolveKey(superPrompt)}>";
+        $"{number} {SystemPromptBuilder.ResolveAgentName(superPrompt)}>";
 
     private string FormatCacheHitRate()
     {

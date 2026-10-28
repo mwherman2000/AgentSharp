@@ -73,7 +73,7 @@ while (running)
     Console.ForegroundColor = ConsoleColor.Magenta;
     // Numbered like the Q&A pairs in a transcript, e.g. "21 Lucy Pando> ".
     // Resolved per prompt, not once at startup: the model can hand the conversation to another persona.
-    Console.Write($"\n{lucy.History.QuestionCount + 1} {SystemPromptBuilder.ResolveKey(lucy.SuperPrompt)}> ");
+    Console.Write($"\n{lucy.History.QuestionCount + 1} {SystemPromptBuilder.ResolveAgentName(lucy.SuperPrompt)}> ");
     Console.ResetColor();
 
     var input = ReadInput();

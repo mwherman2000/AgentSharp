@@ -53,7 +53,7 @@ Each persona has a nickname (`ray`, `donald`) and a full name (`Ray Pando`, `Don
 | Where | Spelling |
 |---|---|
 | Commands and tool arguments (`/clear ray`, `handoff(persona: "ray")`) | nickname |
-| The command prompt (`21 ray>`) | nickname |
+| The command prompt (`21 Ray Pando>`) | full name |
 | Other console text (`/status`, `/return`, `/load`, the handoff line, the welcome banner) | full name |
 | The transcript, including `H` entries | full name |
 | What the model is told (handoff note, handoff stack, `return` line) | nickname |
@@ -87,7 +87,7 @@ Return: Ray Pando -> Andy Pando. Handoff stack: (empty)
 * **Saved** by `/save` and restored by `/load` with the rest of the history. It is not a prompt, so it does not use up a prompt number.
 * **Transcript:** its own entry, `H21`, with the number of the prompt whose turn it ended (the same rule as `E21` and `M21`) and no answer part. The transcript's header still shows the persona in charge when it was written.
 * **Console:** the same text, printed through `IAgentOutput.Handoff`, in magenta in the CLI. `/return` prints this line (it is the only output of a successful return); with nothing to return to it prints the notice and `(empty)`.
-* **Command prompt prefix:** `ReplHost.PromptPrefix(number, superPrompt)` builds it fresh for every prompt (`21 ray>`), so it follows `/clear <persona>`, a handoff made by the model and `/return`. The Lucy app resolves the name per prompt for the same reason.
+* **Command prompt prefix:** `ReplHost.PromptPrefix(number, superPrompt)` builds it fresh for every prompt (`21 Ray Pando>`), so it follows `/clear <persona>`, a handoff made by the model and `/return`. The Lucy app resolves the name per prompt for the same reason.
 * **One stack format.** `/status`, `/return`, `/load`, the console line and the history record all use `AgentSession.DescribeHandoffStack()`: `Andy Pando > Ray Pando > Donald J. Pando (current)`, or `(empty)`.
 
 ## Why the switch is deferred
