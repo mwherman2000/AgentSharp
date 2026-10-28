@@ -218,7 +218,17 @@ public class ReplHost
                 PrintWelcome();
                 AnsiConsole.MarkupLine("[green]Conversation cleared.[/]");
                 if (!string.IsNullOrWhiteSpace(command.Argument))
-                    AnsiConsole.MarkupLine($"[green]Superprompt switched to:[/] {Markup.Escape(_session.SuperPrompt!)}");
+                    AnsiConsole.MarkupLine($"[green]Superprompt switched to:[/] {Markup.Escape(SystemPromptBuilder.ResolveAgentName(_session.SuperPrompt))}");
+                break;
+
+            case CommandType.Return:
+                // Hand the conversation back to the persona that handed it over (the optional argument is
+                // the reason); applies to the next prompt. The session prints the "Return: A -> B ... Handoff
+                // stack: ..." line itself, the same line /status shows, so only the empty case is printed here.
+                if (_session.HandoffStack.Count == 0)
+                    AnsiConsole.MarkupLine($"[yellow]Nothing to return to:[/] this conversation has not been handed over. [bold]Handoff stack:[/] {Markup.Escape(_session.DescribeHandoffStack())}");
+                else
+                    _session.Return(string.IsNullOrWhiteSpace(command.Argument) ? null : command.Argument);
                 break;
 
             case CommandType.Compact:
@@ -264,7 +274,7 @@ public class ReplHost
                     }
                     AnsiConsole.MarkupLine("[yellow]Checkpoint failed; saving the session anyway.[/]");
                 }
-                var sessionId = await _sessions.SaveAsync(_session.History, saveId.Length > 0 ? saveId : null);
+                var sessionId = await _sessions.SaveAsync(_session.History, saveId.Length > 0 ? saveId : null, _session.HandoffState);
                 if (sessionId is not null)
                 {
                     // Both files are written before anything optional: the provider's token count is a nicety
@@ -291,9 +301,11 @@ public class ReplHost
                     AnsiConsole.MarkupLine($"[red]Session not found:[/] {command.Argument}");
                     break;
                 }
-                _session.Restore(history);
+                _session.Restore(history, await _sessions.LoadHandoffAsync(command.Argument)); // the stack, if it was handed over
                 await _session.Loop.RefreshTokenCountAsync(ct); // the provider's own count, when it will say
                 AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages, {history.QuestionCount} questions, {_session.Loop.DescribeTokenCount()})");
+                if (_session.HandoffStack.Count > 0)
+                    AnsiConsole.MarkupLine($"[bold]Handoff stack:[/] {Markup.Escape(_session.DescribeHandoffStack())}");
                 // A normal turn, so the marker and the agent's reply become part of the conversation.
                 await RunTurnAsync($"Resumed (/load) {LocalTime.Format(DateTimeOffset.Now, LocalTime.Seconds)}", ct, kind: PromptKind.Chk);
                 break;
@@ -305,7 +317,8 @@ public class ReplHost
             case CommandType.Status:
                 AnsiConsole.MarkupLine($"[bold]Provider:[/] {_session.Llm.ProviderName}");
                 AnsiConsole.MarkupLine($"[bold]Model:[/] {_session.Llm.ModelId}");
-                AnsiConsole.MarkupLine($"[bold]Superprompt:[/] {_session.SuperPrompt ?? "andy (default)"}");
+                AnsiConsole.MarkupLine($"[bold]Superprompt:[/] {Markup.Escape(SystemPromptBuilder.ResolveAgentName(_session.SuperPrompt))}");
+                AnsiConsole.MarkupLine($"[bold]Handoff stack:[/] {Markup.Escape(_session.DescribeHandoffStack())}");
                 AnsiConsole.MarkupLine($"[bold]Sync mode:[/] {(AgentFlags.SyncMode ? "on (SendAsync, non-streaming)" : "off (StreamAsync, default)")}");
                 AnsiConsole.MarkupLine($"[bold]Timeout (streaming):[/] {FormatTimeout(_session.Llm.StreamingTimeout)}");
                 AnsiConsole.MarkupLine($"[bold]Timeout (non-streaming):[/] {FormatTimeout(_session.Llm.NonStreamingTimeout)}");
@@ -428,6 +441,12 @@ public class ReplHost
         return null;
     }
 
+    /// <summary>The command prompt's text, numbered like the Q&amp;A pairs in a transcript and named by
+    /// nickname, as commands are, for the persona now in charge: "21 ray>". Built fresh for every prompt, so
+    /// it follows /clear, a handoff and a return. Other console text and transcripts use the full name.</summary>
+    public static string PromptPrefix(int number, string? superPrompt) =>
+        $"{number} {SystemPromptBuilder.ResolveKey(superPrompt)}>";
+
     private string FormatCacheHitRate()
     {
         var effectiveInput = _session.Loop.TotalInputTokens + _session.Loop.TotalCacheCreationTokens + _session.Loop.TotalCacheReadTokens;
@@ -535,6 +554,7 @@ public class ReplHost
             .AddRow("/help, /h, /?", "Show this help")
             .AddRow("/compact -N | +N | N", "Drop the oldest turns making up at least N% of the estimated tokens (-N), or keep only the most recent turns making up at least N% (+N or N)")
             .AddRow("/clear, /cls [[persona]]", $"Start a new conversation; optionally switch persona ({string.Join(", ", SystemPromptBuilder.AvailableSuperPrompts)})")
+            .AddRow("/return [[reason]]", "Hand the conversation back to the persona that handed it over (the same history continues); shows the handoff stack. The stack is saved with /save and restored by /load")
             .AddRow("/save [[id]] [[--tools]] [[--no-thinking]]", "Send a \"Checkpoint (/save)\" prompt, wait for the reply, then save the conversation (and a .docx transcript; the flags shape the transcript only)")
             .AddRow("/load, /resume <id>", "Continue a saved conversation (sends a \"Resumed (/load)\" prompt and shows the reply)")
             .AddRow("/sessions, /ls", "List saved conversations")
@@ -570,10 +590,8 @@ public class ReplHost
     {
         var lines = new List<string>();
         var current = new System.Text.StringBuilder();
-        // Resolved per prompt: /clear <persona> can switch the agent mid-session.
-        var agentName = SystemPromptBuilder.ResolveAgentName(_session.SuperPrompt);
-        // Numbered like the Q&A pairs in a transcript, e.g. "21 Ray Pando>".
-        AnsiConsole.Markup($"[bold blue]{_session.History.QuestionCount + 1} {Markup.Escape(agentName)}>[/] ");
+        // Built per prompt: /clear <persona>, a handoff and /return can all switch the agent mid-session.
+        AnsiConsole.Markup($"[bold blue]{Markup.Escape(PromptPrefix(_session.History.QuestionCount + 1, _session.SuperPrompt))}[/] ");
 
         // historyIndex == history.Count means "not currently navigating history"
         // (i.e. showing the user's own in-progress draft).

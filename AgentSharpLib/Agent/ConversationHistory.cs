@@ -92,6 +92,9 @@ public class ConversationHistory
     public void AddCompactionNote(string text)
         => Add(ChatMessage.AssistantCompaction(text));
 
+    public void AddHandoffRecord(string text)
+        => Add(ChatMessage.AssistantHandoff(text));
+
     public void AddAssistantError(string text)
         => Add(ChatMessage.AssistantError(text));
 
@@ -155,5 +158,5 @@ public class ConversationHistory
     /// Get the last assistant text response.
     /// </summary>
     public string? GetLastAssistantText()
-        => _messages.LastOrDefault(m => m.Role == MessageRole.Assistant)?.GetText();
+        => _messages.LastOrDefault(m => m.Role == MessageRole.Assistant && m.Kind != PromptKind.Hnd)?.GetText();
 }

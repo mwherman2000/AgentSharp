@@ -147,9 +147,9 @@ public static class ConversationTranscript
                 currentQuestion = CapitalizeFirstLetter(text);
                 segments = new List<AnswerSegment>();
             }
-            else if (message.Role == MessageRole.Assistant && message.Kind is PromptKind.Err or PromptKind.Cmp)
+            else if (message.Role == MessageRole.Assistant && message.Kind is PromptKind.Err or PromptKind.Cmp or PromptKind.Hnd)
             {
-                // An API error that ended the turn (E21) or a /compact record (M21): its own entry, no answer part.
+                // An API error that ended the turn (E21), a /compact record (M21) or a handoff/return (H21): its own entry, no answer part.
                 if (currentQuestion is not null)
                 {
                     qaPairs.Add((currentQuestion, segments));

@@ -34,7 +34,7 @@ public class SessionManager
     /// <paramref name="sessionId"/> isn't a usable file name or the write fails
     /// (e.g. permission denied) -- a bad /save shouldn't crash the REPL.
     /// </summary>
-    public async Task<string?> SaveAsync(ConversationHistory history, string? sessionId = null)
+    public async Task<string?> SaveAsync(ConversationHistory history, string? sessionId = null, HandoffState? handoff = null)
     {
         sessionId ??= Guid.NewGuid().ToString("N")[..8];
 
@@ -53,6 +53,8 @@ public class SessionManager
             MessageCount = history.Count,
             PromptOffset = history.PromptOffset,
             TurnOffset = history.TurnOffset,
+            HandoffStack = handoff?.Stack.ToList(),
+            HandoffPersona = handoff?.Persona,
             Messages = history.Messages.Select(SerializeMessage).ToList()
         };
 
@@ -132,6 +134,34 @@ public class SessionManager
     }
 
     /// <summary>
+    /// The handoff state saved with a session: who handed the conversation over, so it can be
+    /// returned after loading. Null if the session was never handed over (including every
+    /// session saved before handoff existed), or can't be read.
+    /// </summary>
+    public async Task<HandoffState?> LoadHandoffAsync(string sessionId)
+    {
+        var safeId = Path.GetFileName(sessionId);
+        if (string.IsNullOrEmpty(safeId))
+            return null;
+
+        var path = GetSessionPath(safeId);
+        if (!File.Exists(path))
+            return null;
+
+        try
+        {
+            var session = JsonSerializer.Deserialize<SessionData>(await File.ReadAllTextAsync(path), JsonOptions);
+            return session is { HandoffStack.Count: > 0, HandoffPersona: not null }
+                ? new HandoffState(session.HandoffStack, session.HandoffPersona)
+                : null;
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// List all saved sessions, most recently saved first.
     /// </summary>
     public IReadOnlyList<SessionInfo> ListSessions()
@@ -188,7 +218,7 @@ public class SessionManager
     {
         Role = msg.Role,
         Timestamp = msg.Timestamp,
-        Kind = IsUserText(msg) || msg.Kind is PromptKind.Err or PromptKind.Cmp ? msg.Kind.ToCode() : null,
+        Kind = IsUserText(msg) || msg.Kind is PromptKind.Err or PromptKind.Cmp or PromptKind.Hnd ? msg.Kind.ToCode() : null,
         Content = msg.Content.Select(SerializeContentBlock).ToList()
     };
 
@@ -256,6 +286,10 @@ public record SessionData
     /// <summary>Prompts and turns /compact dropped from the front; absent (0) in a session never compacted.</summary>
     public int PromptOffset { get; init; }
     public int TurnOffset { get; init; }
+    /// <summary>Personas that handed the conversation over, most recent last; absent if it was never handed over.</summary>
+    public List<string>? HandoffStack { get; init; }
+    /// <summary>The persona in charge when saved; present only with <see cref="HandoffStack"/>.</summary>
+    public string? HandoffPersona { get; init; }
     public required List<SerializedMessage> Messages { get; init; }
 }
 

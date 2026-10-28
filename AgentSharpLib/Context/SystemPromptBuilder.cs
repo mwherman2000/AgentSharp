@@ -17,35 +17,58 @@ public class SystemPromptBuilder
     private readonly ProjectContext _project;
     private readonly MemoryManager? _memory;
     private readonly string _basePrompt;
+    private readonly string _personaKey;
+    private readonly bool _offerHandoff;
+    private readonly string? _handoffContext;
+    private readonly string? _returnTo;
+    private readonly IReadOnlyList<string> _handoffStack;
 
     /// <summary>
     /// </summary>
     /// <param name="superPrompt">Selects which base persona/prompt to use, matching the
     /// CLI's --Superprompt argument (case-insensitive): one of <see cref="AvailableSuperPrompts"/>
     /// or an alias. Null or empty uses the default (the first, Andy).</param>
-    public SystemPromptBuilder(ProjectContext project, MemoryManager? memory = null, string? superPrompt = null)
+    /// <param name="offerHandoff">Add the list of other personas and when to call the
+    /// <c>handoff</c> tool to hand the conversation to one of them.</param>
+    /// <param name="handoffContext">Set when this persona has just taken the conversation
+    /// over from another one: says who it came from and why, so the earlier turns in the
+    /// history are not mistaken for this persona's own.</param>
+    /// <param name="returnTo">The persona that handed the conversation to this one, if any.
+    /// Adds a "return" option to the handoff section, to hand the conversation back to it.</param>
+    /// <param name="handoffStack">The personas that handed the conversation over, oldest first (the
+    /// most recent is <paramref name="returnTo"/>). Names them in the prompt so this persona knows who
+    /// came before it, without being told which of them wrote which earlier turn.</param>
+    public SystemPromptBuilder(ProjectContext project, MemoryManager? memory = null, string? superPrompt = null,
+        bool offerHandoff = false, string? handoffContext = null, string? returnTo = null,
+        IReadOnlyList<string>? handoffStack = null)
     {
+        _returnTo = returnTo;
+        _handoffStack = handoffStack ?? [];
         _project = project;
         _memory = memory;
         _basePrompt = ResolveSuperPrompt(superPrompt);
+        _personaKey = ResolveKey(superPrompt);
+        _offerHandoff = offerHandoff;
+        _handoffContext = handoffContext;
     }
 
-    // The single list of personas: --Superprompt name, accepted aliases, display name, prompt.
-    // The first entry is the default.
-    private static readonly (string Key, string[] Aliases, string Name, string Prompt)[] Personas =
+    // The single list of personas: --Superprompt name, accepted aliases, display name, prompt,
+    // and a one-line statement of what the persona is for (shown to the other personas so they
+    // can judge when to hand the conversation over). The first entry is the default.
+    private static readonly (string Key, string[] Aliases, string Name, string Prompt, string Role)[] Personas =
     [
-        ("andy", [], "Andy Pando", BasePromptAndy),
-        ("angie", [], "Angie Pando", BasePromptAngie),
-        ("connie", ["consort"], "Connie Pando", BasePromptConnie),
-        ("donald", ["trump"], "Donald J. Pando", BasePromptDonald),
-        ("fed", ["fedchair"], "Fed Chair Pando", BasePromptFed),
-        ("jeff", [], "Jeff Pando", BasePromptJeff),
-        ("lucy", [], "Lucy Pando", BasePromptLucy),
-        ("raquel", [], "Raquel Pando", BasePromptRaquel),
-        ("ray", [], "Ray Pando", BasePromptRay),
-        ("jeff-ray", ["rj"], "Jeff-Ray (RJ) Pando", BasePromptJeffRay),
-        ("rosie", [], "Rosie Pando", BasePromptRosie),
-        ("code", ["cody"], "Cody Pando", BasePromptCody),
+        ("andy", [], "Andy Pando", BasePromptAndy, "go-to-market (GTM) expert advisor"),
+        ("angie", [], "Angie Pando", BasePromptAngie, "AI farming assistant"),
+        ("connie", ["consort"], "Connie Pando", BasePromptConnie, "understands and runs Consort Markdown super prompts"),
+        ("donald", ["trump"], "Donald J. Pando", BasePromptDonald, "the 47th President of the United States, in persona"),
+        ("fed", ["fedchair"], "Fed Chair Pando", BasePromptFed, "Chair of the Federal Reserve System, in persona"),
+        ("jeff", [], "Jeff Pando", BasePromptJeff, "intellectual agent inspired by Jeffrey Snover: systems philosophy and technical imagination"),
+        ("lucy", [], "Lucy Pando", BasePromptLucy, "persistent digital person with identity, memory and relationships"),
+        ("raquel", [], "Raquel Pando", BasePromptRaquel, "digital personage inspired by Raquel Welch"),
+        ("ray", [], "Ray Pando", BasePromptRay, "intellectual agent devoted to the official Principles collection"),
+        ("jeff-ray", ["rj"], "Jeff-Ray (RJ) Pando", BasePromptJeffRay, "joint intelligence of Jeff and Ray"),
+        ("rosie", [], "Rosie Pando", BasePromptRosie, "autonomous literary horror-story agent"),
+        ("code", ["cody"], "Cody Pando", BasePromptCody, "coding assistant: reads, writes and edits code, runs shell and git"),
     ];
 
     /// <summary>
@@ -66,19 +89,57 @@ public class SystemPromptBuilder
     /// </summary>
     public static string ResolveAgentName(string? superPrompt) => Resolve(superPrompt).Name;
 
-    private static (string Name, string Prompt) Resolve(string? superPrompt)
+    /// <summary>
+    /// Resolves a --Superprompt name or alias to its canonical name (one of
+    /// <see cref="AvailableSuperPrompts"/>), so two spellings of the same persona compare equal.
+    /// Same defaulting and validation as <see cref="ResolveSuperPrompt"/>.
+    /// </summary>
+    public static string ResolveKey(string? superPrompt) => Resolve(superPrompt).Key;
+
+    private static (string Key, string Name, string Prompt) Resolve(string? superPrompt)
     {
         if (string.IsNullOrWhiteSpace(superPrompt))
-            return (Personas[0].Name, Personas[0].Prompt);
+            return (Personas[0].Key, Personas[0].Name, Personas[0].Prompt);
 
         var key = superPrompt.Trim().ToLowerInvariant();
         foreach (var p in Personas)
         {
             if (p.Key == key || p.Aliases.Contains(key))
-                return (p.Name, p.Prompt);
+                return (p.Key, p.Name, p.Prompt);
         }
         throw new ArgumentException(
             $"Unknown --Superprompt '{superPrompt}'. Valid options: {string.Join(", ", AvailableSuperPrompts)}.");
+    }
+
+    /// <summary>
+    /// The personas a conversation can be handed to with the <c>handoff</c> tool. A subset of
+    /// <see cref="AvailableSuperPrompts"/>; the rest can still be selected with --Superprompt
+    /// or /clear, just not handed to mid-conversation.
+    /// </summary>
+    public static IReadOnlyList<string> HandoffPersonas { get; } = ["ray", "donald", "andy", "lucy", "connie"];
+
+    /// <summary>The value of the <c>handoff</c> tool's <c>persona</c> argument that returns the
+    /// conversation to the persona that handed it over, rather than naming a persona.</summary>
+    public const string ReturnTarget = "return";
+
+    /// <summary>The "# Handoff" section: the other personas and when to hand over to one.</summary>
+    private string BuildHandoffCatalog()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("\n# Handing the conversation to another persona");
+        sb.AppendLine("The `handoff` tool passes this conversation, with its full history, to another persona. " +
+                      "The switch takes effect on the user's next prompt, so finish answering this one first and say " +
+                      "that you are handing over. Hand off when the user asks for a persona by name, or when your own " +
+                      "answer would be clearly worse than theirs; otherwise just answer. Do not hand off to yourself, " +
+                      "and do not bounce between personas: a persona that takes over for a task keeps it until the " +
+                      "task is done.");
+        sb.AppendLine("Personas you can hand off to:");
+        foreach (var p in Personas.Where(p => p.Key != _personaKey && HandoffPersonas.Contains(p.Key)))
+            sb.AppendLine($"- {p.Key}: {p.Role}");
+        if (_returnTo is not null)
+            sb.AppendLine($"- {ReturnTarget}: hand the conversation back to {_returnTo}, who handed it to you; " +
+                          "use it when the task that needed you is done, you cannot help, or the user asks to go back");
+        return sb.ToString();
     }
 
     public string Build()
@@ -112,6 +173,26 @@ public class SystemPromptBuilder
             sb.AppendLine("\n# Project Instructions");
             sb.AppendLine(_project.ProjectInstructions);
         }
+
+        // Handoff: who handed this conversation over, and who it can be handed to next.
+        // Both go before memory, which ConversationTranscript.ExtractRecalledMemory expects last.
+        if (_handoffContext is not null)
+        {
+            sb.AppendLine("\n# Handoff received");
+            sb.AppendLine(_handoffContext);
+        }
+        if (_handoffStack.Count > 0)
+        {
+            // Shown even without a handoff note (a loaded conversation has the stack but not the note).
+            // By nickname, the spelling the handoff tool takes (people see full names; the model sees these).
+            var chain = string.Join(" > ", _handoffStack) + $" > {_personaKey} (you)";
+            sb.AppendLine("\n# Handoff stack");
+            sb.AppendLine($"This conversation has passed between personas. Handoff stack, oldest first: {chain}. " +
+                          "Earlier assistant turns in the history may have been written by any of the others; " +
+                          "you do not need to work out which turn was whose.");
+        }
+        if (_offerHandoff)
+            sb.Append(BuildHandoffCatalog());
 
         // Persistent memory (written via the "remember" tool, read back here)
         var memoryContent = _memory?.GetForSystemPrompt();

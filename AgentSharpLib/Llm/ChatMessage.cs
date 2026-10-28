@@ -95,6 +95,9 @@ public record ChatMessage
     /// <summary>An assistant-role record that /compact ran, so /save and transcripts show where history was dropped.</summary>
     public static ChatMessage AssistantCompaction(string text) => AssistantText(text) with { Kind = PromptKind.Cmp };
 
+    /// <summary>An assistant-role record that the conversation was handed to another persona (or returned), so /save and transcripts show where.</summary>
+    public static ChatMessage AssistantHandoff(string text) => AssistantText(text) with { Kind = PromptKind.Hnd };
+
     /// <summary>An assistant-role record of an API error, so it survives /save and shows in transcripts.</summary>
     public static ChatMessage AssistantError(string text) => AssistantText(text) with { Kind = PromptKind.Err };
 
@@ -173,17 +176,20 @@ public enum PromptKind
     Err,
     /// <summary>An assistant-role record that /compact dropped the oldest turns (M21 in transcripts). Never sent to a provider.</summary>
     Cmp,
+    /// <summary>An assistant-role record that the conversation was handed to another persona or returned (H21 in transcripts). Never sent to a provider.</summary>
+    Hnd,
 }
 
 public static class PromptKinds
 {
-    /// <summary>The value stored in a saved session: "std", "sys", "chk", "err" or "cmp".</summary>
+    /// <summary>The value stored in a saved session: "std", "sys", "chk", "err", "cmp" or "hnd".</summary>
     public static string ToCode(this PromptKind kind) => kind switch
     {
         PromptKind.Sys => "sys",
         PromptKind.Chk => "chk",
         PromptKind.Err => "err",
         PromptKind.Cmp => "cmp",
+        PromptKind.Hnd => "hnd",
         _ => "std",
     };
 
@@ -194,16 +200,18 @@ public static class PromptKinds
         "chk" => PromptKind.Chk,
         "err" => PromptKind.Err,
         "cmp" => PromptKind.Cmp,
+        "hnd" => PromptKind.Hnd,
         _ => PromptKind.Std,
     };
 
-    /// <summary>The letter that prefixes the number in a transcript: Q, S, C, E or M.</summary>
+    /// <summary>The letter that prefixes the number in a transcript: Q, S, C, E, M or H.</summary>
     public static char ToLabel(this PromptKind kind) => kind switch
     {
         PromptKind.Sys => 'S',
         PromptKind.Chk => 'C',
         PromptKind.Err => 'E',
         PromptKind.Cmp => 'M',
+        PromptKind.Hnd => 'H',
         _ => 'Q',
     };
 }

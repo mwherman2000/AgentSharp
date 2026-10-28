@@ -47,6 +47,11 @@ public interface IAgentOutput
     /// prompt, in a different color; the default does nothing.</summary>
     void SystemPrompt(PromptKind kind, int number, string text) { }
 
+    /// <summary>The conversation was handed to another persona or returned: a line such as
+    /// "Handoff: Andy Pando -> Ray Pando (reason). Handoff stack: andy > ray (current)". The default
+    /// shows it as <see cref="Info"/>.</summary>
+    void Handoff(string message) => Info(message);
+
     /// <summary>A Write-risk tool was run without prompting.</summary>
     void ToolAutoApproved(string toolName);
 

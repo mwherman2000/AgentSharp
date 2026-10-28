@@ -41,6 +41,7 @@ public sealed class AgentBuilder
     private readonly List<ITool> _tools = new();
     private bool _builtInTools = true;
     private bool _subAgents = true;
+    private bool _handoff = true;
     private bool _memory = true;
     private bool _scanProject = true;
 
@@ -111,6 +112,14 @@ public sealed class AgentBuilder
         return this;
     }
 
+    /// <summary>Don't register the handoff tool, which lets the model hand the conversation to
+    /// another persona.</summary>
+    public AgentBuilder WithoutHandoff()
+    {
+        _handoff = false;
+        return this;
+    }
+
     /// <summary>Don't use MEMORY.md: no remember tool, and no memory in the system prompt.</summary>
     public AgentBuilder WithoutMemory()
     {
@@ -163,9 +172,16 @@ public sealed class AgentBuilder
         }
         if (memory is not null)
             tools.Register(new MemoryTool(memory));
+        // Not offered with a custom system prompt: a handoff would replace it with a persona.
+        HandoffQueue? handoff = null;
+        if (_handoff && _systemPrompt is null)
+        {
+            handoff = new HandoffQueue();
+            tools.Register(new HandoffTool(handoff));
+        }
         foreach (var tool in _tools)
             tools.Register(tool);
 
-        return new AgentSession(llm, tools, approval, output, project, memory, maxTokens, maxIterations, superPrompt, _systemPrompt, usage);
+        return new AgentSession(llm, tools, approval, output, project, memory, maxTokens, maxIterations, superPrompt, _systemPrompt, usage, handoff);
     }
 }

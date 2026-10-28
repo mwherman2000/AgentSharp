@@ -37,6 +37,46 @@ public class SessionManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task HandoffState_RoundTrips()
+    {
+        var history = new ConversationHistory();
+        history.AddUserMessage("hello");
+
+        await _manager.SaveAsync(history, "handed", new HandoffState(["andy", "ray"], "donald"));
+
+        var state = await _manager.LoadHandoffAsync("handed");
+        Assert.NotNull(state);
+        Assert.Equal(["andy", "ray"], state!.Stack);
+        Assert.Equal("donald", state.Persona);
+    }
+
+    [Fact]
+    public async Task HandoffRecord_SurvivesSaveAndLoad()
+    {
+        var history = new ConversationHistory();
+        history.AddUserMessage("hello");
+        history.AddAssistantMessage(AgentSharpLib.Llm.ChatMessage.AssistantText("hi there"));
+        history.AddHandoffRecord("Handoff: Andy Pando -> Ray Pando. Handoff stack: andy > ray (current)");
+
+        await _manager.SaveAsync(history, "recorded");
+        var loaded = await _manager.LoadAsync("recorded");
+
+        Assert.Equal(AgentSharpLib.Llm.PromptKind.Hnd, loaded!.Messages[^1].Kind);
+        Assert.Equal(1, loaded.QuestionCount); // a record is not a prompt
+    }
+
+    [Fact]
+    public async Task HandoffState_IsNull_WhenNotSaved_OrSessionMissing()
+    {
+        var history = new ConversationHistory();
+        history.AddUserMessage("hello");
+        await _manager.SaveAsync(history, "plain");
+
+        Assert.Null(await _manager.LoadHandoffAsync("plain"));
+        Assert.Null(await _manager.LoadHandoffAsync("nonexistent"));
+    }
+
+    [Fact]
     public async Task Load_ReturnsNull_ForMissingSession()
     {
         var result = await _manager.LoadAsync("nonexistent");

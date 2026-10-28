@@ -62,8 +62,9 @@ public class SubAgent
         var isolatedTools = new ToolRegistry();
         foreach (var tool in tools.All)
         {
-            // Filter out the sub-agent tool to prevent recursive spawning
-            if (tool.Name != "sub_agent")
+            // Filter out the sub-agent tool to prevent recursive spawning, and the handoff
+            // tool because a sub-agent has no conversation of its own to hand over
+            if (tool.Name is not ("sub_agent" or "handoff"))
                 isolatedTools.Register(tool);
         }
 

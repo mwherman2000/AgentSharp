@@ -806,8 +806,8 @@ public class AgentLoop
     private LlmRequest BuildRequest() => new()
     {
         SystemPrompt = _systemPrompt,
-        // A /compact record is local bookkeeping for saves and transcripts, not part of the conversation.
-        Messages = WithCompactionNote(_history.Messages.Where(m => m.Kind != PromptKind.Cmp).ToList()),
+        // A /compact or handoff record is local bookkeeping for saves and transcripts, not part of the conversation.
+        Messages = WithCompactionNote(_history.Messages.Where(m => m.Kind is not (PromptKind.Cmp or PromptKind.Hnd)).ToList()),
         Tools = _tools.GetDefinitions(),
         MaxTokens = _maxTokens
     };

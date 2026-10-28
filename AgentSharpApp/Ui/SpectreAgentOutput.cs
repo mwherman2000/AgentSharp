@@ -46,6 +46,9 @@ public sealed class SpectreAgentOutput : IAgentOutput
         AnsiConsole.MarkupLine($"\n[bold {color}]{number} {kind.ToCode()}>[/] [{color}]{Markup.Escape(text)}[/]");
     }
 
+    public void Handoff(string message) =>
+        AnsiConsole.MarkupLine($"\n[magenta]{Markup.Escape(message)}[/]");
+
     public void Error(string message) =>
         AnsiConsole.MarkupLine($"\n[red]Error:[/] {Markup.Escape(message)}");
 
