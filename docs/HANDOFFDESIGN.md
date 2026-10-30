@@ -90,6 +90,25 @@ Return: Ray Pando -> Andy Pando. Handoff stack: (empty)
 * **Command prompt prefix:** `ReplHost.PromptPrefix(number, superPrompt)` builds it fresh for every prompt (`21 Ray Pando>`), so it follows `/clear <persona>`, a handoff made by the model and `/return`. The Lucy app resolves the name per prompt for the same reason.
 * **One stack format.** `/status`, `/return`, `/load`, the console line and the history record all use `AgentSession.DescribeHandoffStack()`: `Andy Pando > Ray Pando > Donald J. Pando (current)`, or `(empty)`.
 
+## Automatic saves
+
+Saves are taken programmatically (`AgentSession.AutoSave`): no checkpoint prompt and no model call, so they are instant and cost no tokens. Each writes the session file with the handoff stack, and optionally a `.docx` transcript of the same name in the project directory. Names are `<persona>-<kind>-<date>_<24-hour time>-<zone>`, for example `ray-handoff-donald-2026-10-29_14-05-33-MDT` (no colons or spaces, which a Windows file name cannot hold). The persona is the nickname of the one in charge when the save is taken.
+
+| When | Name | Transcript |
+|---|---|---|
+| Start of a handoff (`AgentSession.Handoff`) | `ray-handoff-donald-<time>` | yes |
+| Before a `/compact` | `ray-compact-before-<time>` | yes |
+| After a `/compact` | `ray-compact-after-<time>` | no |
+| `/save` with no name | `ray-saved-<time>` | yes, as `/save` always writes one |
+| `/transcribe` with no name (flags alone, such as `/transcribe --tools`, work too) | `ray-transcription-<time>.docx` | the transcript itself, a Word file like the one `/save` writes; a name you give without `.docx` is still Markdown |
+
+* **Handoff:** the save is the first thing `Handoff` does, after the target is validated and a handoff to the persona already in charge is ruled out (those save nothing). It is in `Handoff` and not in the tool's `ExecuteAsync` because the tool runs mid-turn, when the history ends with its own unanswered tool call; a session saved then would not load as a consistent conversation. `Handoff` runs right after the turn, so the file holds the conversation as it was, still under the persona being left. A failed save is reported as a warning and the handoff goes ahead, since the handoff loses nothing.
+* **Compact:** `AgentSession.Compact` saves before, compacts, then saves after. If the first save fails, nothing is dropped. If nothing needed dropping, the second save is skipped because nothing changed. The "before" file holds every turn; the "after" file holds the shortened conversation and the compaction record.
+* **Only the first save has a transcript.** The "after" save of a compact is the session file alone.
+* **`/return` does not save.** Only the handoff that leaves a persona does.
+* **No session store, no saves.** `AgentBuilder.WithSessionManager` supplies the store (both apps pass the one they use for `/save` and `/load`). A library user who does not pass one gets no automatic saves, and handoff and compact work as before.
+* **Naming is shared.** `AgentSession.SaveName(kind)` builds the name; `LocalTime.FileStamp` the date, time and zone.
+
 ## Why the switch is deferred
 
 The system prompt is fixed for the life of an `AgentLoop` (`_systemPrompt` is readonly), so a persona change means building a new loop. The tool runs inside the loop, mid-turn, when the history ends with a `tool_use` block that has no `tool_result` yet. Replacing the loop at that point would orphan the tool call.

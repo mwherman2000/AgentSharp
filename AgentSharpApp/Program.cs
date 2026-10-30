@@ -60,6 +60,8 @@ internal class Program
             // Output and approval are the only terminal-specific pieces; everything
             // else is the library's default wiring.
             AgentSession session = null!;
+            // One session store for the REPL and for the automatic saves (before/after /compact, before a handoff).
+            var sessions = new SessionManager();
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
                 .StartAsync("Scanning project...", async ctx =>
@@ -68,6 +70,7 @@ internal class Program
                         .WithOptions(options)
                         .WithOutput(new SpectreAgentOutput())
                         .WithApprovalPrompt(new ConsoleApprovalPrompt())
+                        .WithSessionManager(sessions)
                         .BuildAsync();
                 });
             __Mark("agent built");
@@ -83,7 +86,7 @@ internal class Program
             }
 
             // --- Interactive REPL ---
-            var repl = new ReplHost(session, new SessionManager());
+            var repl = new ReplHost(session, sessions);
             await repl.RunAsync();
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("API key"))

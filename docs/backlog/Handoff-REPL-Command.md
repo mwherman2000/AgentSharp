@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | **Backlogged.** The `handoff` tool and `AgentSession.Handoff` are built; the command is not. |
-| Date | 2026-10-28 |
+| Status | **Backlogged.** The `handoff` tool, `AgentSession.Handoff` and the `/return` command are built (commit `9468c77`); `/handoff` is not. |
+| Date | 2026-10-28 (updated 2026-10-29) |
 | Raised by | Michael W. Herman |
 | Affects (when taken up) | `AgentSharpApp/Ui/ReplHost.cs` (command handling and the `/help` table), `AgentSharpApp/Cli/` (command parsing if commands are parsed there), [HANDOFFDESIGN.md](../HANDOFFDESIGN.md) |
 
@@ -18,16 +18,26 @@ Ray") and rely on the model to call the `handoff` tool.
 ## 2. Why
 
 * A command always works. The model may decline, or hand off when the user did not ask.
-* It would sit beside `/clear [persona]`: `/clear` starts a fresh conversation under a
-  persona, `/handoff` keeps the history.
+* It would sit beside `/clear [persona]` and `/return`: `/clear` starts a fresh conversation
+  under a persona, `/handoff` keeps the history and pushes the persona being left onto the
+  stack, and `/return` pops it. Today `/return` exists without its counterpart.
 * It needs no new library code. `AgentSession.Handoff(persona, reason)` already validates,
-  rebuilds the loop on the existing history, and prints the console line.
+  rebuilds the loop on the existing history, adds the `H` record to the history (so the
+  transcript shows it), and prints the console line with the stack.
 
 ## 3. Sketch
 
-* `/handoff <persona> [reason...]`, taking effect on the next prompt, like the tool.
+* `/handoff <persona> [reason...]`, taking effect on the next prompt, like the tool. Add
+  `Handoff` to `CommandType` and a `"handoff"` case in `CommandParser`, as was done for
+  `Return`.
+* The persona is given by nickname (`ray`, `donald`; aliases such as `trump` also resolve),
+  like every command. The console confirmation uses the full name, the same
+  `Handoff: Andy Pando -> Ray Pando ... Handoff stack: ...` line the session already prints.
 * An unknown name prints the valid names and leaves the session unchanged
-  (`Handoff` throws `ArgumentException` before changing anything).
+  (`Handoff` throws `ArgumentException` before changing anything); the `/clear` case in
+  `ReplHost` shows the pattern.
+* Handing off to the persona already in charge does nothing (`Handoff` returns early); say so
+  instead of staying silent.
 * Decide whether the command is limited to `SystemPromptBuilder.HandoffPersonas` like the
   tool, or accepts any persona like `AgentSession.Handoff` and `/clear`. Accepting any
   persona is the likelier fit for a user-driven command.

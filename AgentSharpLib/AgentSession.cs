@@ -34,6 +34,10 @@ public sealed class AgentSession
     /// <summary>Project memory (MEMORY.md), or null if built without memory.</summary>
     public MemoryManager? Memory { get; }
 
+    /// <summary>Where <see cref="AutoSave"/> writes sessions, or null if the session was built without
+    /// one (then nothing is saved automatically).</summary>
+    public SessionManager? Sessions { get; }
+
     public int MaxTokens { get; }
     public int MaxIterations { get; }
 
@@ -71,9 +75,11 @@ public sealed class AgentSession
         string? superPrompt,
         string? customSystemPrompt,
         SessionUsage usage,
-        HandoffQueue? handoff = null)
+        HandoffQueue? handoff = null,
+        SessionManager? sessions = null)
     {
         _handoff = handoff;
+        Sessions = sessions;
         Usage = usage;
         Llm = llm;
         Tools = tools;
@@ -205,11 +211,75 @@ public sealed class AgentSession
         if (!_useCustomSystemPrompt && to == SystemPromptBuilder.ResolveKey(_superPrompt))
             return;
 
+        // Keep what the conversation looks like before the switch, with a transcript. Taken here, at the
+        // start of the handoff, because this is the first point where the history is consistent: the
+        // handoff tool only queues the request, and the history would still end in its unanswered tool call.
+        // A failed save is reported but does not stop the handoff, which loses nothing.
+        if (AutoSave($"handoff-{to}", withTranscript: true) is { } saved)
+        {
+            if (saved.Error is null) Output.Info(saved.Describe());
+            else Output.Warning(saved.Describe());
+        }
+
         // The persona being left goes on the stack so the conversation can be returned to it.
         // A custom system prompt is not a persona, so there is nothing to return to.
         if (!_useCustomSystemPrompt)
             _handoffStack.Add(SystemPromptBuilder.ResolveKey(_superPrompt));
         ApplyHandoff(to, reason, returning: false);
+    }
+
+    /// <summary>
+    /// The name a save is given when the user does not choose one: "{persona}-{kind}-{local date, 24-hour
+    /// time and zone}", for example "ray-saved-2026-10-29_14-05-33-MDT". The persona is the one in charge
+    /// now. <see cref="AutoSave"/> uses it too, with its own kinds ("compact-before", "handoff-donald").
+    /// </summary>
+    public string SaveName(string kind) =>
+        $"{(_useCustomSystemPrompt ? "custom" : SystemPromptBuilder.ResolveKey(_superPrompt))}-{kind}-{LocalTime.FileStamp(DateTimeOffset.Now)}";
+
+    /// <summary>
+    /// Save the conversation now, programmatically: no checkpoint prompt and no model call, so it is
+    /// instant and costs no tokens. The session is written as "{persona}-{kind}-{local time}" -- for
+    /// example "ray-handoff-donald-2026-10-29_14-05-33-MDT" -- with the handoff stack, as /save does,
+    /// and optionally a .docx transcript of the same name in the project directory. The persona is the
+    /// one in charge now. Returns null if the session was built without a <see cref="Sessions"/>.
+    /// </summary>
+    public AutoSaveResult? AutoSave(string kind, bool withTranscript)
+    {
+        if (Sessions is null) return null;
+
+        var name = SaveName(kind);
+        var id = Sessions.Save(History, name, HandoffState);
+        if (id is null)
+            return new AutoSaveResult(null, null, $"Could not auto-save session '{name}'.");
+        if (!withTranscript)
+            return new AutoSaveResult(id, null, null);
+
+        try
+        {
+            return new AutoSaveResult(id, WriteTranscript($"{id}.docx"), null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return new AutoSaveResult(id, null, $"Auto-saved {id}, but its transcript could not be written: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// /compact with the safety net: the conversation is saved, with a transcript, before anything is
+    /// dropped ("{persona}-compact-before-..."), and saved again, without a transcript, after it
+    /// ("{persona}-compact-after-..."), so the dropped turns are never lost. If the first save fails nothing is
+    /// dropped. If nothing needed dropping the second save is skipped, as nothing changed. See
+    /// <see cref="HistoryCompactor.Compact"/> for the arguments.
+    /// </summary>
+    public CompactOutcome Compact(int percent, bool dropOldest)
+    {
+        var before = AutoSave("compact-before", withTranscript: true);
+        if (before is { Saved: false })
+            return new CompactOutcome(null, before, null);
+
+        var result = HistoryCompactor.Compact(History, percent, dropOldest);
+        var after = result.TurnsDropped == 0 ? null : AutoSave("compact-after", withTranscript: false);
+        return new CompactOutcome(result, before, after);
     }
 
     /// <summary>Switch to <paramref name="to"/> on the existing history and say so; the caller

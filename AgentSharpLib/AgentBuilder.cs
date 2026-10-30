@@ -42,6 +42,7 @@ public sealed class AgentBuilder
     private bool _builtInTools = true;
     private bool _subAgents = true;
     private bool _handoff = true;
+    private SessionManager? _sessions;
     private bool _memory = true;
     private bool _scanProject = true;
 
@@ -109,6 +110,15 @@ public sealed class AgentBuilder
     public AgentBuilder WithoutSubAgents()
     {
         _subAgents = false;
+        return this;
+    }
+
+    /// <summary>Where sessions are saved automatically: before and after a /compact, and before a
+    /// handoff. Without one nothing is saved automatically. The session then keeps it as
+    /// <see cref="AgentSession.Sessions"/>.</summary>
+    public AgentBuilder WithSessionManager(SessionManager sessions)
+    {
+        _sessions = sessions;
         return this;
     }
 
@@ -182,6 +192,6 @@ public sealed class AgentBuilder
         foreach (var tool in _tools)
             tools.Register(tool);
 
-        return new AgentSession(llm, tools, approval, output, project, memory, maxTokens, maxIterations, superPrompt, _systemPrompt, usage, handoff);
+        return new AgentSession(llm, tools, approval, output, project, memory, maxTokens, maxIterations, superPrompt, _systemPrompt, usage, handoff, _sessions);
     }
 }

@@ -36,6 +36,51 @@ public class SessionManager
     /// </summary>
     public async Task<string?> SaveAsync(ConversationHistory history, string? sessionId = null, HandoffState? handoff = null)
     {
+        if (Prepare(history, sessionId, handoff) is not { } prepared)
+            return null;
+
+        // Write to a unique temp file and rename into place so a concurrent Load,
+        // or a crash mid-write, never sees a partially-written session file.
+        var tempPath = $"{prepared.Path}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await File.WriteAllTextAsync(tempPath, prepared.Json);
+            File.Move(tempPath, prepared.Path, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        return prepared.SafeId;
+    }
+
+    /// <summary>
+    /// <see cref="SaveAsync"/> for callers that cannot await -- the automatic saves taken in the
+    /// middle of a handoff or a /compact. Same file, same rules; returns null on the same failures.
+    /// </summary>
+    public string? Save(ConversationHistory history, string? sessionId = null, HandoffState? handoff = null)
+    {
+        if (Prepare(history, sessionId, handoff) is not { } prepared)
+            return null;
+
+        var tempPath = $"{prepared.Path}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            File.WriteAllText(tempPath, prepared.Json);
+            File.Move(tempPath, prepared.Path, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        return prepared.SafeId;
+    }
+
+    /// <summary>The id, file path and JSON for a save, or null if <paramref name="sessionId"/> isn't usable.</summary>
+    private (string SafeId, string Path, string Json)? Prepare(ConversationHistory history, string? sessionId, HandoffState? handoff)
+    {
         sessionId ??= Guid.NewGuid().ToString("N")[..8];
 
         // Path.GetFileName strips any directory portion, so an id like
@@ -58,23 +103,7 @@ public class SessionManager
             Messages = history.Messages.Select(SerializeMessage).ToList()
         };
 
-        var path = GetSessionPath(safeId);
-        var json = JsonSerializer.Serialize(session, JsonOptions);
-
-        // Write to a unique temp file and rename into place so a concurrent Load,
-        // or a crash mid-write, never sees a partially-written session file.
-        var tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
-        try
-        {
-            await File.WriteAllTextAsync(tempPath, json);
-            File.Move(tempPath, path, overwrite: true);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-
-        return safeId;
+        return (safeId, GetSessionPath(safeId), JsonSerializer.Serialize(session, JsonOptions));
     }
 
     /// <summary>

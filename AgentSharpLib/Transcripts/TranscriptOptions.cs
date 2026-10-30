@@ -10,7 +10,7 @@ namespace AgentSharpLib.Transcripts;
 /// result, in the order they happened. Off by default.</param>
 public sealed record TranscriptOptions(bool IncludeThinking = true, bool IncludeToolCalls = false)
 {
-    public const string Usage = "/transcribe <name> [--tools] [--no-thinking]";
+    public const string Usage = "/transcribe [name] [--tools] [--no-thinking]";
 
     /// <summary>
     /// Splits a /transcribe argument into the file name and its flags. Flags may appear

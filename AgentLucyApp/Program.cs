@@ -20,6 +20,12 @@ var options = ParseArgs(args);
 // Tracing is off unless AGENT_ENABLE_OTEL is set, or /jaeger turns it on mid-session.
 AgentTelemetry.Initialize();
 
+// Lucy's saved conversations live apart from the main CLI's (~/.agentsharp/sessions),
+// so /load and /sessions only ever show Lucy conversations. The automatic saves (before/after
+// /compact, before a handoff) go here too.
+var sessions = new SessionManager(Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agentsharp", "lucy"));
+
 AgentSession lucy;
 try
 {
@@ -27,6 +33,7 @@ try
         .WithOptions(options)
         .WithOutput(new ConsoleAgentOutput())
         .WithApprovalPrompt(new ConsoleApprovalPrompt())
+        .WithSessionManager(sessions)
         .BuildAsync();
 }
 catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
@@ -37,11 +44,6 @@ catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
 }
 
 var agentName = SystemPromptBuilder.ResolveAgentName(lucy.SuperPrompt);
-
-// Lucy's saved conversations live apart from the main CLI's (~/.agentsharp/sessions),
-// so /load and /sessions only ever show Lucy conversations.
-var sessions = new SessionManager(Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agentsharp", "lucy"));
 
 Console.ForegroundColor = ConsoleColor.Magenta;
 Console.WriteLine($"{agentName}  ({lucy.Llm.ProviderName} / {lucy.Llm.ModelId})");
@@ -105,10 +107,20 @@ while (running)
                     Console.WriteLine("Usage: /compact -N (drop the oldest turns making up at least N% of the estimated tokens) or /compact +N | N (keep the most recent turns making up at least N%); N is 1-99.");
                     break;
                 }
-                var compacted = HistoryCompactor.Compact(lucy.History, compactPercent, compactDropOldest);
+                // Saved before (with a transcript) and after (without), automatically: no checkpoint prompt, no model call.
+                var outcome = lucy.Compact(compactPercent, compactDropOldest);
+                if (outcome.Before is { } savedBefore)
+                    Console.WriteLine(savedBefore.Describe());
+                if (outcome.Result is not { } compacted)
+                {
+                    Console.WriteLine("Compact cancelled: the session could not be saved first, so nothing was dropped.");
+                    break;
+                }
                 Console.WriteLine(compacted.TurnsDropped == 0
                     ? "Nothing to drop."
-                    : $"Compacted: dropped the {compacted.TurnsDropped} oldest turns, kept {compacted.TurnsKept}; {(compacted.Calibrated ? "calibrated" : "estimated")} tokens {compacted.TokensBefore:N0} -> {compacted.TokensAfter:N0}. The next request re-writes the prompt cache (~{compacted.TokensAfter:N0} tokens at the cache-write price), so compact less often rather than more.");
+                    : $"Compacted: dropped the {compacted.TurnsDropped} oldest turns, kept {compacted.TurnsKept}; {(compacted.Calibrated ? "calibrated" : "estimated")} tokens {compacted.TokensBefore:N0} -> {compacted.TokensAfter:N0}. The next request re-writes the prompt cache (~{compacted.TokensAfter:N0} tokens at the cache-write price), so compact less often rather than more. The dropped turns are in the session saved before the compact.");
+                if (outcome.After is { } savedAfter)
+                    Console.WriteLine(savedAfter.Describe());
                 break;
             case "/save":
                 await SaveAsync(argument);
@@ -159,13 +171,16 @@ while (running)
                 Console.WriteLine($"View traces at {AgentTelemetry.DefaultJaegerUiUrl} (assumes Jaeger is running locally).");
                 break;
             case "/transcribe":
-                if (argument is null)
-                    Console.WriteLine($"Usage: {TranscriptOptions.Usage}   (.md by default, or <name>.docx)");
-                else if (TranscriptOptions.Parse(argument, out var transcriptName, out var transcriptError) is not { } transcriptOptions
-                         || transcriptName.Length == 0)
-                    Console.WriteLine($"{transcriptError ?? "Missing transcript name."} Usage: {TranscriptOptions.Usage}");
-                else if (ConversationTranscript.PathFor(lucy.Project.WorkingDirectory, transcriptName) is { } target && File.Exists(target)
-                         && !ConfirmOverwrite(Path.GetFileName(target)))
+                if (TranscriptOptions.Parse(argument ?? "", out var transcriptName, out var transcriptError) is not { } transcriptOptions)
+                {
+                    Console.WriteLine($"{transcriptError} Usage: {TranscriptOptions.Usage}   (.md by default, or <name>.docx)");
+                    break;
+                }
+                // No name given: <persona>-transcription-<date, 24-hour time, zone>.docx, like the transcript /save writes.
+                if (transcriptName.Length == 0)
+                    transcriptName = lucy.SaveName("transcription") + ".docx";
+                if (ConversationTranscript.PathFor(lucy.Project.WorkingDirectory, transcriptName) is { } target && File.Exists(target)
+                    && !ConfirmOverwrite(Path.GetFileName(target)))
                     Console.WriteLine("Transcript cancelled; nothing was changed.");
                 else if (TryWriteTranscript(transcriptName, transcriptOptions) is { } path)
                     Console.WriteLine($"Transcript written: {path}");
@@ -283,7 +298,8 @@ async Task SaveAsync(string? id)
         }
         Console.WriteLine("Checkpoint failed; saving the session anyway.");
     }
-    var savedId = await sessions.SaveAsync(lucy.History, id);
+    // No name given: <persona>-saved-<date, 24-hour time, zone>, named after the checkpoint turn so it carries the persona in charge now.
+    var savedId = await sessions.SaveAsync(lucy.History, id ?? lucy.SaveName("saved"), lucy.HandoffState);
     if (savedId is null)
     {
         Console.WriteLine($"Could not save session '{id}'.");
@@ -311,7 +327,7 @@ async Task LoadAsync(string? id)
         Console.WriteLine($"Session not found: {id}");
         return;
     }
-    lucy.Restore(history);
+    lucy.Restore(history, await sessions.LoadHandoffAsync(id)); // the handoff stack, if it was handed over
     await lucy.Loop.RefreshTokenCountAsync(); // the provider's own count, when it will say
     Console.WriteLine($"Session loaded: {id} ({history.Count} messages, {history.QuestionCount} questions, {lucy.Loop.DescribeTokenCount()})");
     // A normal turn, so the marker and the reply become part of the conversation.
@@ -405,7 +421,7 @@ static void PrintHelp(string agentName)
           /status              Model, tools, token usage, directory
           /model               Show the current provider and model
           /memory, /mem [clear]  Show {agentName}'s MEMORY.md, or delete it
-          /transcribe <name> [--tools] [--no-thinking]
+          /transcribe [name] [--tools] [--no-thinking]
                                Write a Q&A transcript (<name>.md, or <name>.docx);
                                --tools adds tool calls and results, --no-thinking omits thoughts
           /exit, /quit, /q     Quit

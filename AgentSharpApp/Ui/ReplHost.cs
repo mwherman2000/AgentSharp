@@ -237,10 +237,20 @@ public class ReplHost
                     AnsiConsole.MarkupLine("[yellow]Usage: /compact -N (drop the oldest turns making up at least N% of the estimated tokens) or /compact +N | N (keep the most recent turns making up at least N%); N is 1-99.[/]");
                     break;
                 }
-                var compacted = HistoryCompactor.Compact(_session.History, compactPercent, compactDropOldest);
+                // Saved before (with a transcript) and after (without), automatically: no checkpoint prompt, no model call.
+                var outcome = _session.Compact(compactPercent, compactDropOldest);
+                if (outcome.Before is { } savedBefore)
+                    AnsiConsole.MarkupLine(savedBefore.Error is null ? $"[green]{Markup.Escape(savedBefore.Describe())}[/]" : $"[yellow]{Markup.Escape(savedBefore.Describe())}[/]");
+                if (outcome.Result is not { } compacted)
+                {
+                    AnsiConsole.MarkupLine("[red]Compact cancelled:[/] the session could not be saved first, so nothing was dropped.");
+                    break;
+                }
                 AnsiConsole.MarkupLine(compacted.TurnsDropped == 0
                     ? "[yellow]Nothing to drop.[/]"
-                    : $"[yellow]Compacted:[/] dropped the {compacted.TurnsDropped} oldest turns, kept {compacted.TurnsKept}; {(compacted.Calibrated ? "calibrated" : "estimated")} tokens {compacted.TokensBefore:N0} -> {compacted.TokensAfter:N0}. The next request re-writes the prompt cache (~{compacted.TokensAfter:N0} tokens at the cache-write price), so compact less often rather than more. /save first next time if you want the dropped turns kept.");
+                    : $"[yellow]Compacted:[/] dropped the {compacted.TurnsDropped} oldest turns, kept {compacted.TurnsKept}; {(compacted.Calibrated ? "calibrated" : "estimated")} tokens {compacted.TokensBefore:N0} -> {compacted.TokensAfter:N0}. The next request re-writes the prompt cache (~{compacted.TokensAfter:N0} tokens at the cache-write price), so compact less often rather than more. The dropped turns are in the session saved before the compact.");
+                if (outcome.After is { } savedAfter)
+                    AnsiConsole.MarkupLine(savedAfter.Error is null ? $"[green]{Markup.Escape(savedAfter.Describe())}[/]" : $"[yellow]{Markup.Escape(savedAfter.Describe())}[/]");
                 break;
 
             case CommandType.Save:
@@ -274,7 +284,9 @@ public class ReplHost
                     }
                     AnsiConsole.MarkupLine("[yellow]Checkpoint failed; saving the session anyway.[/]");
                 }
-                var sessionId = await _sessions.SaveAsync(_session.History, saveId.Length > 0 ? saveId : null, _session.HandoffState);
+                // No name given: ray-saved-<date, 24-hour time, zone>. Named here, after the checkpoint turn, so it
+                // carries the persona in charge now (the turn may have handed the conversation over).
+                var sessionId = await _sessions.SaveAsync(_session.History, saveId.Length > 0 ? saveId : _session.SaveName("saved"), _session.HandoffState);
                 if (sessionId is not null)
                 {
                     // Both files are written before anything optional: the provider's token count is a nicety
@@ -360,17 +372,15 @@ public class ReplHost
                 break;
 
             case CommandType.Transcript:
-                if (string.IsNullOrWhiteSpace(command.Argument))
+                var transcriptOptions = TranscriptOptions.Parse(command.Argument ?? "", out var transcriptName, out var transcriptError);
+                if (transcriptOptions is null)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]Usage: {Markup.Escape(TranscriptOptions.Usage)}[/]");
+                    AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(transcriptError!)} Usage: {Markup.Escape(TranscriptOptions.Usage)}[/]");
                     break;
                 }
-                var transcriptOptions = TranscriptOptions.Parse(command.Argument, out var transcriptName, out var transcriptError);
-                if (transcriptOptions is null || transcriptName.Length == 0)
-                {
-                    AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(transcriptError ?? "Missing transcript name.")} Usage: {Markup.Escape(TranscriptOptions.Usage)}[/]");
-                    break;
-                }
+                // No name given: ray-transcription-<date, 24-hour time, zone>.docx, like the transcript /save writes.
+                if (transcriptName.Length == 0)
+                    transcriptName = _session.SaveName("transcription") + ".docx";
                 var transcriptTarget = ConversationTranscript.PathFor(_session.Project.WorkingDirectory, transcriptName);
                 if (transcriptTarget is not null && File.Exists(transcriptTarget)
                     && !AnsiConsole.Confirm($"[yellow]{Markup.Escape(Path.GetFileName(transcriptTarget))} already exists. Overwrite?[/]", defaultValue: false))
@@ -552,16 +562,16 @@ public class ReplHost
             .AddColumn(new TableColumn("Command").Width(CommandColumnWidth))
             .AddColumn("Description")
             .AddRow("/help, /h, /?", "Show this help")
-            .AddRow("/compact -N | +N | N", "Drop the oldest turns making up at least N% of the estimated tokens (-N), or keep only the most recent turns making up at least N% (+N or N)")
+            .AddRow("/compact -N | +N | N", "Drop the oldest turns making up at least N% of the estimated tokens (-N), or keep only the most recent turns making up at least N% (+N or N). Saves the session first (with a .docx transcript) and again after, automatically, as <persona>-compact-before-<time> and -after-<time>")
             .AddRow("/clear, /cls [[persona]]", $"Start a new conversation; optionally switch persona ({string.Join(", ", SystemPromptBuilder.AvailableSuperPrompts)})")
             .AddRow("/return [[reason]]", "Hand the conversation back to the persona that handed it over (the same history continues); shows the handoff stack. The stack is saved with /save and restored by /load")
-            .AddRow("/save [[id]] [[--tools]] [[--no-thinking]]", "Send a \"Checkpoint (/save)\" prompt, wait for the reply, then save the conversation (and a .docx transcript; the flags shape the transcript only)")
+            .AddRow("/save [[id]] [[--tools]] [[--no-thinking]]", "Send a \"Checkpoint (/save)\" prompt, wait for the reply, then save the conversation (and a .docx transcript; without an id it is named <persona>-saved-<time>; the flags shape the transcript only)")
             .AddRow("/load, /resume <id>", "Continue a saved conversation (sends a \"Resumed (/load)\" prompt and shows the reply)")
             .AddRow("/sessions, /ls", "List saved conversations")
             .AddRow("/status", "Model, tools, token usage, directory")
             .AddRow("/model", "Show the current provider and model")
             .AddRow("/memory, /mem [[clear]]", "Show MEMORY.md, or delete it")
-            .AddRow("/transcribe <name> [[--tools]] [[--no-thinking]]", "Write a Q&A transcript (<name>.md, or <name>.docx); --tools adds tool calls and results, --no-thinking omits thoughts")
+            .AddRow("/transcribe [[name]] [[--tools]] [[--no-thinking]]", "Write a Q&A transcript (<name>.md, or <name>.docx; without a name it is <persona>-transcription-<time>.docx); --tools adds tool calls and results, --no-thinking omits thoughts")
             .AddRow("/exit, /quit, /q", "Quit")
             .AddRow("Ctrl+C", "Interrupt the agent mid-reply (at the prompt: quit)");
 
