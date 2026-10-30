@@ -175,6 +175,10 @@ Both are required. The reason is shown to the user in the console line and to th
 * Per-prompt persona attribution: telling the persona which persona wrote each earlier turn (see `docs/backlog/Handoff-REPL-Command.md`). Today it only knows who is in the stack.
 * Persisting the handoff-received note across `/save` and `/load`. The stack is saved; the note (who handed over and why) is not, so a loaded conversation starts without it.
 
+## Live check against the real API
+
+`AgentSharp.HandoffLive` (a project in the solution, not part of `dotnet test`) runs the scenarios below against the real model and prints what it did. A run on 2026-10-29 with `claude-sonnet-5-5` behaved as expected in all of them: an explicit request handed off to Ray, Ray knew Andy had handed it over, and "hand it back" used `return`; a request for a persistent digital person went from Andy to Lucy, and a go-to-market request went from Ray to Andy; an in-domain question and `17 × 23` did not hand off; and a request for Rosie, who is not a target, was refused with the valid personas listed. The full output, with the personas named, is in the project's [README](../AgentSharp.HandoffLive/README.md#sample-output). It is one sample: the "fit" scenarios are judgment calls, so re-run it after changing the tool description or the persona catalog.
+
 ## Tests
 
 `AgentSharp.Tests/Agent/AgentBuilderTests.cs`:
