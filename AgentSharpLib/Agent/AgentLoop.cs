@@ -1,4 +1,5 @@
 using AgentSharpLib.Llm;
+using AgentSharpLib.Network;
 using AgentSharpLib.Output;
 using AgentSharpLib.Safety;
 using AgentSharpLib.Telemetry;
@@ -281,8 +282,14 @@ public class AgentLoop
         int maxTokens = DefaultMaxTokens,
         int maxIterations = DefaultMaxIterations,
         IAgentOutput? output = null,
-        SessionUsage? sessionUsage = null)
+        SessionUsage? sessionUsage = null,
+        IConnectivityProbe? connectivity = null,
+        TimeSpan? networkWait = null,
+        TimeSpan? networkPoll = null)
     {
+        _connectivity = connectivity;
+        _networkWait = networkWait ?? DefaultNetworkWait;
+        _networkPoll = networkPoll ?? DefaultNetworkPoll;
         _llm = llm;
         _tools = tools;
         _approval = approval;
@@ -292,6 +299,52 @@ public class AgentLoop
         _maxIterations = maxIterations;
         _output = output ?? NullAgentOutput.Instance;
         _sessionUsage = sessionUsage;
+    }
+
+    /// <summary>How long to wait for a lost network connection to come back before giving up on the turn, and how often to check.</summary>
+    private static readonly TimeSpan DefaultNetworkWait = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DefaultNetworkPoll = TimeSpan.FromSeconds(2);
+    private IConnectivityProbe? _connectivity;
+    private readonly TimeSpan _networkWait;
+    private readonly TimeSpan _networkPoll;
+
+    private enum Outage { None, Recovered, GaveUp }
+
+    /// <summary>
+    /// After a request got no response at all, find out why. Checks that the LLM's host can be reached and
+    /// prints what it found on one line. If it can, the failure was a blip and the caller's ordinary retry
+    /// follows (<see cref="Outage.None"/>). If it cannot, waits for the connection to come back, checking
+    /// every couple of seconds for up to 30: <see cref="Outage.Recovered"/> means resend now, and
+    /// <see cref="Outage.GaveUp"/> means it never came back. The wait is not a retry -- three wifi drops in
+    /// a row would otherwise use up the retry budget in under four seconds. Ctrl+C ends the wait, because
+    /// the delays honour <paramref name="ct"/>. Does nothing for a client with no <see cref="ILlmClient.Endpoint"/>
+    /// or one on this machine.
+    /// </summary>
+    private async Task<Outage> RideOutNetworkOutageAsync(CancellationToken ct)
+    {
+        if (_llm.Endpoint is not { IsLoopback: false } endpoint)
+            return Outage.None;
+
+        var probe = _connectivity ??= new ConnectivityProbe();
+        var status = await probe.CheckAsync(endpoint.Host, endpoint.Port, ct);
+        _output.Info($"Network: {status.Describe()}");
+        if (status.Reachable)
+            return Outage.None;
+
+        _output.Warning($"Lost the connection to {endpoint.Host}. Waiting up to {_networkWait.TotalSeconds:0}s for it to come back (Ctrl+C to cancel)...");
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        while (waited.Elapsed < _networkWait)
+        {
+            await Task.Delay(_networkPoll, ct);
+            status = await probe.CheckAsync(endpoint.Host, endpoint.Port, ct);
+            if (status.Reachable)
+            {
+                _output.Info($"Network is back after {waited.Elapsed.TotalSeconds:0}s ({status.Describe()}). Resending the request.");
+                return Outage.Recovered;
+            }
+        }
+        _output.Warning($"Still unreachable after {waited.Elapsed.TotalSeconds:0}s: {status.Describe()}.");
+        return Outage.GaveUp;
     }
 
     /// <summary>Session-wide meter that every LLM call's usage is also reported to,
@@ -519,6 +572,22 @@ public class AgentLoop
                 llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 _output.TransientError(ex);
 
+                // A dropped connection with nothing received yet: is the network down? If so, wait for it.
+                if (contentBlocks.Count == 0 && currentText.Length == 0 && IsTransportFailure(ex))
+                {
+                    var outage = await RideOutNetworkOutageAsync(ct);
+                    if (outage == Outage.Recovered)
+                    {
+                        consecutiveStreamErrors--; // waiting out an outage is not a failed retry
+                        continue;
+                    }
+                    if (outage == Outage.GaveUp)
+                    {
+                        _output.Warning("The network did not come back. Stopping this turn; try again when it is up.");
+                        break;
+                    }
+                }
+
                 if (consecutiveStreamErrors >= maxStreamRetries)
                 {
                     _output.Warning($"Failed after {maxStreamRetries} consecutive errors. Stopping.");
@@ -531,9 +600,14 @@ public class AgentLoop
                 await Task.Delay(delay, ct);
 
                 // If we have no content at all, add the error as text so the
-                // LLM sees what happened and can adjust
+                // LLM sees what happened and can adjust -- unless the request never got a
+                // response (a dropped connection, a timeout): the model has nothing to adjust to,
+                // so just send the same request again.
                 if (contentBlocks.Count == 0 && currentText.Length == 0)
                 {
+                    if (IsTransportFailure(ex))
+                        continue;
+
                     _history.AddAssistantMessage(new List<ContentBlock>
                     {
                         new TextBlock { Text = $"[Error during response: {ex.Message}]" }
@@ -712,6 +786,22 @@ public class AgentLoop
                 llmActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 _output.TransientError(ex);
 
+                // A dropped connection: is the network down? If so, wait for it (see the streaming path).
+                if (IsTransportFailure(ex))
+                {
+                    var outage = await RideOutNetworkOutageAsync(ct);
+                    if (outage == Outage.Recovered)
+                    {
+                        consecutiveErrors--; // waiting out an outage is not a failed retry
+                        continue;
+                    }
+                    if (outage == Outage.GaveUp)
+                    {
+                        _output.Warning("The network did not come back. Stopping this turn; try again when it is up.");
+                        break;
+                    }
+                }
+
                 if (consecutiveErrors >= maxRetries)
                 {
                     _output.Warning($"Failed after {maxRetries} consecutive errors. Stopping.");
@@ -721,6 +811,11 @@ public class AgentLoop
                 var delay = ComputeBackoffDelay(consecutiveErrors);
                 _output.Info($"Retrying in {delay.TotalSeconds:F1}s...");
                 await Task.Delay(delay, ct);
+
+                // The request never got a response: send the same one again, without telling the
+                // model that its approach failed (see IsTransportFailure).
+                if (IsTransportFailure(ex))
+                    continue;
 
                 _history.AddAssistantMessage(new List<ContentBlock>
                 {
@@ -851,6 +946,25 @@ public class AgentLoop
     /// <summary>
     /// Exponential backoff schedule for retrying a failed LLM call: 500ms, 1s, 2s, ...
     /// </summary>
+    /// <summary>
+    /// True if the request never produced a response: the connection was refused, reset or dropped
+    /// ("An existing connection was forcibly closed by the remote host"), or it timed out. Resending
+    /// the same request is the right retry. Telling the model "the previous request failed, try a
+    /// different approach" is not: it never saw the request, and it will do something else, such as
+    /// the long unrelated memory entry a dropped /save checkpoint once produced. An error the API
+    /// answered with (a status code: 429, 5xx, ...) is not a transport failure, and neither is a
+    /// user's Ctrl+C, which the callers rethrow before this is asked.
+    /// </summary>
+    private static bool IsTransportFailure(Exception ex) => ex switch
+    {
+        HttpRequestException { StatusCode: null } => true,
+        IOException => true,
+        System.Net.Sockets.SocketException => true,
+        TimeoutException => true,
+        OperationCanceledException => true,
+        _ => false
+    };
+
     private static TimeSpan ComputeBackoffDelay(int attempt) =>
         TimeSpan.FromMilliseconds(500 * Math.Pow(2, attempt - 1));
 

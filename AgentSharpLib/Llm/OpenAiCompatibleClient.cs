@@ -34,6 +34,7 @@ public class OpenAiCompatibleClient : ILlmClient
     private const int NonStreamingTimeoutMultiplier = 10;
 
     public string ProviderName => _providerName;
+    public Uri? Endpoint => Uri.TryCreate(_apiUrl, UriKind.Absolute, out var endpoint) ? endpoint : null;
     public string ModelId => _model;
     public TimeSpan StreamingTimeout => _streamingTimeout;
     public TimeSpan NonStreamingTimeout => _streamingTimeout * NonStreamingTimeoutMultiplier;

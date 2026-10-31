@@ -17,6 +17,7 @@ internal class FakeLlmClient : ILlmClient
     public TimeSpan StreamingTimeout => TimeSpan.FromSeconds(100);
     public TimeSpan NonStreamingTimeout => TimeSpan.FromSeconds(1000);
     public int CallCount { get; private set; }
+    public Uri? Endpoint { get; set; }
     public List<LlmRequest> Requests { get; } = new();
     public List<CancellationToken> ReceivedTokens { get; } = new();
 

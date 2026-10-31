@@ -46,4 +46,12 @@ public interface ILlmClient
     /// </summary>
     Task<long?> CountPromptTokensAsync(LlmRequest request, CancellationToken ct = default)
         => Task.FromResult<long?>(null);
+
+    /// <summary>
+    /// The address requests go to, or null when there is none to check (the default: a fake or in-process
+    /// client). When a request fails to get any response, the agent loop checks that this host is reachable
+    /// and, if it is not, waits for the network to come back before retrying. A loopback address (a local
+    /// Ollama) is not checked.
+    /// </summary>
+    Uri? Endpoint => null;
 }

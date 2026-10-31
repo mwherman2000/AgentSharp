@@ -28,6 +28,7 @@ public class AnthropicClient : ILlmClient
     private const int NonStreamingTimeoutMultiplier = 10;
 
     public string ProviderName => "Anthropic";
+    public Uri? Endpoint { get; } = new(ApiUrl);
     public string ModelId => _model;
     public TimeSpan StreamingTimeout => _streamingTimeout;
     public TimeSpan NonStreamingTimeout => _streamingTimeout * NonStreamingTimeoutMultiplier;
