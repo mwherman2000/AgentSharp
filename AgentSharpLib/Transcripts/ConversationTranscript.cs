@@ -209,7 +209,7 @@ public static class ConversationTranscript
     {
         var fence = "```";
         while (text.Contains(fence)) fence += "`";
-        return $"{fence}text\n{text}\n{fence}";
+        return $"{fence}\n{text}\n{fence}"; // no language: Word would print it as a line of its own
     }
 
     private const int MaxToolTextLength = 2000;

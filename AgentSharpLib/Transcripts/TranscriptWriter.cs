@@ -29,6 +29,9 @@ internal static class TranscriptWriter
     /// <summary>Tool call and tool result segments are set smaller than the reply text: 9pt, in half-points.</summary>
     private const int ToolTextSize = 18;
 
+    /// <summary>A /status listing is set at 10pt, in half-points.</summary>
+    private const int StatusTextSize = 20;
+
     private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
         .UsePipeTables()
         .UseTaskLists()
@@ -99,6 +102,9 @@ internal static class TranscriptWriter
     private static string PromptLabel(IReadOnlyList<PromptKind>? kinds, int index, int firstNumber) =>
         (kinds is not null && index < kinds.Count ? kinds[index].ToLabel() : 'Q') + PromptNumber(kinds, index, firstNumber).ToString();
 
+    private static bool IsStatus(IReadOnlyList<PromptKind>? kinds, int index) =>
+        kinds is not null && index < kinds.Count && kinds[index] == PromptKind.Sts;
+
     private static bool IsError(IReadOnlyList<PromptKind>? kinds, int index) =>
         kinds is not null && index < kinds.Count && (kinds[index] == PromptKind.Err || kinds[index].IsLocalRecord());
 
@@ -157,7 +163,7 @@ internal static class TranscriptWriter
             body.Append(HeadingParagraph(PromptLabel(kinds, i, firstNumber), sizeHalfPoints: 28));
             if (FormatAskedAt(askedAt, i) is { } asked)
                 body.Append(SimpleParagraph(asked, default(RunState) with { Italic = true }));
-            AppendMarkdown(body, question, hyperlinks, quoteDepth: 0);
+            AppendMarkdown(body, question, hyperlinks, quoteDepth: 0, size: IsStatus(kinds, i) ? StatusTextSize : null);
             if (IsError(kinds, i)) continue;
             body.Append(HeadingParagraph($"A{PromptNumber(kinds, i, firstNumber)}", sizeHalfPoints: 28));
 
