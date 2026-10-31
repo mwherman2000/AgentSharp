@@ -84,15 +84,18 @@ public class HistoryCompactorTests
     public void RealTokenCount_CalibratesTheReportedSizes()
     {
         var h = Sample();
-        h.RecordPromptUsage(1_004_382); // the provider's count for this history
         var estimatedAll = HistoryCompactor.EstimateTokens(h.Messages);
+        const long overhead = 14_000;                                       // system prompt + tool definitions
+        var messagesReal = (long)(estimatedAll * 1.25);                     // the messages are worth 25% more than the estimate says
+        var real = overhead + messagesReal;                                 // the provider's count for this history
+        h.RecordPromptUsage(real, overhead);
 
         var result = HistoryCompactor.Compact(h, 50, dropOldest: true);
 
         Assert.True(result.Calibrated);
-        Assert.InRange(result.TokensBefore, 1_004_382 * 99 / 100, 1_004_382 * 101 / 100); // matches the real count (the sample is tiny, so rounding is visible)
-        Assert.True(result.TokensAfter < result.TokensBefore / 2 + result.TokensBefore / 10);
-        Assert.True(estimatedAll < result.TokensBefore);
+        Assert.Equal(real, result.TokensBefore);                            // "before" is the provider's count
+        Assert.True(result.TokensAfter >= overhead);                        // the fixed overhead is still sent after a compact
+        Assert.InRange(result.TokensBefore - result.TokensAfter, messagesReal * 3 / 10, messagesReal * 7 / 10); // about half the messages went
         Assert.False(HistoryCompactor.Compact(Sample(), 50, dropOldest: true).Calibrated);
     }
 
@@ -137,6 +140,52 @@ public class HistoryCompactorTests
         var (grown, grownKind) = h.ContextTokens();
         Assert.Equal(TokenCountKind.Calibrated, grownKind);
         Assert.True(grown > 1_000);
+    }
+
+    [Fact]
+    public void ContextTokens_FirstReplyOfAFreshConversation_IsNotMultipliedByTheSystemPrompt()
+    {
+        // "who are you": 3 tokens of message, but the provider counts the whole request, ~15,000 with the
+        // system prompt and tools. That ratio (~5,000) used to be applied to the reply, giving 2.5 million.
+        var h = new ConversationHistory();
+        h.AddUserMessage("who are you");
+        h.RecordPromptUsage(15_000, overheadTokens: 14_000);
+        h.AddAssistantMessage(ChatMessage.AssistantText(new string('x', 2_000))); // ~500 tokens
+
+        var (tokens, kind) = h.ContextTokens();
+
+        Assert.Equal(TokenCountKind.Calibrated, kind);
+        Assert.InRange(tokens, 15_000, 17_000); // the 15,000 plus the reply, not 2.5 million
+        Assert.InRange(h.TokenScale!.Value, ConversationHistory.MinTokenScale, ConversationHistory.MaxTokenScale);
+    }
+
+    [Fact]
+    public void TokenScale_IsKeptInAPlausibleRange()
+    {
+        var tiny = new ConversationHistory();
+        tiny.AddUserMessage("who are you");
+        tiny.RecordPromptUsage(50_000, overheadTokens: 1_000);   // a huge count over almost no messages
+        Assert.Equal(ConversationHistory.MaxTokenScale, tiny.TokenScale);
+
+        var odd = new ConversationHistory();
+        odd.AddUserMessage(new string('x', 4_000));              // ~1,000 estimated tokens
+        odd.RecordPromptUsage(500, overheadTokens: 1_000);       // overhead larger than the whole count
+        Assert.Equal(ConversationHistory.MinTokenScale, odd.TokenScale);
+    }
+
+    [Fact]
+    public async Task FirstTurn_WithRealUsageNumbers_DoesNotWarnThatTheContextIsFull()
+    {
+        var llm = new FakeStreamingLlmClient()
+            .Enqueue(new UsageInfo(15_000, 500, 0, 0), new TextDelta(new string('x', 2_000)), new StreamDone("end_turn"));
+        var loop = new AgentLoop(llm, new AgentSharpLib.Tools.ToolRegistry(), new AgentSharpLib.Safety.ApprovalGate(), "system prompt");
+
+        await loop.RunTurnStreamingAsync("who are you");
+
+        Assert.Null(loop.ContextWarningForPrompt());
+        Assert.DoesNotContain("251", loop.DescribeContextUsage());
+        var (tokens, _) = loop.EstimateContextTokens();
+        Assert.InRange(tokens, 15_000, 20_000);
     }
 
     [Fact]

@@ -73,8 +73,11 @@ public static class HistoryCompactor
         }
 
         var after = sizes.Skip(dropped).Sum();
-        var tokensBefore = (long)(total * factor);
-        var tokensAfter = (long)(after * factor);
+        // With a provider count, "before" is that count (it covers the system prompt and tools too) and
+        // "after" is it less what the dropped turns were worth; the fixed overhead stays. Without one,
+        // both are the message estimate.
+        var tokensBefore = calibrated ? history.ContextTokens().Tokens : (long)total;
+        var tokensAfter = calibrated ? Math.Max(0, tokensBefore - (long)((total - after) * factor)) : (long)after;
         if (dropped == 0) return new CompactResult(0, starts.Count, tokensBefore, tokensBefore, calibrated);
 
         var firstDroppedPrompt = history.PromptOffset + 1;

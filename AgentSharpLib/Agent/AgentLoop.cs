@@ -90,7 +90,7 @@ public class AgentLoop
         try
         {
             var tokens = await _llm.CountPromptTokensAsync(BuildRequest(), ct);
-            if (tokens is > 0) _history.RecordPromptUsage(tokens.Value);
+            if (tokens is > 0) _history.RecordPromptUsage(tokens.Value, RequestOverheadTokens());
         }
         catch (Exception)
         {
@@ -126,7 +126,7 @@ public class AgentLoop
     private void WarnIfContextNearlyFull(int inputTokens, int cacheCreationTokens, int cacheReadTokens)
     {
         var used = (long)inputTokens + cacheCreationTokens + cacheReadTokens;
-        _history.RecordPromptUsage(used); // lets /compact report real token figures
+        _history.RecordPromptUsage(used, RequestOverheadTokens()); // lets /compact and the context warning use real token figures
         var percent = (int)(used * 100 / Math.Max(ContextWindowTokens, 1));
         var threshold = percent >= 95 ? 95 : percent >= 90 ? 90 : percent >= 80 ? 80 : 0;
         if (threshold <= _contextWarnedAt) return;
@@ -1154,7 +1154,7 @@ public class AgentLoop
     {
         var match = System.Text.RegularExpressions.Regex.Match(exceptionMessage, "prompt is too long: ([0-9]+) tokens");
         if (match.Success && long.TryParse(match.Groups[1].Value, out var tokens))
-            _history.RecordPromptUsage(tokens);
+            _history.RecordPromptUsage(tokens, RequestOverheadTokens());
     }
 
     private static bool IsInsufficientCreditError(string exceptionMessage) =>

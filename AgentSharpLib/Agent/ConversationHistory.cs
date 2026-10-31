@@ -45,17 +45,23 @@ public class ConversationHistory
 
     private long _realPromptTokens;
     private long _estimatedTokensThen;
+    private long _overheadThen;
 
     /// <summary>
-    /// Records the provider's own token count for the prompt just sent (this history as it stood), so
-    /// <see cref="TokenScale"/> can turn the character-based estimate into a real figure.
+    /// Records the provider's own token count for the prompt just sent (this history as it stood), so the
+    /// character-based estimate can be anchored to a real figure.
     /// </summary>
-    public void RecordPromptUsage(long realPromptTokens)
+    /// <param name="realPromptTokens">The whole request: system prompt, tool definitions and messages.</param>
+    /// <param name="overheadTokens">An estimate of the system prompt and tool definitions alone. They are a fixed
+    /// ~15,000 tokens that do not grow with the conversation, so they must not be scaled with it; passing them
+    /// lets <see cref="TokenScale"/> be measured on the messages only.</param>
+    public void RecordPromptUsage(long realPromptTokens, long overheadTokens = 0)
     {
         var estimate = HistoryCompactor.EstimateTokens(_messages);
         if (realPromptTokens <= 0 || estimate <= 0) return;
         _realPromptTokens = realPromptTokens;
         _estimatedTokensThen = estimate;
+        _overheadThen = Math.Max(overheadTokens, 0);
         _countAtRecord = _messages.Count;
     }
 
@@ -63,20 +69,35 @@ public class ConversationHistory
 
     /// <summary>
     /// How big the conversation is in tokens: the provider's own count of the last request when nothing
-    /// has been added since (Actual), that count scaled to the history as it is now (Calibrated), or the
+    /// has been added since (Actual), that count plus the growth since, estimated (Calibrated), or the
     /// characters / 4 estimate when no real count has been seen yet (Estimated). The real count includes
     /// the system prompt and tool definitions; the estimate covers the messages only.
+    ///
+    /// Calibrated is the real count plus the change in the message estimate times <see cref="TokenScale"/>,
+    /// never the whole estimate times a ratio: that ratio is the real count (with its fixed system prompt and
+    /// tools) over a message estimate that is tiny early on -- 15,000 over the 3 tokens of "who are you" is
+    /// about 5,000 -- and multiplying the first reply by it reported a 2.5-million-token, 251% full context.
     /// </summary>
     public (long Tokens, TokenCountKind Kind) ContextTokens()
     {
         var estimate = HistoryCompactor.EstimateTokens(_messages);
         if (TokenScale is not { } scale) return (estimate, TokenCountKind.Estimated);
         if (_messages.Count == _countAtRecord) return (_realPromptTokens, TokenCountKind.Actual);
-        return ((long)(estimate * scale), TokenCountKind.Calibrated);
+        return (Math.Max(0, (long)(_realPromptTokens + (estimate - _estimatedTokensThen) * scale)), TokenCountKind.Calibrated);
     }
 
-    /// <summary>Real tokens per estimated token, or null until a real count has been recorded.</summary>
-    public double? TokenScale => _estimatedTokensThen > 0 ? (double)_realPromptTokens / _estimatedTokensThen : null;
+    /// <summary>
+    /// Real tokens per estimated message token, or null until a real count has been recorded. Measured on the
+    /// messages only (the recorded overhead is taken off the real count first) and kept between
+    /// <see cref="MinTokenScale"/> and <see cref="MaxTokenScale"/>, so a conversation too short to measure
+    /// anything from cannot produce an absurd ratio.
+    /// </summary>
+    public double? TokenScale => _estimatedTokensThen > 0
+        ? Math.Clamp((double)(_realPromptTokens - _overheadThen) / _estimatedTokensThen, MinTokenScale, MaxTokenScale)
+        : null;
+
+    /// <summary>The range real tokens per estimated token can plausibly be in; the estimate is within a factor of two either way.</summary>
+    public const double MinTokenScale = 0.5, MaxTokenScale = 2.0;
 
     /// <summary>
     /// How many turns have been started: typed prompts and /save, /load checkpoints. Loop-generated
