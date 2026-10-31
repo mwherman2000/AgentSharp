@@ -115,6 +115,9 @@ public static class HistoryCompactor
 
     private static double EstimateMessageTokens(ChatMessage message)
     {
+        // A /compact, handoff or /status record is never sent, so it is worth no tokens.
+        if (message.Kind.IsLocalRecord()) return 0;
+
         double tokens = 0;
         foreach (var block in message.Content)
         {

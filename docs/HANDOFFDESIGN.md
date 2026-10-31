@@ -88,6 +88,7 @@ Return: Ray Pando -> Andy Pando. Handoff stack: (empty)
 * **Transcript:** its own entry, `H21`, with the number of the prompt whose turn it ended (the same rule as `E21` and `M21`) and no answer part. The transcript's header still shows the persona in charge when it was written.
 * **Console:** the same text, printed through `IAgentOutput.Handoff`, in magenta in the CLI. `/return` prints this line (it is the only output of a successful return); with nothing to return to it prints the notice and `(empty)`.
 * **Command prompt prefix:** `ReplHost.PromptPrefix(number, superPrompt)` builds it fresh for every prompt (`21 Ray Pando>`), so it follows `/clear <persona>`, a handoff made by the model and `/return`. The Lucy app resolves the name per prompt for the same reason.
+* **`/status` is recorded the same way.** Each `/status` adds a `PromptKind.Sts` record (code `sts`, label `T`) holding the listing exactly as printed, so `/save` keeps it and a transcript shows it as `T21`, in a preformatted block, with the number of the prompt it follows and no answer part. Like the `M` and `H` records it is never sent to the model, is not "the last answer", and counts for nothing in the context size: `PromptKinds.IsLocalRecord` names the three kinds, and the provider's exact count stays exact when one is added. Both apps record it.
 * **One stack format.** `/status`, `/return`, `/load`, the console line and the history record all use `AgentSession.DescribeHandoffStack()`: `Andy Pando > Ray Pando > Donald J. Pando (current)`, or `(empty)`.
 
 ## Automatic saves

@@ -147,16 +147,18 @@ public static class ConversationTranscript
                 currentQuestion = CapitalizeFirstLetter(text);
                 segments = new List<AnswerSegment>();
             }
-            else if (message.Role == MessageRole.Assistant && message.Kind is PromptKind.Err or PromptKind.Cmp or PromptKind.Hnd)
+            else if (message.Role == MessageRole.Assistant && (message.Kind is PromptKind.Err || message.Kind.IsLocalRecord()))
             {
-                // An API error that ended the turn (E21), a /compact record (M21) or a handoff/return (H21): its own entry, no answer part.
+                // An API error that ended the turn (E21), a /compact record (M21), a handoff or return (H21) or a /status listing (T21): its own entry, no answer part.
                 if (currentQuestion is not null)
                 {
                     qaPairs.Add((currentQuestion, segments));
                     askedAt?.Add(currentAskedAt);
                     kinds?.Add(currentKind);
                 }
-                qaPairs.Add((CapitalizeFirstLetter(string.Join("\n\n", message.Content.OfType<TextBlock>().Select(b => b.Text))), new List<AnswerSegment>()));
+                var recordText = string.Join("\n\n", message.Content.OfType<TextBlock>().Select(b => b.Text));
+                // A /status listing is columns of "label: value" lines; keep its line breaks.
+                qaPairs.Add((message.Kind == PromptKind.Sts ? Preformatted(recordText) : CapitalizeFirstLetter(recordText), new List<AnswerSegment>()));
                 askedAt?.Add(message.Timestamp);
                 kinds?.Add(message.Kind);
                 currentQuestion = null;
@@ -200,6 +202,14 @@ public static class ConversationTranscript
         }
 
         return qaPairs;
+    }
+
+    /// <summary>The text in a fenced block, whole (unlike <see cref="FencedBlock"/> it is never cut short), lengthening the fence if the text contains backticks.</summary>
+    private static string Preformatted(string text)
+    {
+        var fence = "```";
+        while (text.Contains(fence)) fence += "`";
+        return $"{fence}text\n{text}\n{fence}";
     }
 
     private const int MaxToolTextLength = 2000;

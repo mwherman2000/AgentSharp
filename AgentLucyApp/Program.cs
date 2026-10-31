@@ -354,8 +354,9 @@ void PrintStatus()
     var effectiveInput = loop.TotalInputTokens + loop.TotalCacheCreationTokens + loop.TotalCacheReadTokens;
     var hitRate = effectiveInput == 0 ? "" : $" ({100.0 * loop.TotalCacheReadTokens / effectiveInput:F0}% hit rate)";
 
-    Console.WriteLine($"""
-        Agent:          {agentName}
+    var status = $"""
+        Agent:          {SystemPromptBuilder.ResolveAgentName(lucy.SuperPrompt)}
+        Handoff stack:  {lucy.DescribeHandoffStack()}
         Provider:       {lucy.Llm.ProviderName}
         Model:          {lucy.Llm.ModelId}
         Max tokens:     {lucy.MaxTokens}
@@ -369,7 +370,10 @@ void PrintStatus()
         Directory:     {lucy.Project.WorkingDirectory}
         Git branch:     {lucy.Project.GitBranch ?? "N/A"}
         Memory:         {lucy.Memory?.FilePath ?? "off"}
-        """);
+        """;
+    Console.WriteLine(status);
+    // Recorded in the history too, so /save keeps it and the transcript shows it.
+    lucy.History.AddStatusRecord(status);
 }
 
 // /memory shows MEMORY.md; /memory clear deletes it.

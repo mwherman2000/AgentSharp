@@ -98,6 +98,9 @@ public record ChatMessage
     /// <summary>An assistant-role record that the conversation was handed to another persona (or returned), so /save and transcripts show where.</summary>
     public static ChatMessage AssistantHandoff(string text) => AssistantText(text) with { Kind = PromptKind.Hnd };
 
+    /// <summary>An assistant-role record of a /status listing, so it survives /save and shows in transcripts. Never sent to a provider.</summary>
+    public static ChatMessage AssistantStatus(string text) => AssistantText(text) with { Kind = PromptKind.Sts };
+
     /// <summary>An assistant-role record of an API error, so it survives /save and shows in transcripts.</summary>
     public static ChatMessage AssistantError(string text) => AssistantText(text) with { Kind = PromptKind.Err };
 
@@ -178,11 +181,13 @@ public enum PromptKind
     Cmp,
     /// <summary>An assistant-role record that the conversation was handed to another persona or returned (H21 in transcripts). Never sent to a provider.</summary>
     Hnd,
+    /// <summary>An assistant-role record of what /status listed (T21 in transcripts). Never sent to a provider.</summary>
+    Sts,
 }
 
 public static class PromptKinds
 {
-    /// <summary>The value stored in a saved session: "std", "sys", "chk", "err", "cmp" or "hnd".</summary>
+    /// <summary>The value stored in a saved session: "std", "sys", "chk", "err", "cmp", "hnd" or "sts".</summary>
     public static string ToCode(this PromptKind kind) => kind switch
     {
         PromptKind.Sys => "sys",
@@ -190,6 +195,7 @@ public static class PromptKinds
         PromptKind.Err => "err",
         PromptKind.Cmp => "cmp",
         PromptKind.Hnd => "hnd",
+        PromptKind.Sts => "sts",
         _ => "std",
     };
 
@@ -201,10 +207,18 @@ public static class PromptKinds
         "err" => PromptKind.Err,
         "cmp" => PromptKind.Cmp,
         "hnd" => PromptKind.Hnd,
+        "sts" => PromptKind.Sts,
         _ => PromptKind.Std,
     };
 
-    /// <summary>The letter that prefixes the number in a transcript: Q, S, C, E, M or H.</summary>
+    /// <summary>
+    /// True for the assistant-role records that only the application keeps -- a /compact record, a handoff or
+    /// return, a /status listing. They are saved and shown in transcripts but never sent to a provider, are not
+    /// part of the conversation's size, and are not "the last answer".
+    /// </summary>
+    public static bool IsLocalRecord(this PromptKind kind) => kind is PromptKind.Cmp or PromptKind.Hnd or PromptKind.Sts;
+
+    /// <summary>The letter that prefixes the number in a transcript: Q, S, C, E, M, H or T.</summary>
     public static char ToLabel(this PromptKind kind) => kind switch
     {
         PromptKind.Sys => 'S',
@@ -212,6 +226,7 @@ public static class PromptKinds
         PromptKind.Err => 'E',
         PromptKind.Cmp => 'M',
         PromptKind.Hnd => 'H',
+        PromptKind.Sts => 'T',
         _ => 'Q',
     };
 }

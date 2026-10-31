@@ -62,10 +62,13 @@ public class ConversationHistory
         _realPromptTokens = realPromptTokens;
         _estimatedTokensThen = estimate;
         _overheadThen = Math.Max(overheadTokens, 0);
-        _countAtRecord = _messages.Count;
+        _countAtRecord = SentCount;
     }
 
     private int _countAtRecord = -1;
+
+    /// <summary>How many messages would be sent to a provider: the history less the local records (/compact, handoff, /status), which change nothing the provider counts.</summary>
+    private int SentCount => _messages.Count(m => !m.Kind.IsLocalRecord());
 
     /// <summary>
     /// How big the conversation is in tokens: the provider's own count of the last request when nothing
@@ -82,7 +85,7 @@ public class ConversationHistory
     {
         var estimate = HistoryCompactor.EstimateTokens(_messages);
         if (TokenScale is not { } scale) return (estimate, TokenCountKind.Estimated);
-        if (_messages.Count == _countAtRecord) return (_realPromptTokens, TokenCountKind.Actual);
+        if (SentCount == _countAtRecord) return (_realPromptTokens, TokenCountKind.Actual);
         return (Math.Max(0, (long)(_realPromptTokens + (estimate - _estimatedTokensThen) * scale)), TokenCountKind.Calibrated);
     }
 
@@ -112,6 +115,9 @@ public class ConversationHistory
 
     public void AddCompactionNote(string text)
         => Add(ChatMessage.AssistantCompaction(text));
+
+    public void AddStatusRecord(string text)
+        => Add(ChatMessage.AssistantStatus(text));
 
     public void AddHandoffRecord(string text)
         => Add(ChatMessage.AssistantHandoff(text));
@@ -179,5 +185,5 @@ public class ConversationHistory
     /// Get the last assistant text response.
     /// </summary>
     public string? GetLastAssistantText()
-        => _messages.LastOrDefault(m => m.Role == MessageRole.Assistant && m.Kind != PromptKind.Hnd)?.GetText();
+        => _messages.LastOrDefault(m => m.Role == MessageRole.Assistant && !m.Kind.IsLocalRecord())?.GetText();
 }

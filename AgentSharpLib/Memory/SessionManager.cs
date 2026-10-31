@@ -247,7 +247,7 @@ public class SessionManager
     {
         Role = msg.Role,
         Timestamp = msg.Timestamp,
-        Kind = IsUserText(msg) || msg.Kind is PromptKind.Err or PromptKind.Cmp or PromptKind.Hnd ? msg.Kind.ToCode() : null,
+        Kind = IsUserText(msg) || msg.Kind is PromptKind.Err || msg.Kind.IsLocalRecord() ? msg.Kind.ToCode() : null,
         Content = msg.Content.Select(SerializeContentBlock).ToList()
     };
 
