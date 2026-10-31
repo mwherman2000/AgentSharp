@@ -14,7 +14,7 @@ Handoff passes a running conversation, with its full history, from one persona (
 | Item | Behavior |
 |---|---|
 | Tool | `handoff(persona, reason)`, risk level `ReadOnly` (no approval prompt) |
-| Targets | `ray`, `donald`, `andy`, `lucy`, `connie` (`SystemPromptBuilder.HandoffPersonas`) |
+| Targets | `ray`, `donald`, `andy`, `lucy`, `connie`, `code` (`SystemPromptBuilder.HandoffPersonas`) |
 | When it takes effect | After the current turn finishes, for the user's next prompt |
 | History | The same `ConversationHistory` instance continues; prompt numbers carry on |
 | Console | `Handoff: Andy Pando -> Donald J. Pando (reason)` printed through `IAgentOutput.Info`; the prompt label changes on the next prompt |
@@ -153,7 +153,7 @@ Two optional sections are added, both before `# Memory` because `ConversationTra
 
 ```json
 {
-  "persona": { "type": "string", "enum": ["ray", "donald", "andy", "lucy", "connie"] },
+  "persona": { "type": "string", "enum": ["ray", "donald", "andy", "lucy", "connie", "code", "return"] },
   "reason":  { "type": "string" }
 }
 ```
@@ -172,7 +172,7 @@ Both are required. The reason is shown to the user in the console line and to th
 
 * A `/handoff <persona>` REPL command that calls `AgentSession.Handoff` directly, for a handoff that does not depend on the model choosing to call the tool (see `docs/backlog/Handoff-REPL-Command.md`). `/return` exists; `/handoff` does not.
 * A cooldown between handoffs.
-* Handoff targets beyond the five initial personas. Add a key to `HandoffPersonas`; the schema, catalog and validation follow from it.
+* Handoff targets beyond the six current ones (the five initial personas and `code`). Add a key to `HandoffPersonas`; the schema, catalog and validation follow from it.
 * Per-prompt persona attribution: telling the persona which persona wrote each earlier turn (see `docs/backlog/Handoff-REPL-Command.md`). Today it only knows who is in the stack.
 * Persisting the handoff-received note across `/save` and `/load`. The stack is saved; the note (who handed over and why) is not, so a loaded conversation starts without it.
 

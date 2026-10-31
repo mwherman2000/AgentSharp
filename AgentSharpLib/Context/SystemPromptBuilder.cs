@@ -116,7 +116,7 @@ public class SystemPromptBuilder
     /// <see cref="AvailableSuperPrompts"/>; the rest can still be selected with --Superprompt
     /// or /clear, just not handed to mid-conversation.
     /// </summary>
-    public static IReadOnlyList<string> HandoffPersonas { get; } = ["ray", "donald", "andy", "lucy", "connie"];
+    public static IReadOnlyList<string> HandoffPersonas { get; } = ["ray", "donald", "andy", "lucy", "connie", "code"];
 
     /// <summary>The value of the <c>handoff</c> tool's <c>persona</c> argument that returns the
     /// conversation to the persona that handed it over, rather than naming a persona.</summary>

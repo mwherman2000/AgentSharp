@@ -394,6 +394,25 @@ public class AgentBuilderTests
             Assert.Contains(persona, description);
     }
 
+    [Theory]
+    [InlineData("code")]
+    [InlineData("cody")]   // the alias resolves to the same persona
+    public async Task Code_IsAHandoffTarget_ListedForTheOthers_AndAcceptedByTheTool(string name)
+    {
+        var llm = new FakeStreamingLlmClient()
+            .Enqueue(new ToolUseStart("h1", "handoff"), new ToolInputDelta($$"""{"persona":"{{name}}","reason":"needs code written"}"""), new ToolUseEnd(), new StreamDone("tool_use"))
+            .Enqueue(Reply("Handing to Cody."));
+        var session = await Isolated(llm).WithSuperPrompt("andy").BuildAsync();
+        Assert.Contains("- code: coding assistant", session.SystemPrompt);
+        Assert.Contains("code", session.Tools.Get("handoff")!.Description);
+
+        await session.SendAsync("write me a script");
+
+        Assert.Equal("code", session.SuperPrompt);
+        Assert.Equal(["andy"], session.HandoffStack);
+        Assert.Contains("handed over to you by andy", session.SystemPrompt);
+    }
+
     [Fact]
     public async Task Return_WithNothingToReturnTo_Throws()
     {
