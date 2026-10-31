@@ -175,6 +175,29 @@ Both are required. The reason is shown to the user in the console line and to th
 * Per-prompt persona attribution: telling the persona which persona wrote each earlier turn (see `docs/backlog/Handoff-REPL-Command.md`). Today it only knows who is in the stack.
 * Persisting the handoff-received note across `/save` and `/load`. The stack is saved; the note (who handed over and why) is not, so a loaded conversation starts without it.
 
+## Try it: a six-step demo
+
+Needs `ANTHROPIC_API_KEY` set. It spends a handful of real model calls. Run the app with `dotnet run --project AgentSharpApp -- --superprompt andy`, then type each line below. The `Handoff:` and `Return:` lines print in magenta.
+
+| # | Type | You should see |
+|---|---|---|
+| 1 | *(start the app)* | The prompt reads `1 Andy Pando>`. |
+| 2 | `Hand this conversation to Ray.` | Andy says it is handing over, then `Auto-saved andy-handoff-ray-<time> (transcript: ...)` and `Handoff: Andy Pando -> Ray Pando (...). Handoff stack: Andy Pando > Ray Pando (current)`. The next prompt reads `2 Ray Pando>`. |
+| 3 | `Which persona are you, and who handed you this conversation?` | Ray answers and names Andy. `/status` shows `Handoff stack: Andy Pando > Ray Pando (current)`. |
+| 4 | `/return` | `Return: Ray Pando -> Andy Pando. Handoff stack: (empty)`. The prompt is `Andy Pando>` again. |
+| 5 | `I'd like to talk with a persistent digital person who has memory and relationships.` | Andy hands off to Lucy on its own: a `Handoff: Andy Pando -> Lucy Pando` line, and the next prompt is `Lucy Pando>`. |
+| 6 | `/save`, then `/transcribe`, then `/clear`, then `/load <the lucy-saved-... name>`, then `/status` | The files `lucy-saved-<time>` and `lucy-transcription-<time>.docx` are written. After the load, `/status` shows `Handoff stack: Andy Pando > Lucy Pando (current)`. In the transcript, each switch is an `H` entry. |
+
+Not all in one go? Steps 2 to 4 alone show a handoff, a persona that knows its history, and a return. For the same checks run for you, with no typing, run `dotnet run --project AgentSharp.HandoffLive` (see its README).
+
+## Fixes made while testing it
+
+Two problems turned up in real use and are fixed; neither is specific to handoff.
+
+* **A dropped connection no longer derails a turn.** When a request got no response (a reset or dropped connection, a timeout), the loop told the model "the previous request failed ... try a different approach". The model never saw the request, so it did something else; a dropped `/save` checkpoint produced a long unrelated memory entry. Now the same request is resent unchanged, with no error text or `sys>` prompt in the history. Errors the API answered with a status code behave as before.
+* **A lost network is waited out.** On such a failure the loop checks, separately, whether the LLM's host can be reached: an adapter with a gateway, DNS, and a TCP connection, each capped at a few seconds, using only the .NET network classes. It prints one line, for example `Network: Wi-Fi up; DNS ok; api.anthropic.com:443 timed out`. If the host cannot be reached it waits up to 30 seconds, checking every 2, and resends. That wait is not one of the three retries, so three wifi drops in a row no longer use them up in under four seconds. If the network never comes back the turn stops with a clear message; Ctrl+C ends the wait. A local (loopback) endpoint such as Ollama is not checked. `ILlmClient.Endpoint` names the host to check, and `AgentLoop` takes an `IConnectivityProbe` so tests can script the network.
+* **The context-size estimate no longer explodes on the first turn.** After a turn it scaled the whole message estimate by the provider's count over the message estimate. The provider's count includes the fixed ~15,000 tokens of system prompt and tools, so after "who are you" (about 3 tokens) the ratio was about 5,000 and the first reply came out as 2.5 million tokens, "251% full", with a false 95% warning. The estimate is now the provider's count plus the estimated growth since, with the ratio measured on the messages alone and kept between 0.5 and 2.0. `/compact` reports the provider's count as "before" and that less the dropped turns as "after".
+
 ## Live check against the real API
 
 `AgentSharp.HandoffLive` (a project in the solution, not part of `dotnet test`) runs the scenarios below against the real model and prints what it did. A run on 2026-10-29 with `claude-sonnet-5-5` behaved as expected in all of them: an explicit request handed off to Ray, Ray knew Andy had handed it over, and "hand it back" used `return`; a request for a persistent digital person went from Andy to Lucy, and a go-to-market request went from Ray to Andy; an in-domain question and `17 × 23` did not hand off; and a request for Rosie, who is not a target, was refused with the valid personas listed. The full output, with the personas named, is in the project's [README](../AgentSharp.HandoffLive/README.md#sample-output). It is one sample: the "fit" scenarios are judgment calls, so re-run it after changing the tool description or the persona catalog.
