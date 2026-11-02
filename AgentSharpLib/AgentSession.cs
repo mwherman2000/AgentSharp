@@ -193,8 +193,24 @@ public sealed class AgentSession
             throw new InvalidOperationException("Nothing to return to: this conversation has not been handed over.");
 
         var to = _handoffStack[^1];
+
+        // Like a handoff, a return keeps the conversation as it is before the switch, with a transcript,
+        // named for the persona giving it back ("donald-return-ray-...").
+        AutoSaveAndReport($"return-{to}");
+
         _handoffStack.RemoveAt(_handoffStack.Count - 1);
         ApplyHandoff(to, reason, returning: true);
+    }
+
+    /// <summary>Auto-save with a transcript and tell the user how it went. A failed save is reported
+    /// but never stops the caller.</summary>
+    private void AutoSaveAndReport(string kind)
+    {
+        if (AutoSave(kind, withTranscript: true) is { } saved)
+        {
+            if (saved.Error is null) Output.Info(saved.Describe());
+            else Output.Warning(saved.Describe());
+        }
     }
 
     /// <summary>
@@ -215,11 +231,7 @@ public sealed class AgentSession
         // start of the handoff, because this is the first point where the history is consistent: the
         // handoff tool only queues the request, and the history would still end in its unanswered tool call.
         // A failed save is reported but does not stop the handoff, which loses nothing.
-        if (AutoSave($"handoff-{to}", withTranscript: true) is { } saved)
-        {
-            if (saved.Error is null) Output.Info(saved.Describe());
-            else Output.Warning(saved.Describe());
-        }
+        AutoSaveAndReport($"handoff-{to}");
 
         // The persona being left goes on the stack so the conversation can be returned to it.
         // A custom system prompt is not a persona, so there is nothing to return to.
@@ -329,7 +341,8 @@ public sealed class AgentSession
     /// format, and the exceptions it throws.
     /// </summary>
     public string WriteTranscript(string name, TranscriptOptions? options = null) =>
-        ConversationTranscript.Write(History, SystemPrompt, Project.WorkingDirectory, name, Usage, options);
+        ConversationTranscript.Write(History, SystemPrompt, Project.WorkingDirectory, name, Usage, options,
+            _useCustomSystemPrompt ? null : SystemPromptBuilder.ResolveKey(_superPrompt));
 
     private AgentLoop CreateLoop(ConversationHistory? history)
     {

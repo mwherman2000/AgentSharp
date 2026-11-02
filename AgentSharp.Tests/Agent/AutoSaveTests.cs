@@ -102,6 +102,41 @@ public class AutoSaveTests : IDisposable
         Assert.Equal("Handing over.", loaded.GetLastAssistantText());
     }
 
+    [Fact]
+    public async Task Return_SavesFirst_AsPersonaReturnTarget_WithATranscript()
+    {
+        var llm = new FakeStreamingLlmClient().Enqueue(Reply("one"));
+        var session = await BuildAsync(llm);
+        await session.SendAsync("hi");
+        session.Handoff("donald");
+
+        session.Return();
+
+        var saved = SessionFiles("donald-return-ray-*.json");
+        Assert.Single(saved);
+        Assert.Single(Transcripts("donald-return-ray-*.docx"));
+        Assert.Equal("ray", session.SuperPrompt);
+    }
+
+    [Fact]
+    public async Task Transcript_PrefixesTypedPromptsWithTheirPersona_ButNotGeneratedOnes()
+    {
+        var llm = new FakeStreamingLlmClient().Enqueue(Reply("one")).Enqueue(Reply("two")).Enqueue(Reply("three"));
+        var session = await BuildAsync(llm);
+        await session.SendAsync("first");
+        session.Handoff("donald");
+        await session.SendAsync("second");
+        session.Return();
+        await session.SendAsync("third");
+
+        var pairs = AgentSharpLib.Transcripts.ConversationTranscript.BuildQaPairs(session.History, currentPersona: "ray");
+        var questions = pairs.Select(p => p.Question).ToList();
+
+        Assert.Contains("ray> First", questions);
+        Assert.Contains("donald> Second", questions);
+        Assert.Contains("ray> Third", questions);
+    }
+
     [Theory]
     [InlineData("ray")]      // already in charge: nothing happens
     [InlineData("nobody")]   // unknown: rejected before anything changes

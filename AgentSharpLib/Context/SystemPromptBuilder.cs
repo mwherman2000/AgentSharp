@@ -96,6 +96,11 @@ public class SystemPromptBuilder
     /// </summary>
     public static string ResolveKey(string? superPrompt) => Resolve(superPrompt).Key;
 
+    /// <summary>The key ("ray") of the persona with this full name ("Ray Pando"), or null if none has it.</summary>
+    public static string? KeyForName(string? name) =>
+        Personas.Where(p => string.Equals(p.Name, name?.Trim(), StringComparison.OrdinalIgnoreCase))
+                .Select(p => p.Key).FirstOrDefault();
+
     private static (string Key, string Name, string Prompt) Resolve(string? superPrompt)
     {
         if (string.IsNullOrWhiteSpace(superPrompt))

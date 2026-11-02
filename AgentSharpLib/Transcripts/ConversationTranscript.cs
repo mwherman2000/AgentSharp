@@ -1,4 +1,5 @@
 using AgentSharpLib.Agent;
+using AgentSharpLib.Context;
 using AgentSharpLib.Llm;
 
 namespace AgentSharpLib.Transcripts;
@@ -47,7 +48,7 @@ public static class ConversationTranscript
     /// <exception cref="UnauthorizedAccessException">The file couldn't be written.</exception>
     /// <param name="options">What to include besides prompts and replies; defaults to
     /// thinking only (see <see cref="TranscriptOptions"/>).</param>
-    public static string Write(ConversationHistory history, string systemPrompt, string directory, string name, SessionUsage? usage = null, TranscriptOptions? options = null)
+    public static string Write(ConversationHistory history, string systemPrompt, string directory, string name, SessionUsage? usage = null, TranscriptOptions? options = null, string? persona = null)
     {
         // Path.GetFileName strips any directory portion, so a name like "/trump14020"
         // or "../elsewhere" can't Path.Combine its way outside the directory (a leading
@@ -59,7 +60,7 @@ public static class ConversationTranscript
 
         var askedAt = new List<DateTimeOffset?>();
         var kinds = new List<PromptKind>();
-        var qaPairs = BuildQaPairs(history, options, askedAt, kinds);
+        var qaPairs = BuildQaPairs(history, options, askedAt, kinds, persona);
         var systemPromptIntro = GetFirstParagraph(systemPrompt);
         var recalledMemory = ExtractRecalledMemory(systemPrompt);
         var generatedAt = DateTime.Now;
@@ -95,6 +96,16 @@ public static class ConversationTranscript
         $"({usage.InputTokens:N0} in / {usage.OutputTokens:N0} out / " +
         $"{usage.CacheCreationTokens:N0} cache written / {usage.CacheReadTokens:N0} cache read)";
 
+    /// <summary>The personas, by key, in a "Handoff: Ray Pando -> Donald J. Pando (reason). ..." or "Return: ..." record.
+    /// A side that is not a known persona (a custom system prompt) is null.</summary>
+    private static (string? From, string? To)? ParseHandoffRecord(string text)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(text, @"^(?:Handoff|Return): (.+?) -> (.+?)(?: \(|\. Handoff stack:)");
+        return m.Success
+            ? (SystemPromptBuilder.KeyForName(m.Groups[1].Value), SystemPromptBuilder.KeyForName(m.Groups[2].Value))
+            : null;
+    }
+
     /// <summary>
     /// A single user turn can span several history entries (assistant text, tool
     /// calls, tool results, more assistant text), so consecutive assistant messages
@@ -105,8 +116,20 @@ public static class ConversationTranscript
     /// asked that question (null for a session saved before timestamps were recorded).</param>
     /// <param name="kinds">When given, receives one entry per returned pair: which kind of prompt it was
     /// (typed, loop-generated, or a /save or /load checkpoint).</param>
-    internal static List<(string Question, List<AnswerSegment> Segments)> BuildQaPairs(ConversationHistory history, TranscriptOptions? options = null, List<DateTimeOffset?>? askedAt = null, List<PromptKind>? kinds = null)
+    /// <param name="currentPersona">The persona in charge now ("ray"). When given, each typed prompt is
+    /// shown as "ray> ..." with the persona it was typed to, found by replaying the handoff and return
+    /// records. Prompts the application generated (/save, /load, retries) get no prefix.</param>
+    internal static List<(string Question, List<AnswerSegment> Segments)> BuildQaPairs(ConversationHistory history, TranscriptOptions? options = null, List<DateTimeOffset?>? askedAt = null, List<PromptKind>? kinds = null, string? currentPersona = null)
     {
+        // The persona at the start: whoever the first handoff record says it came from, else the one in charge now.
+        var persona = currentPersona;
+        if (currentPersona is not null)
+        {
+            var first = history.Messages.FirstOrDefault(m => m.Role == MessageRole.Assistant && m.Kind == PromptKind.Hnd);
+            if (first is not null && ParseHandoffRecord(string.Join("", first.Content.OfType<TextBlock>().Select(b => b.Text))) is { } firstSwitch)
+                persona = firstSwitch.From ?? persona;
+        }
+
         DateTimeOffset? currentAskedAt = null;
         var currentKind = PromptKind.Std;
         options ??= new TranscriptOptions();
@@ -145,6 +168,8 @@ public static class ConversationTranscript
                 currentAskedAt = message.Timestamp;
                 currentKind = message.Kind;
                 currentQuestion = CapitalizeFirstLetter(text);
+                if (persona is not null && message.Kind == PromptKind.Std)
+                    currentQuestion = $"{persona}> {currentQuestion}";
                 segments = new List<AnswerSegment>();
             }
             else if (message.Role == MessageRole.Assistant && (message.Kind is PromptKind.Err || message.Kind.IsLocalRecord()))
@@ -157,6 +182,8 @@ public static class ConversationTranscript
                     kinds?.Add(currentKind);
                 }
                 var recordText = string.Join("\n\n", message.Content.OfType<TextBlock>().Select(b => b.Text));
+                if (message.Kind == PromptKind.Hnd && persona is not null && ParseHandoffRecord(recordText) is { To: { } switchedTo })
+                    persona = switchedTo;
                 // A /status listing is columns of "label: value" lines; keep its line breaks.
                 qaPairs.Add((message.Kind == PromptKind.Sts ? Preformatted(recordText) : CapitalizeFirstLetter(recordText), new List<AnswerSegment>()));
                 askedAt?.Add(message.Timestamp);
