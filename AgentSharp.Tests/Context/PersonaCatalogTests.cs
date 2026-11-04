@@ -211,6 +211,21 @@ public class PersonaCatalogTests : IDisposable
     }
 
     [Fact]
+    public void DescribeList_CountsThePersonas_AndTagsTheOnesThatAreNotBuiltIn()
+    {
+        File(_user, "tutor", "name: Tutor");
+        File(_project, "scribe", "name: Scribe");
+
+        var text = PersonaCatalog.Load(_user, _project).DescribeList();
+
+        Assert.StartsWith("15 (andy, angie,", text);
+        Assert.Contains("tutor [user]", text);
+        Assert.Contains("scribe [project]", text);
+        Assert.Contains(", alchemist", text);
+        Assert.DoesNotContain("andy [", text);
+    }
+
+    [Fact]
     public void Role_DefaultsToTheName()
     {
         File(_user, "plain", "name: Plain Persona");

@@ -437,6 +437,7 @@ void PrintStatus()
 
     var status = $"""
         Agent:          {SystemPromptBuilder.ResolveAgentName(lucy.SuperPrompt)}
+        Superprompts:   {PersonaRegistry.Current.DescribeList()} (/personas for roles)
         Handoff stack:  {lucy.DescribeHandoffStack()}
         Provider:       {lucy.Llm.ProviderName}
         Model:          {lucy.Llm.ModelId}

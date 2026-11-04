@@ -359,6 +359,7 @@ public class ReplHost
                 PrintStatusRow(status, "Provider", _session.Llm.ProviderName);
                 PrintStatusRow(status, "Model", _session.Llm.ModelId);
                 PrintStatusRow(status, "Superprompt", SystemPromptBuilder.ResolveAgentName(_session.SuperPrompt));
+                PrintStatusRow(status, "Superprompts", PersonaRegistry.Current.DescribeList(), "(/personas for roles)");
                 PrintStatusRow(status, "Handoff stack", _session.DescribeHandoffStack());
                 PrintStatusRow(status, "Sync mode", AgentFlags.SyncMode ? "on (SendAsync, non-streaming)" : "off (StreamAsync, default)");
                 PrintStatusRow(status, "Timeout (streaming)", FormatTimeout(_session.Llm.StreamingTimeout));

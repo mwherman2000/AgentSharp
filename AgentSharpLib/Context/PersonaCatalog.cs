@@ -74,6 +74,13 @@ public sealed class PersonaCatalog
         return parts.Count == 0 ? null : string.Join("; ", parts);
     }
 
+    /// <summary>
+    /// The personas on one line for /status: "13 (andy, angie, ..., tess [user])". Personas that did not come from
+    /// the built-in files are tagged with their source, so created ones stand out. Default first.
+    /// </summary>
+    public string DescribeList() =>
+        $"{Personas.Count} ({string.Join(", ", Personas.Select(p => p.Source == PersonaSource.BuiltIn ? p.Key : $"{p.Key} [{p.Source.ToString().ToLowerInvariant()}]"))})";
+
     /// <summary>Warnings in this catalog that <paramref name="previous"/> did not have: the files skipped by this reload.</summary>
     public IEnumerable<string> NewWarningsSince(PersonaCatalog previous) => Warnings.Except(previous.Warnings);
 
