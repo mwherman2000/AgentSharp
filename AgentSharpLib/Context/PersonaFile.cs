@@ -30,17 +30,17 @@ public static partial class PersonaFile
     /// <summary>True if <paramref name="name"/> can be a key or alias: lower case letters, digits, '-' and '_', at most 32 characters.</summary>
     public static bool IsValidName(string name) => ValidName().IsMatch(name);
 
-    public static bool TryParse(string key, string text, PersonaSource source, string path, out Persona? persona, out string error)
+    /// <summary>
+    /// Splits a persona file into its header (the text between the two <c>---</c> lines) and its body (the prompt).
+    /// Line endings are normalized to \n and a leading byte-order mark is dropped. False, with the reason in
+    /// <paramref name="error"/>, if there is no header or it has no closing line.
+    /// </summary>
+    public static bool TrySplit(string text, out string header, out string body, out string error)
     {
-        persona = null;
+        header = "";
+        body = "";
         error = "";
-        if (!IsValidName(key))
-        {
-            error = $"'{key}' is not a valid persona name (lower case letters, digits, '-' and '_'; at most 32 characters; the file name without its extension).";
-            return false;
-        }
-
-        text = text.TrimStart('﻿').Replace("\r\n", "\n").Replace('\r', '\n');
+        text = text.TrimStart('\uFEFF').Replace("\r\n", "\n").Replace('\r', '\n');
         if (!text.StartsWith("---\n", StringComparison.Ordinal))
         {
             error = "the file must start with a '---' header line.";
@@ -55,8 +55,23 @@ public static partial class PersonaFile
             error = "the header has no closing '---' line.";
             return false;
         }
-        var header = end > 4 ? text[4..end] : "";
-        var body = end + 5 <= text.Length ? text[(end + 5)..] : "";
+        header = end > 4 ? text[4..end] : "";
+        body = end + 5 <= text.Length ? text[(end + 5)..] : "";
+        return true;
+    }
+
+    public static bool TryParse(string key, string text, PersonaSource source, string path, out Persona? persona, out string error)
+    {
+        persona = null;
+        error = "";
+        if (!IsValidName(key))
+        {
+            error = $"'{key}' is not a valid persona name (lower case letters, digits, '-' and '_'; at most 32 characters; the file name without its extension).";
+            return false;
+        }
+
+        if (!TrySplit(text, out var header, out var body, out error))
+            return false;
 
         string? name = null, role = null;
         var aliases = new List<string>();

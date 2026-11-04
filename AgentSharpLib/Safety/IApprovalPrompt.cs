@@ -6,7 +6,9 @@ namespace AgentSharpLib.Safety;
 /// <param name="DangerReason">Why the call was classified as risky, or null.</param>
 /// <param name="OfferAlways">False when this call is asked about every time, so the prompt should not offer
 /// "always allow" (an answer of AlwaysAllow is treated as allow-once).</param>
-public sealed record ApprovalRequest(string ToolName, ToolRiskLevel RiskLevel, string InputSummary, string? DangerReason, bool OfferAlways = true);
+/// <param name="AlwaysLabel">What an AlwaysAllow answer grants, when it is narrower than "this tool for the session"
+/// (for example one persona file); the prompt shows it next to the key. Null for the usual meaning.</param>
+public sealed record ApprovalRequest(string ToolName, ToolRiskLevel RiskLevel, string InputSummary, string? DangerReason, bool OfferAlways = true, string? AlwaysLabel = null);
 
 /// <summary>
 /// Asks a human whether a Destructive tool call may run. <see cref="ApprovalGate"/>

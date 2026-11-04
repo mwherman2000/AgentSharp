@@ -38,7 +38,7 @@ public sealed class ConsoleApprovalPrompt : IApprovalPrompt
         // Some calls are asked about every time (create_digital, writes to persona files), so don't offer "always allow".
         var offerAlways = request.OfferAlways;
         AnsiConsole.MarkupLine(offerAlways
-            ? "[yellow]Allow this tool execution?[/] (a = allow, d = deny, s = always allow this session)"
+            ? $"[yellow]Allow this tool execution?[/] (a = allow, d = deny, s = {Markup.Escape(request.AlwaysLabel ?? "always allow this session")})"
             : "[yellow]Allow this tool execution?[/] (a = allow, d = deny)");
 
         // Console.ReadKey has no cancellable overload, so a plain blocking call
@@ -81,7 +81,9 @@ public sealed class ConsoleApprovalPrompt : IApprovalPrompt
                 AnsiConsole.MarkupLine("[green]  Allowed.[/]");
                 return ApprovalResult.Allow;
             case ConsoleKey.S:
-                AnsiConsole.MarkupLine($"[green]  {Markup.Escape(request.ToolName)} will be pre-approved for this session.[/]");
+                AnsiConsole.MarkupLine(request.AlwaysLabel is null
+                    ? $"[green]  {Markup.Escape(request.ToolName)} will be pre-approved for this session.[/]"
+                    : $"[green]  Granted: {Markup.Escape(request.AlwaysLabel)}.[/]");
                 return ApprovalResult.AlwaysAllow;
             default:
                 AnsiConsole.MarkupLine("[red]  Denied.[/]");

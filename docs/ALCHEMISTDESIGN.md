@@ -97,7 +97,17 @@ A new persona is never a handoff target at creation. There is no input to set it
   * *It is remembered per tool name.* `ApprovalGate` stores "always allow" by tool name for the rest of the session, so one `s` would approve every later persona write, including ones nobody has seen.
   * *A persona's prompt is high-leverage.* Unlike a shell command, whose effect the prompt shows, a persona's prompt takes over the conversation once it is used, and with `handoff: true` the model can hand off to it. Pre-approving unseen persona text is the hole the check exists to close, and text the model was fed (a web page, a pasted document) is exactly how a bad prompt would arrive.
   * *Asking is cheap.* Creating or editing a persona is rare and deliberate, so one keypress each time costs little.
-  * *An option, not built.* A narrower grant: "always allow edits to this one file for the session", keyed on the full path, for iterating on a persona you just made. One approval would not cover any other persona file. See the open questions.
+  * *What there is instead: a per-file grant that covers the prompt only.* When a file tool asks about a persona file, `s` means "allow edits to this file's prompt for this session (header changes still ask)". The options, and why this one:
+
+    | Option | What `s` would do | Verdict |
+    |---|---|---|
+    | A. No grant | Nothing: ask every time | Safest; tedious when you iterate on one persona. This was the state before the grant. |
+    | B. Plain per-file grant | Allow every later write to this file | Rejected: an edit could then add `handoff: true` or rewrite the whole prompt, unseen. You approved a file, not its content. |
+    | **C. Per-file grant, prompt only (built)** | Allow later edits to this file that leave the header unchanged; ask again for any edit that changes it | Chosen: the header decides what the model may do with the persona (hand off to it, how others see it), the body is what you are iterating on. |
+    | D. Per-tool grant (the usual "always allow") | Allow every later persona write | Rejected: covers files nobody has seen (see above). |
+    | E. Grant on exact content | Allow only a write of precisely the text approved | Not built: it would help a retry but not iteration, since each edit is new text. |
+
+    How option C works. `ApprovalGate` keeps the granted files, by full resolved path (case-insensitive, `..` resolved), for the session. On a later `write_file` or `edit_file` to that file, `PersonaFileEdit.ChangesHeader` reads the file now, works out the text after the call (the `content`, or the one occurrence of `old_string` replaced), and compares the header (the text between the two `---` lines) with the current one, exactly. Same header: no prompt. Different header, or anything it cannot tell, asks again, and the prompt says why (the warning "This edit changes the persona's header..."). It cannot tell when: the file is missing or has no valid header, the new text has none, `old_string` is empty, absent or matches more than once, or the tool is not a file writer. `create_digital` never gets a grant, since each call makes a new file. Limits: a grant covers a file, not a content, so a later edit can still rewrite the whole prompt, which the user chose by granting it; text the model was fed could do that to the one granted persona; and the file is read at approval time, so a change made between the check and the write is not seen. A grant ends with the session.
 * **Quality.** The first-pass review in [prompt-review-backlog.md](prompt-review-backlog.md) found real problems in hand-written prompts, so a generated prompt should go through a critic persona first (Persona-Ideas 2.1), a natural use of handoff and return.
 * **Too many targets.** Every handoff target is described in every persona's prompt. Many created personas would cost tokens and make routing worse. Hence the cap, and the triage persona (Persona-Ideas 2.1) as a way to choose among them.
 
@@ -165,4 +175,5 @@ Re-run `AgentSharp.HandoffLive` to see whether adding created personas changes h
 * The cap on created personas is 20 (`CreateDigitalTool.MaxCreatedPersonas`). Is that right?
 * Promotion to a handoff target is a manual edit of `handoff: true` in the file. Should there be a command or tool action for it?
 * Should the handoff tool's name list refresh when persona files change, instead of once per session?
-* Should there be a per-file "always allow" for persona writes (section 6), so iterating on one persona does not ask on every edit?
+* The per-file grant covers the prompt but not the header (section 6, option C). Should a changed `handoff:` line ever be grantable, or always asked about? Today: always.
+* Should a grant also be offered for `create_digital`'s file after it is created (so the alchemist can refine a persona it just made without asking each time)? Today: only the file tools' prompt offers it, so the first refinement asks and `s` then grants.

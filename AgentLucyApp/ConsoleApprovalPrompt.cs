@@ -24,7 +24,7 @@ internal sealed class ConsoleApprovalPrompt(Func<string> agentName) : IApprovalP
             Console.WriteLine($"  Warning: {request.DangerReason}");
         Console.Write(!request.OfferAlways
             ? "Allow this tool execution? (a = allow, d = deny): "
-            : "Allow this tool execution? (a = allow, d = deny, s = always allow this session): ");
+            : $"Allow this tool execution? (a = allow, d = deny, s = {request.AlwaysLabel ?? "always allow this session"}): ");
         Console.ResetColor();
 
         var answer = Console.ReadLine()?.Trim().ToLowerInvariant();

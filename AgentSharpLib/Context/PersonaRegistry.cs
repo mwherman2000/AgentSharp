@@ -27,21 +27,24 @@ public static class PersonaRegistry
     /// the file tools do, and the comparison ignores case. The file tools use this to ask the user before they write
     /// a persona file, because a persona's prompt controls the conversation once it is used or handed to.
     /// </summary>
-    public static bool IsPersonaFilePath(string? path)
+    public static bool IsPersonaFilePath(string? path) => PersonaFilePath(path) is not null;
+
+    /// <summary>The full path if <paramref name="path"/> is a file inside a persona folder (see <see cref="IsPersonaFilePath"/>), else null.</summary>
+    public static string? PersonaFilePath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path))
-            return false;
+            return null;
         string full;
         try { full = Path.GetFullPath(path.Trim()); }
-        catch (Exception) { return false; }
+        catch (Exception) { return null; }
 
         var parts = full.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         // Needs something after the folder name: the folder itself is not a file to write.
         for (var i = 0; i + 2 < parts.Length; i++)
             if (string.Equals(parts[i], ".agentsharp", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(parts[i + 1], "superprompts", StringComparison.OrdinalIgnoreCase))
-                return true;
-        return false;
+                return full;
+        return null;
     }
 
     /// <summary>

@@ -75,10 +75,19 @@ public class ApprovalGate
         // Writing a persona file is asked about every time, whatever the tool's own risk level or an earlier
         // "always allow": the persona's prompt would control the conversation once it is used or handed to,
         // so it must not appear without the user seeing it. create_digital asks too; this covers the file tools.
-        if (WritesPersonaFile(tool, input))
+        if (PersonaFileWritten(tool, input) is { } personaPath)
+        {
+            // The user may have allowed edits to this one file for the session. That covers edits to the prompt only:
+            // one that changes the header (name, aliases, role, handoff, order) is asked about again.
+            var granted = _fileGrants.ContainsKey(personaPath);
+            if (granted && !Context.PersonaFileEdit.ChangesHeader(tool.Name, personaPath, input))
+                return true;
             return await PromptForApproval(tool, inputSummary,
-                "This writes a persona (superprompt) file. A persona's prompt controls the conversation once it is used or handed to.",
-                ct, askEveryTime: true);
+                granted
+                    ? "This edit changes the persona's header (name, aliases, role, handoff or order), so it is asked about even though edits to this file were allowed."
+                    : "This writes a persona (superprompt) file. A persona's prompt controls the conversation once it is used or handed to.",
+                ct, askEveryTime: true, fileGrantKey: personaPath);
+        }
 
         // Check if user has granted "always allow" for this tool
         if (_alwaysAllowed.ContainsKey(tool.Name))
@@ -113,15 +122,20 @@ public class ApprovalGate
     /// <summary>The file tools that take a <c>path</c> and change what is at it.</summary>
     private static readonly HashSet<string> FileWriters = new(StringComparer.OrdinalIgnoreCase) { "write_file", "edit_file" };
 
-    private static bool WritesPersonaFile(ITool tool, JsonElement input) =>
+    /// <summary>Persona files the user allowed prompt-only edits to for this session, by full path.</summary>
+    private readonly ConcurrentDictionary<string, byte> _fileGrants = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The full path of the persona file a file-writing tool call would change, or null if it is not one.</summary>
+    private static string? PersonaFileWritten(ITool tool, JsonElement input) =>
         FileWriters.Contains(tool.Name)
         && input.ValueKind == JsonValueKind.Object
         && input.TryGetProperty("path", out var path)
         && path.ValueKind == JsonValueKind.String
-        && Context.PersonaRegistry.IsPersonaFilePath(path.GetString());
+            ? Context.PersonaRegistry.PersonaFilePath(path.GetString())
+            : null;
 
     private async Task<bool> PromptForApproval(ITool tool, string inputSummary, string? dangerReason, CancellationToken ct,
-        bool askEveryTime = false)
+        bool askEveryTime = false, string? fileGrantKey = null)
     {
         // No one to ask (one-shot/autonomous host, or a library consumer that didn't
         // supply a prompt): deny cleanly. A denied result feeds back to the model as
@@ -144,11 +158,18 @@ public class ApprovalGate
 
             var answer = await _prompt.PromptAsync(
                 new ApprovalRequest(tool.Name, tool.RiskLevel, inputSummary, dangerReason,
-                    OfferAlways: !askEveryTime && !AlwaysAsk.Contains(tool.Name)), ct);
+                    OfferAlways: fileGrantKey is not null || (!askEveryTime && !AlwaysAsk.Contains(tool.Name)),
+                    AlwaysLabel: fileGrantKey is null ? null
+                        : $"allow edits to this file's prompt for this session (header changes still ask): {Path.GetFileName(fileGrantKey)}"), ct);
 
             // "Always allow" is honored for most tools, but not for tools that must be approved every time.
-            if (answer == ApprovalResult.AlwaysAllow && !askEveryTime && !AlwaysAsk.Contains(tool.Name))
-                _alwaysAllowed[tool.Name] = 0;
+            if (answer == ApprovalResult.AlwaysAllow)
+            {
+                if (fileGrantKey is not null)
+                    _fileGrants[fileGrantKey] = 0; // this one file, prompt-only edits; never the whole tool
+                else if (!askEveryTime && !AlwaysAsk.Contains(tool.Name))
+                    _alwaysAllowed[tool.Name] = 0;
+            }
 
             return answer != ApprovalResult.Deny;
         }
