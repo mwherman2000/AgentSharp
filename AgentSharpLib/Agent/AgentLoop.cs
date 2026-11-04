@@ -1312,6 +1312,19 @@ public class AgentLoop
         return toolResults;
     }
 
+    /// <summary>The whole persona, readable, so the user approves what will actually be written (not escaped JSON).</summary>
+    private static string SummarizeCreateDigital(JsonElement input)
+    {
+        string Field(string name) => input.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        var aliases = input.TryGetProperty("aliases", out var a) && a.ValueKind == JsonValueKind.Array
+            ? string.Join(", ", a.EnumerateArray().Select(x => x.ToString())) : "";
+        var scope = Field("scope");
+        return $"Create persona '{Field("nickname")}' in the {(scope.Length == 0 ? "user" : scope)} folder\n" +
+               $"  Name:    {Field("name")}\n  Role:    {Field("role")}\n  Aliases: {(aliases.Length == 0 ? "(none)" : aliases)}\n" +
+               "  Handoff target: no\n  Prompt:\n" +
+               string.Join("\n", Field("prompt").Replace("\r\n", "\n").Split('\n').Select(l => "    | " + l));
+    }
+
     /// <summary>
     /// Create a human-readable summary of tool input for approval prompts.
     /// </summary>
@@ -1328,6 +1341,7 @@ public class AgentLoop
                 "grep" => $"Search for: {input.GetProperty("pattern").GetString()}",
                 "run_shell" => $"Run: {input.GetProperty("command").GetString()}",
                 "think" => input.GetProperty("thought").GetString() ?? "Thinking...",
+                "create_digital" => SummarizeCreateDigital(input),
                 _ => input.GetRawText()
             };
         }

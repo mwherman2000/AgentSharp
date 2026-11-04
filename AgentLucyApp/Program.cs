@@ -26,6 +26,25 @@ AgentTelemetry.Initialize();
 var sessions = new SessionManager(Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agentsharp", "lucy"));
 
+// Personas: the built-in superprompts, plus any files in ~/.agentsharp/superprompts and
+// ./.agentsharp/superprompts, rescanned whenever one is added, changed or deleted.
+using var personaWatcher = PersonaRegistry.Watch(Directory.GetCurrentDirectory());
+foreach (var warning in PersonaRegistry.Current.Warnings)
+    Console.Error.WriteLine($"Superprompt file skipped: {warning}");
+PersonaRegistry.Changed += (old, now) =>
+{
+    var added = now.Keys.Except(old.Keys).ToList();
+    var removed = old.Keys.Except(now.Keys).ToList(); // still resolve for a conversation already using one
+    var changed = now.Personas.Where(p => old.Find(p.Key) is { } o && (o.Prompt != p.Prompt || o.Name != p.Name || o.Role != p.Role
+        || o.IsHandoffTarget != p.IsHandoffTarget)).Select(p => p.Key).ToList();
+    var parts = new[] { added.Count > 0 ? "added " + string.Join(", ", added) : "", changed.Count > 0 ? "changed " + string.Join(", ", changed) : "",
+        removed.Count > 0 ? "removed " + string.Join(", ", removed) : "" }.Where(s => s.Length > 0).ToList();
+    if (parts.Count > 0)
+        Console.Error.WriteLine("Superprompts reloaded: " + string.Join("; ", parts));
+    foreach (var w in now.Warnings.Except(old.Warnings))
+        Console.Error.WriteLine($"Superprompt file skipped: {w}");
+};
+
 AgentSession lucy;
 try
 {

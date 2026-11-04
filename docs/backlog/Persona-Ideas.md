@@ -73,7 +73,7 @@ Donald, Fed Chair and Raquel are a different kind of persona: voice and viewpoin
 
 ### 2.6 A persona that creates personas
 
-The **forge**: a persona whose job is to design a new persona for you and make it available to hand off to. It is a different kind of change from the rest, because it needs a new mechanism and not only a new prompt. See section 5.
+The **alchemist**: a persona whose job is to design a new persona for you, with a `create_digital` tool that makes it available to hand off to. It is a different kind of change from the rest, because it needs a new mechanism and not only a new prompt. See section 5 and [ALCHEMISTDESIGN.md](../ALCHEMISTDESIGN.md).
 
 ## 3. If choosing three
 
@@ -92,7 +92,7 @@ They interact with the handoff stack the most, and each takes only a new prompt 
 
 Review the prompt against the checklist in [prompt-review-backlog.md](../prompt-review-backlog.md) before shipping it.
 
-## 5. A persona that creates personas (the forge)
+## 5. A persona that creates personas (the alchemist and `create_digital`)
 
 **The idea.** A persona that interviews the user, writes a new persona prompt, and makes the new persona available to hand off to. A good fit for the super-prompt approach: `docs/superpromptguide.md` could be its template, and `connie`'s strength with prompt languages points to where its own prompt could start.
 
@@ -109,14 +109,14 @@ Review the prompt against the checklist in [prompt-review-backlog.md](../prompt-
 
 | Stage | What it is | What it takes |
 |---|---|---|
-| **0. A forge that drafts** | A persona interviews the user and writes a persona prompt to a file. The user reviews it and adds it to the code by hand. | One new prompt. No architecture change. |
+| **0. The alchemist drafts** | The alchemist interviews the user and writes a persona prompt to a file. The user reviews it and adds it to the code by hand. | One new prompt. No architecture change. |
 | **1. Persistent, file-based personas** | Personas load from files at startup, from the user folder and the project: nickname, aliases, full name, role, whether it is a handoff target, then the prompt body. A `create_digital` tool writes the file and registers the persona, so it can be handed to in the same session. | The persona list becomes a registry instead of static code; a tool; validation; approval. |
-| **2. Throwaway personas** | The forge creates a specialist for one problem ("a tax-law reviewer for this contract"), hands off, and the persona is dropped when the user is done. Nothing is saved to disk. | Everything in stage 1, plus the session file must store the definition, so that `/load` and the handoff stack still resolve. |
+| **2. Throwaway personas** | The alchemist creates a specialist for one problem ("a tax-law reviewer for this contract"), hands off, and the persona is dropped when the user is done. Nothing is saved to disk. | Everything in stage 1, plus the session file must store the definition, so that `/load` and the handoff stack still resolve. |
 
 ### 5.2 Things to settle before stage 1
 
 * **Approval.** A created persona's prompt is shown in full and approved before the persona exists, using the same approval prompt as file writes. It starts as not a handoff target until the user promotes it.
-* **Safety.** Personas share the same tools, so a created persona can run shell commands like any other. The approval gate still applies, but a prompt built from web content or a pasted document could carry instructions. The forge only writes what the user approves, and a created persona gets no tool or approval privileges the others lack.
+* **Safety.** Personas share the same tools, so a created persona can run shell commands like any other. The approval gate still applies, but a prompt built from web content or a pasted document could carry instructions. `create_digital` only writes what the user approves, and a created persona gets no tool or approval privileges the others lack.
 * **Quality.** The first-pass review in [prompt-review-backlog.md](../prompt-review-backlog.md) found real problems in the hand-written prompts, so a generated prompt should go through a critic persona first (see 2.1). That is a natural use of handoff and return.
 * **Too many targets.** Every handoff target is described in every persona's prompt. Many created personas would cost tokens and make routing worse. Put a cap on them, or add the triage persona (2.1) to choose among them.
 * **Names.** A created persona must not shadow a built-in one, and nicknames need a safe character set (the nickname becomes part of file names and of the saved handoff stack).

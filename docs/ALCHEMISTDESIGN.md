@@ -1,0 +1,160 @@
+# Alchemist and create_digital — Design
+
+> Built from [templates/Feature-Design-Template.md](templates/Feature-Design-Template.md). Sections that do not apply are folded into the ones that do. Everything here is a proposal; nothing is built. The backlog entry is section 5 of [backlog/Persona-Ideas.md](backlog/Persona-Ideas.md).
+
+| | |
+|---|---|
+| Status | Draft for review |
+| Date | 2026-11-04 |
+| Code home | `AgentSharpLib` (persona registry, `create_digital` tool); the alchemist prompt in `SystemPromptBuilder` |
+| Storage | Persona files in the user folder and the project folder |
+| Inputs | [Persona-Ideas.md](backlog/Persona-Ideas.md) section 5, [HANDOFFDESIGN.md](HANDOFFDESIGN.md), [superpromptguide.md](superpromptguide.md), [DigitomicEvolution-Design.md](DigitomicEvolution-Design.md) item A5 |
+
+---
+
+## 1. Purpose, scope and restraint
+
+The **alchemist** is a persona that designs a new persona with the user. The **`create_digital`** tool turns the approved design into a persona that exists in the running session and can be handed to.
+
+The name `alchemist` is deliberately utilitarian, not a human-style nickname like Andy or Cody: it is a utility persona, and the name says what it does.
+
+It does **not**:
+
+* give a created persona any tool or approval privilege the other personas lack;
+* make a created persona a handoff target without the user's say-so;
+* change the built-in personas, or let a created one shadow them;
+* replace the existing `sub_agent` tool, which makes throwaway workers for one task, not named personas.
+
+## 2. Roles
+
+| Part | Does | Does not |
+|---|---|---|
+| **Alchemist (persona)** | Interviews the user about what the persona is for, its voice, its limits and when others should hand off to it. Drafts the prompt using `superpromptguide.md`. Writes the one-line role other personas see. Revises with the user. Calls `create_digital`. Offers a handoff to the new persona. | Write files or register anything itself. |
+| **`create_digital` (tool)** | Validates, asks for approval, writes the persona file, registers the persona for the session. No judgment. | Design or improve the prompt. |
+
+**Why the split.** The persona proposes and the tool enforces. The approval gate and validation apply even if the alchemist's prompt is influenced by web content or a pasted document. Any persona can call `create_digital`, so a user can ask Connie to make one and the same rules hold.
+
+## 3. Why it does not work today
+
+Personas are compiled in. The prompts are constants in `SystemPromptBuilder`, and `Personas` and `HandoffPersonas` are static. A new persona needs a code change and a rebuild. Stage 1 below turns the persona list into a registry. It builds on the `RegisterSuperPrompt(key, aliases, name, Func<string> prompt)` hook proposed as A5 in the Digitomic Evolution design, so the registry should be one mechanism, not two.
+
+## 4. Stages
+
+| Stage | What it is | What it takes |
+|---|---|---|
+| **0. Alchemist drafts** | The alchemist interviews the user and writes a persona prompt to a file. The user reviews it and adds it to the code by hand. | One new prompt. No architecture change. |
+| **1. File-based personas** | Personas load from files at startup, from the user folder and the project. `create_digital` writes the file and registers the persona. | Registry instead of static lists; the tool; validation; approval. |
+| **2. Throwaway personas** | The alchemist creates a specialist for one problem, hands off, and the persona is dropped when the user is done. Nothing is saved to disk. | Everything in stage 1, plus the session file stores the definition so that `/load` and the handoff stack still resolve. |
+
+**Marking temporary personas (stage 2, not built).** A temporary persona is one made for a single conversation and never saved as a file. To keep it distinct from saved ones:
+
+* a new source, `PersonaSource.Temporary`, next to `BuiltIn`, `User` and `Project`;
+* `create_digital` takes `temporary: true`; no file is written, the persona exists only in the registry and in the session file (so `/load` and the handoff stack still resolve it);
+* it is shown with a "(temporary)" tag in `/status`, the persona list and the approval prompt, and in saved transcripts, so nobody mistakes it for a saved one;
+* it is dropped when the conversation is cleared or the app exits, and it can be kept by an explicit "save" that writes it as a user or project file;
+* it counts toward the cap on created personas, and it is never a handoff target unless the user promotes it.
+
+**Recommendation.** Start with stage 0: it costs one prompt, shows whether the interview and drafting are any good, and tells us what stage 1 must enforce. Stage 2 only after stage 1 has been used for a while.
+
+## 5. The create_digital tool
+
+### 5.1 Input
+
+| Field | Notes |
+|---|---|
+| `nickname` | Safe character set, because it becomes part of file names and of the saved handoff stack. |
+| `aliases` | Optional. Same rules as the nickname. |
+| `full_name` | Display name. |
+| `role` | One line. This is what the other personas see when deciding whether to hand off. |
+| `prompt` | The full persona prompt. |
+
+A new persona is never a handoff target at creation. There is no input to set it; promotion is a separate user decision (see section 9).
+
+### 5.2 Steps
+
+1. **Validate.** Nickname and aliases use the safe character set; none shadows a built-in persona or collides with an existing one; the cap on created personas is not reached; required fields are present.
+2. **Approve.** Show the full prompt and definition and ask the user, using the same approval prompt as file writes. A refusal ends the call and nothing is written.
+3. **Write.** Save the persona file to the chosen location (section 7).
+4. **Register.** Add it to the registry so it can be resolved in the same session. It is not in `HandoffPersonas`.
+5. **Report.** Return the nickname, file path and how to hand off to it.
+
+### 5.3 Refusals
+
+| Refusal | When |
+|---|---|
+| Invalid name | Characters outside the safe set. |
+| Shadows built-in | Nickname or alias equals a built-in nickname or alias. |
+| Collision | Matches a created persona already registered. |
+| Cap reached | Too many created personas. |
+| Not approved | The user declined. |
+
+## 6. Governance and safety
+
+* **Same privileges.** Personas share the same tools, so a created persona can run shell commands like any other. The approval gate still applies. `create_digital` gives it nothing more.
+* **Injected content.** A prompt built from web content or a pasted document could carry instructions. The user sees the full prompt before anything is written.
+* **Quality.** The first-pass review in [prompt-review-backlog.md](prompt-review-backlog.md) found real problems in hand-written prompts, so a generated prompt should go through a critic persona first (Persona-Ideas 2.1), a natural use of handoff and return.
+* **Too many targets.** Every handoff target is described in every persona's prompt. Many created personas would cost tokens and make routing worse. Hence the cap, and the triage persona (Persona-Ideas 2.1) as a way to choose among them.
+
+## 7. Persistence
+
+* **Built (phase 1a, file loading and watching).** Each persona is one Markdown file. The built-in ones are in `AgentSharpLib/Superprompts/` and embedded in the assembly. `PersonaCatalog` assembles the set, `PersonaRegistry.Current` holds it, and `PersonaWatcher` reloads it when a file is added, changed, renamed or deleted (300 ms debounce). `AgentSharpApp` starts the watcher at startup.
+* **File format.** The file name (without `.md`) is the nickname: lower case letters, digits, `-` and `_`, at most 32 characters. A header between two `---` lines, then the prompt:
+
+  ```
+  ---
+  name: Andy Pando
+  aliases: a, andrew
+  role: go-to-market (GTM) expert advisor
+  handoff: true
+  order: 10
+  ---
+  You are Andy Pando, ...
+  ```
+
+  `name` is required. `role` defaults to the name, `handoff` to false, `aliases` to none. `order` sorts the list and the lowest is the default persona; a new persona without it goes last, and an override without it keeps the built-in's position. An invalid file is skipped with a warning and the rest still load.
+* **Where.** Built-in (embedded), user (`~/.agentsharp/superprompts`), project (`.agentsharp/superprompts` in the working directory). A user file may add a persona or replace a built-in one. A project file may only add new ones, because a repository you clone could otherwise change what a persona you trust says. Open: whether project-level ones are committed to the repository.
+* **Load.** At startup, from all three, in that order. A key or alias must not clash with another persona's.
+* **Limits.** The `handoff` tool's schema (its list of persona names) is built once per session, so a new handoff target appears to the model after `/clear` or a restart, though the tool's own validation and the persona list in each prompt use the current set.
+* **Files are not locked.** A locked file would stop your editor saving (many editors replace the file by renaming), has no effect on Linux and macOS, and would block any tool that writes persona files. Instead, a persona whose file is deleted or becomes invalid is *retired*: the registry keeps its last good version, it still resolves by name and alias, so a conversation using it carries on, but it is not listed and cannot be handed to. A file with its name coming back makes it live again. Retired personas are kept until the app exits, and a retired name can still be typed in `--Superprompt` or `/clear`. If an invalid edit is to a file that replaced a built-in, the built-in takes over again, with a warning.
+* **Handoff stack.** The saved stack stores nicknames, so a stack that names a created persona resolves only if its file is still present; otherwise `/load` reports it as missing.
+
+## 8. Runtime integration
+
+* The alchemist is a built-in persona, listed like the others, with its nickname `alchemist`.
+* `/status` and the persona list say which personas are built-in and which were created.
+* Handoff to and return from a created persona work the same as for built-in ones, once it has been promoted to a handoff target.
+
+## 9. Promotion to a handoff target
+
+Adding a nickname to `HandoffPersonas` makes the tool schema, the persona list in each prompt and the validation follow. For created personas that list must become dynamic. Promotion is a user action, not something the tool or the alchemist does on its own. Open: whether it is a second tool action, a slash command, or an edit of the persona file.
+
+## 10. Testing
+
+| Claim | Test |
+|---|---|
+| A valid call writes the file and registers the persona | Happy path; the persona resolves by nickname and alias. |
+| Each refusal in 5.3 is enforced | One test per refusal; nothing is written. |
+| A created persona is not a handoff target | Not in the handoff tool schema until promoted. |
+| A promoted persona is a handoff target | Modeled on `Code_IsAHandoffTarget_...` in `AgentBuilderTests`. |
+| Decline writes nothing | Approval refused, no file, no registration. |
+| Created personas load at startup | Round trip through the file. |
+| A saved stack naming a missing persona is reported on `/load` | No crash. |
+
+Re-run `AgentSharp.HandoffLive` to see whether adding created personas changes how often the others hand off.
+
+## 11. Implementation phases
+
+| Phase | Deliverable | User-visible result |
+|---|---|---|
+| 0 | Alchemist prompt in `SystemPromptBuilder`, reviewed against the prompt-review checklist | The alchemist drafts a persona prompt to a file |
+| 1a | Persona registry replacing the static lists | No change for users; built-ins still work |
+| 1b | `create_digital` tool with validation and approval | The alchemist can create a persona that exists in the session |
+| 1c | File load at startup, `/status` marking, promotion | Created personas persist and can be handed to |
+| 2 | Throwaway personas | One-problem specialists |
+
+## 12. Open questions for the owner
+
+* Does `create_digital` stay create-only, or later take edit, promote and retire actions?
+* Are project-level persona files committed to the repository?
+* What is the cap on created personas?
+* How does the user promote a created persona to a handoff target?

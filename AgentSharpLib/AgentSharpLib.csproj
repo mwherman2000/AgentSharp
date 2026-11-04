@@ -18,6 +18,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- One file per built-in persona; PersonaCatalog reads them from the assembly. -->
+    <EmbeddedResource Include="Superprompts\*.md" LogicalName="Superprompts/%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="AgentSharpApp" />
     <InternalsVisibleTo Include="AgentSharp.Tests" />
   </ItemGroup>

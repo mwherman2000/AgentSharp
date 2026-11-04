@@ -56,6 +56,25 @@ internal class Program
             if (options.WorkingDirectory is not null)
                 Directory.SetCurrentDirectory(options.WorkingDirectory);
 
+            // --- Personas: built-in superprompts, plus any files in ~/.agentsharp/superprompts and
+            // ./.agentsharp/superprompts, rescanned whenever one is added, changed or deleted ---
+            using var personaWatcher = PersonaRegistry.Watch(Directory.GetCurrentDirectory());
+            foreach (var warning in PersonaRegistry.Current.Warnings)
+                AnsiConsole.MarkupLine($"[yellow]Superprompt file skipped:[/] {Markup.Escape(warning)}");
+            PersonaRegistry.Changed += (old, now) =>
+            {
+                var added = now.Keys.Except(old.Keys).ToList();
+                var removed = old.Keys.Except(now.Keys).ToList(); // still resolve for a conversation already using one
+                var changed = now.Personas.Where(p => old.Find(p.Key) is { } o && (o.Prompt != p.Prompt || o.Name != p.Name || o.Role != p.Role
+                    || o.IsHandoffTarget != p.IsHandoffTarget)).Select(p => p.Key).ToList();
+                if (added.Count + removed.Count + changed.Count > 0)
+                    AnsiConsole.MarkupLine("[grey]Superprompts reloaded:[/] " + Markup.Escape(string.Join("; ",
+                        new[] { added.Count > 0 ? "added " + string.Join(", ", added) : "", changed.Count > 0 ? "changed " + string.Join(", ", changed) : "",
+                                removed.Count > 0 ? "removed " + string.Join(", ", removed) : "" }.Where(s => s.Length > 0))));
+                foreach (var w in now.Warnings.Except(old.Warnings))
+                    AnsiConsole.MarkupLine($"[yellow]Superprompt file skipped:[/] {Markup.Escape(w)}");
+            };
+
             // --- Agent (LLM client, tools, approval, memory, sub-agents, project scan) ---
             // Output and approval are the only terminal-specific pieces; everything
             // else is the library's default wiring.

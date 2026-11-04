@@ -32,6 +32,13 @@ public class ApprovalGate
     // allow" for the same or different tools at the same time must not race on a
     // plain HashSet.
     private readonly ConcurrentDictionary<string, byte> _alwaysAllowed = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Tools whose every call is shown to the user, whatever they answered before: an "always allow" answer
+    /// is treated as "allow this once". create_digital makes a persona from a prompt the model wrote, and a
+    /// pre-approval would let injected text create personas without anyone seeing them.
+    /// </summary>
+    private static readonly HashSet<string> AlwaysAsk = new(StringComparer.OrdinalIgnoreCase) { "create_digital" };
+
     private readonly ShellCommandClassifier _shellClassifier = new();
     private readonly IApprovalPrompt? _prompt;
     private readonly IAgentOutput _output;
@@ -119,7 +126,8 @@ public class ApprovalGate
             var answer = await _prompt.PromptAsync(
                 new ApprovalRequest(tool.Name, tool.RiskLevel, inputSummary, dangerReason), ct);
 
-            if (answer == ApprovalResult.AlwaysAllow)
+            // "Always allow" is honored for most tools, but not for tools that must be approved every time.
+            if (answer == ApprovalResult.AlwaysAllow && !AlwaysAsk.Contains(tool.Name))
                 _alwaysAllowed[tool.Name] = 0;
 
             return answer != ApprovalResult.Deny;
