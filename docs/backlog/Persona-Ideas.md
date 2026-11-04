@@ -101,16 +101,16 @@ Review the prompt against the checklist in [prompt-review-backlog.md](../prompt-
 ### 5.0 Names and roles (decided)
 
 * **The persona is the alchemist.** The name is deliberately utilitarian, not a human-style nickname like Andy or Cody: it is a utility persona, and the name says what it does. It does the design work: interviews the user about what the persona is for, its voice, its limits and when others should hand off to it; drafts the prompt using `docs/superpromptguide.md`; writes the one-line role other personas see; revises with the user; then calls the tool and offers a handoff to the new persona.
-* **The tool is `create_persona`.** It does the mechanics and has no judgment: validates the nickname (safe character set, no shadowing, no collision, cap on created personas), shows the full prompt for approval, writes the persona file, and registers the persona so it can be handed to in the same session. A created persona starts as not a handoff target. It gets no tool or approval privileges the others lack.
-* **Why the split.** The persona proposes and the tool enforces, so the approval gate and validation apply even if the alchemist's prompt is influenced by web content or a pasted document. Any persona can call `create_persona`.
-* **Open.** Whether `create_persona` later takes edit, promote and retire actions or stays create-only.
+* **The tool is `create_digital`.** It does the mechanics and has no judgment: validates the nickname (safe character set, no shadowing, no collision, cap on created personas), shows the full prompt for approval, writes the persona file, and registers the persona so it can be handed to in the same session. A created persona starts as not a handoff target. It gets no tool or approval privileges the others lack.
+* **Why the split.** The persona proposes and the tool enforces, so the approval gate and validation apply even if the alchemist's prompt is influenced by web content or a pasted document. Any persona can call `create_digital`.
+* **Open.** Whether `create_digital` later takes edit, promote and retire actions or stays create-only.
 
 ### 5.1 Three stages, cheapest first
 
 | Stage | What it is | What it takes |
 |---|---|---|
 | **0. A forge that drafts** | A persona interviews the user and writes a persona prompt to a file. The user reviews it and adds it to the code by hand. | One new prompt. No architecture change. |
-| **1. Persistent, file-based personas** | Personas load from files at startup, from the user folder and the project: nickname, aliases, full name, role, whether it is a handoff target, then the prompt body. A `create_persona` tool writes the file and registers the persona, so it can be handed to in the same session. | The persona list becomes a registry instead of static code; a tool; validation; approval. |
+| **1. Persistent, file-based personas** | Personas load from files at startup, from the user folder and the project: nickname, aliases, full name, role, whether it is a handoff target, then the prompt body. A `create_digital` tool writes the file and registers the persona, so it can be handed to in the same session. | The persona list becomes a registry instead of static code; a tool; validation; approval. |
 | **2. Throwaway personas** | The forge creates a specialist for one problem ("a tax-law reviewer for this contract"), hands off, and the persona is dropped when the user is done. Nothing is saved to disk. | Everything in stage 1, plus the session file must store the definition, so that `/load` and the handoff stack still resolve. |
 
 ### 5.2 Things to settle before stage 1
