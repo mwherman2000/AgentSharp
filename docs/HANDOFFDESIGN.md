@@ -14,10 +14,11 @@ Handoff passes a running conversation, with its full history, from one persona (
 | Item | Behavior |
 |---|---|
 | Tool | `handoff(persona, reason)`, risk level `ReadOnly` (no approval prompt) |
-| Targets | `ray`, `donald`, `andy`, `lucy`, `connie`, `code` (`SystemPromptBuilder.HandoffPersonas`) |
+| Targets | The personas whose file says `handoff: true`: `ray`, `donald`, `andy`, `lucy`, `connie`, `code`, `alchemist` today (`SystemPromptBuilder.HandoffPersonas`, read from the persona registry; a created persona is not a target until its file says so) |
 | When it takes effect | After the current turn finishes, for the user's next prompt |
 | History | The same `ConversationHistory` instance continues; prompt numbers carry on |
 | Console | `Handoff: Andy Pando -> Donald J. Pando (reason)` printed through `IAgentOutput.Info`; the prompt label changes on the next prompt |
+| `/handoff <persona> [reason]` | A REPL command (both apps) that calls `AgentSession.Handoff` directly, so a person can hand over without the model choosing to. Any persona is allowed, not only the targets. It switches at once, saves first, and prints the same `Handoff: A -> B` line. |
 | Not offered | With `AgentBuilder.WithoutHandoff()`, or with a custom system prompt (`WithSystemPrompt`) |
 
 The tool rejects, with an error the model can read: a persona outside the target list, an unknown name, the persona already in charge, and a second handoff queued in the same turn.
@@ -137,7 +138,8 @@ next user prompt -> new loop answers as Donald
 | `AgentSession.Handoff` | `AgentSharpLib/AgentSession.cs` | Validates, records who handed over and why, rebuilds the loop on the existing history, prints the console line. Public, so a host can call it directly. Unlike the tool, it accepts any persona. |
 | `AgentSession.SendAsync` | same file | Applies a pending request after the turn. |
 | `AgentSession.Reset` / `Restore` | same file | Clear the handoff context and any pending request: a fresh or loaded conversation was not handed over. |
-| `SystemPromptBuilder` | `AgentSharpLib/Context/SystemPromptBuilder.cs` | Adds the persona catalog and the handoff-received note. Owns `HandoffPersonas`, `ResolveKey` and the one-line role of each persona. |
+| `SystemPromptBuilder` | `AgentSharpLib/Context/SystemPromptBuilder.cs` | Adds the persona catalog and the handoff-received note. `HandoffPersonas`, `ResolveKey` and each persona's one-line role are read from `PersonaRegistry.Current`. |
+| `PersonaRegistry`, `PersonaCatalog`, `PersonaWatcher` | `AgentSharpLib/Context/` | Hold the personas, loaded from `AgentSharpLib/Superprompts/*.md` and the user and project folders, and reload them when a file changes. See [ALCHEMISTDESIGN.md](ALCHEMISTDESIGN.md). |
 | `AgentBuilder.WithoutHandoff` | `AgentSharpLib/AgentBuilder.cs` | Opts out. |
 | `SubAgent` | `AgentSharpLib/Agent/MultiAgent/SubAgent.cs` | Filters `handoff` out of a sub-agent's tools, since a sub-agent has no conversation to hand over. |
 
@@ -170,9 +172,8 @@ Both are required. The reason is shown to the user in the console line and to th
 
 ## Not built
 
-* A `/handoff <persona>` REPL command that calls `AgentSession.Handoff` directly, for a handoff that does not depend on the model choosing to call the tool (see `docs/backlog/Handoff-REPL-Command.md`). `/return` exists; `/handoff` does not.
 * A cooldown between handoffs.
-* Handoff targets beyond the six current ones (the five initial personas and `code`). Add a key to `HandoffPersonas`; the schema, catalog and validation follow from it.
+* A refreshed `handoff` tool schema when persona files change. The tool's list of names is built once per session, so a persona that becomes a target mid-session is offered to the model after `/clear` or a restart (the persona catalog in each prompt and the tool's validation use the current set).
 * Per-prompt persona attribution: telling the persona which persona wrote each earlier turn (see `docs/backlog/Handoff-REPL-Command.md`). Today it only knows who is in the stack.
 * Persisting the handoff-received note across `/save` and `/load`. The stack is saved; the note (who handed over and why) is not, so a loaded conversation starts without it.
 

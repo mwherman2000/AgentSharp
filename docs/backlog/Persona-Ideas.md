@@ -5,13 +5,13 @@
 | Status | **Backlogged. No prompts have been written.** These are ideas to choose from, not a spec. |
 | Date | 2026-10-31 |
 | Raised by | Michael W. Herman |
-| Affects (when taken up) | `AgentSharpLib/Context/SystemPromptBuilder.cs` (a prompt constant and a row in `Personas`), `SystemPromptBuilder.HandoffPersonas` for any that should be handoff targets, [HANDOFFDESIGN.md](../HANDOFFDESIGN.md) |
+| Affects (when taken up) | A new file in `AgentSharpLib/Superprompts/` (with `handoff: true` for any that should be handoff targets), [HANDOFFDESIGN.md](../HANDOFFDESIGN.md) |
 
 ---
 
 ## 1. Where things stand
 
-There are twelve personas. Six are handoff targets: `ray`, `donald`, `andy`, `lucy`, `connie`, `code`. Six are not: `angie`, `fed`, `jeff`, `raquel`, `jeff-ray`, `rosie`.
+There are thirteen personas. Seven are handoff targets: `ray`, `donald`, `andy`, `lucy`, `connie`, `code`, `alchemist`. Six are not: `angie`, `fed`, `jeff`, `raquel`, `jeff-ray`, `rosie`. The alchemist (section 5) is built.
 
 | Persona | Role |
 |---|---|
@@ -27,6 +27,7 @@ There are twelve personas. Six are handoff targets: `ray`, `donald`, `andy`, `lu
 | `jeff-ray` | Joint intelligence of Jeff and Ray |
 | `rosie` | Autonomous literary horror-story agent |
 | `code` | Coding assistant: reads, writes and edits code, runs shell and git |
+| `alchemist` | Designs a new persona with you and creates it with the `create_digital` tool |
 
 What is missing is mostly not more characters. It is specialists that work beside these, and roles that make use of handoff and return.
 
@@ -85,9 +86,9 @@ They interact with the handoff stack the most, and each takes only a new prompt 
 
 ## 4. What adding one takes
 
-1. Write the prompt as a constant in `SystemPromptBuilder` (the existing ones start with a line like "You are Cody Pando, ..." and carry the copyright line).
-2. Add a row to `Personas`: nickname, aliases, display name, the prompt, and a one-line role (the role is what the other personas see when deciding whether to hand off).
-3. If it should be a handoff target, add its nickname to `HandoffPersonas`. The tool schema, the persona list in each prompt and the validation follow from that.
+1. Write the persona file: `AgentSharpLib/Superprompts/<nickname>.md` for a built-in one, or ask the alchemist to make one (it lands in `~/.agentsharp/superprompts/`). The header has the display name, aliases, a one-line role (what the other personas see when deciding whether to hand off), `handoff: true` or `false`, and an optional `order`; the prompt follows. The existing ones start with a line like "You are Cody Pando, ..." and carry the copyright line.
+2. If it should be a handoff target, set `handoff: true`. The tool schema, the persona list in each prompt and the validation follow from that.
+3. For a built-in one, add it to the expected lists in `PersonaCatalogTests`.
 4. Add a test that it is listed and that the handoff tool accepts it (see `Code_IsAHandoffTarget_...` in `AgentBuilderTests`), and re-run `AgentSharp.HandoffLive` to see whether the new persona changes how often the others hand off.
 
 Review the prompt against the checklist in [prompt-review-backlog.md](../prompt-review-backlog.md) before shipping it.
@@ -96,7 +97,7 @@ Review the prompt against the checklist in [prompt-review-backlog.md](../prompt-
 
 **The idea.** A persona that interviews the user, writes a new persona prompt, and makes the new persona available to hand off to. A good fit for the super-prompt approach: `docs/superpromptguide.md` could be its template, and `connie`'s strength with prompt languages points to where its own prompt could start.
 
-**Why it doesn't work today.** Personas are compiled in: the prompts are constants in `SystemPromptBuilder`, and `Personas` and `HandoffPersonas` are static. A new persona needs a code change and a rebuild. The existing `sub_agent` tool creates throwaway workers for one task; those are not named personas you can hand off to and return from.
+**Why it did not work.** (Built since: personas are now files, see [ALCHEMISTDESIGN.md](../ALCHEMISTDESIGN.md).) Personas used to be compiled in, as constants in `SystemPromptBuilder`, so a new persona needed a code change and a rebuild. The existing `sub_agent` tool creates throwaway workers for one task; those are not named personas you can hand off to and return from.
 
 ### 5.0 Names and roles (decided)
 

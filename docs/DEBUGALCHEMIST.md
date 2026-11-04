@@ -83,6 +83,8 @@ A successful call returns the file path and `/clear <nickname>` as the way to us
 
 ### Approval
 
+`create_digital` only governs itself: `write_file` and `edit_file` can still write persona files without this prompt (see the known gap in [ALCHEMISTDESIGN.md](ALCHEMISTDESIGN.md) section 6). If a persona appears that nobody approved, look at the file's `Path` (`PersonaRegistry.Current.Find("x").Path`) and at the tool calls in the transcript.
+
 `create_digital` is `Destructive`, so every call asks. The prompt shows the nickname, scope, name, role, aliases, "Handoff target: no", and the whole prompt, each line prefixed `|`. Answering `s` (always allow) is treated as allow-once for this tool only (`ApprovalGate.AlwaysAsk`); other tools keep their "always allow". If the prompt looks like escaped JSON, `AgentLoop.SummarizeCreateDigital` was bypassed: check that the tool name is exactly `create_digital`.
 
 ## The alchemist behaves badly

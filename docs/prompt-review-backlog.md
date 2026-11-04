@@ -1,7 +1,7 @@
 # Prompt review — backlog
 
 **Status: first-pass review of all 12 prompts done (2026-10-19); no prompt text changed yet.** Review every system prompt in
-`AgentSharpLib/Context/SystemPromptBuilder.cs` against
+the persona files in `AgentSharpLib/Superprompts/` against
 [superpromptguide.md](superpromptguide.md), one prompt at a time.
 
 ## Done so far

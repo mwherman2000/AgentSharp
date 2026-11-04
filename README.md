@@ -71,9 +71,19 @@ agentsharp --prompt "explain this"   One-shot mode (explicit)
 -m, --model <name>       Model identifier (e.g., claude-sonnet-5, gpt-4o)
 -k, --api-key <key>      API key (or set via environment variable)
     --base-url <url>     Custom API base URL for compatible providers
+    --timeout <minutes>  Request timeout (default 60)
+    --max-tokens <n>     Max output tokens per request (default 128000)
+    --max-iterations <n> Max LLM/tool round-trips per turn (default 100)
+    --dir <path>         Project directory to run in (default: current directory)
+    --Superprompt <name> Persona to start as (default: andy; see "Personas" below)
+    --prompt <text>      One-shot mode (a bare first argument does the same)
 -h, --help               Show help
 -v, --version            Show version
 ```
+
+Settings come from `~/.agentsharp/config.json`, then the `AGENT_*` variables, then these flags. The
+Lucy app (`AgentLucyApp`) takes the same flags and has the same commands; it starts as `lucy` and keeps
+its saved sessions in `~/.agentsharp/lucy`. `--help` in either app prints the full lists.
 
 ### Example
 
@@ -88,24 +98,64 @@ dotnet run --project AgentSharpApp
 |---|---|
 | `/help` | Show commands |
 | `/exit` | Exit the agent |
-| `/clear` | Clear conversation |
-| `/save` | Save session |
+| `/clear [persona]` | Start a new conversation, optionally as another persona |
+| `/personas` | List the personas with their roles; created ones are tagged `[user]` or `[project]` |
+| `/handoff <persona> [reason]` | Hand the conversation, with its history, to another persona |
+| `/return [reason]` | Hand it back to the persona that handed it over |
+| `/compact -N \| +N \| N` | Drop the oldest turns (`-N` drops N%, `+N` keeps N%); saves before and after |
+| `/save [id]` | Save session (with a `.docx` transcript) |
 | `/load <id>` | Load session |
 | `/sessions` | List sessions |
-| `/status` | Agent status |
-| `/memory` | View memory |
+| `/status` | Agent status, including the available superprompts |
+| `/model` | Show the current provider and model |
+| `/memory [clear]` | View or delete memory |
+| `/transcribe [name]` | Write a Q&A transcript |
 | `/request` | Toggle request trace |
 | `/history` | Toggle history trace |
 | `/tools` | Toggle tools trace |
 | `/sync` | Toggle non-streaming vs streaming responses |
 | `/jaeger [endpoint]` | Switch OTel export to Jaeger (OTLP, default `http://localhost:4317`) |
 
+## Personas (superprompts)
+
+Each persona is one Markdown file: a short header, then the prompt. The 13 built-in ones are in
+`AgentSharpLib/Superprompts/` (andy, angie, connie, donald, fed, jeff, lucy, raquel, ray, jeff-ray,
+rosie, code, alchemist) and are compiled into the library. At startup the apps also read:
+
+| Folder | Can |
+|---|---|
+| `~/.agentsharp/superprompts/` | add personas, or replace a built-in one |
+| `.agentsharp/superprompts/` in the working directory | add personas only (a cloned repo cannot rewrite a persona you trust) |
+
+```
+---
+name: Tess Pando
+aliases: tea
+role: tea expert who recommends teas
+handoff: false
+order: 200
+---
+You are Tess Pando, a tea expert. ...
+```
+
+The file name (lower case letters, digits, `-`, `_`) is the persona's name. A file watcher reloads
+the folders whenever a file is added, changed or deleted; an invalid file is skipped with a warning and
+the last good version of a persona stays in use. `handoff: true` lets the other personas hand
+conversations to it. See [docs/ALCHEMISTDESIGN.md](docs/ALCHEMISTDESIGN.md) for the format and rules.
+
+The **alchemist** persona designs a new persona with you and creates it with the `create_digital`
+tool, which is a Destructive tool: you are shown the whole persona and approve it every time ("always
+allow" does not apply to it). Debugging and a demo script are in
+[docs/DEBUGALCHEMIST.md](docs/DEBUGALCHEMIST.md).
+
 ## Project structure
 
 ```
 AgentSharpLib/     Reusable agent library
   Agent/          Agent loop, multi-agent orchestration
-  Context/        Project context scanning, system prompt building
+  Context/        Project context scanning, system prompt building, persona catalog, registry and file watcher
+  Superprompts/   One Markdown file per built-in persona (embedded in the assembly)
+  CommandLineParser.cs  Flags, environment and config file, shared by both apps
   Llm/            LLM clients (Anthropic, OpenAI-compatible)
   Memory/         Persistent memory and session management
   Output/         IAgentOutput -- host-rendered progress/status events
@@ -114,10 +164,9 @@ AgentSharpLib/     Reusable agent library
   Tools/          Tool registry and built-in tool implementations
   Transcripts/    Markdown / .docx transcript rendering
 AgentSharpApp/     Interactive chat CLI (entry point)
-  Cli/            Command-line / env / config-file parsing into AgentOptions
   Ui/             REPL host, command parsing, Spectre renderer, approval prompt
   *_prompts/      Prompt source material (GTM, Lucy, O*NET)
-AgentLucyApp/      Minimal chat with the Lucy persona -- a small AgentSharpLib sample
+AgentLucyApp/      Plain-text chat that starts as Lucy -- same flags and commands as the main app, a small AgentSharpLib sample
 DigitomicEvolutionLib/  Library for digitomic evolution (new, empty)
 DigitomicEvolutionLib.Tests/  xUnit tests for DigitomicEvolutionLib (new, empty)
 AgentSharp.Tests/  xUnit test suite, mirrors the source layout
@@ -133,7 +182,7 @@ using AgentSharpLib;
 
 var agent = await new AgentBuilder()
     .WithOptions(new AgentOptions { Provider = "anthropic", ApiKey = apiKey })
-    .WithSuperPrompt("lucy")          // optional persona
+    .WithSuperPrompt("lucy")          // optional persona (see "Personas" above)
     .BuildAsync();
 
 var answer = await agent.SendAsync("Summarize this repository.");

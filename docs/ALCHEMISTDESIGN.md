@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Status | Draft for review |
+| Status | Stages 0 and 1 built (persona files, registry, watcher, the alchemist, `create_digital`, both apps); stage 2 (temporary personas) not built |
 | Date | 2026-11-04 |
 | Code home | `AgentSharpLib` (persona registry, `create_digital` tool); the alchemist prompt in `SystemPromptBuilder` |
 | Storage | Persona files in the user folder and the project folder |
@@ -92,12 +92,13 @@ A new persona is never a handoff target at creation. There is no input to set it
 
 * **Same privileges.** Personas share the same tools, so a created persona can run shell commands like any other. The approval gate still applies. `create_digital` gives it nothing more.
 * **Injected content.** A prompt built from web content or a pasted document could carry instructions. The user sees the full prompt before anything is written.
+* **Known gap: the file tools bypass the approval.** `write_file` and `edit_file` are `Write`-level tools, which are auto-approved and not limited to a folder. A model (or text it was fed) can therefore write a persona file straight into `~/.agentsharp/superprompts/` or `.agentsharp/superprompts/`, and the watcher will load it, without the `create_digital` approval. It can also set `handoff: true` in an existing file, which makes that persona a target the model can then hand off to. The approval on `create_digital` only governs that tool. Closing the gap means treating any write under a `superprompts` folder as Destructive (approval every time, no "always allow"), or rejecting those paths in the file tools. Not done yet.
 * **Quality.** The first-pass review in [prompt-review-backlog.md](prompt-review-backlog.md) found real problems in hand-written prompts, so a generated prompt should go through a critic persona first (Persona-Ideas 2.1), a natural use of handoff and return.
 * **Too many targets.** Every handoff target is described in every persona's prompt. Many created personas would cost tokens and make routing worse. Hence the cap, and the triage persona (Persona-Ideas 2.1) as a way to choose among them.
 
 ## 7. Persistence
 
-* **Built (phase 1a, file loading and watching).** Each persona is one Markdown file. The built-in ones are in `AgentSharpLib/Superprompts/` and embedded in the assembly. `PersonaCatalog` assembles the set, `PersonaRegistry.Current` holds it, and `PersonaWatcher` reloads it when a file is added, changed, renamed or deleted (300 ms debounce). `AgentSharpApp` starts the watcher at startup.
+* **Built (phase 1a, file loading and watching).** Each persona is one Markdown file. The built-in ones are in `AgentSharpLib/Superprompts/` and embedded in the assembly. `PersonaCatalog` assembles the set, `PersonaRegistry.Current` holds it, and `PersonaWatcher` reloads it when a file is added, changed, renamed or deleted (300 ms debounce). Both apps start the watcher at startup (`PersonaRegistry.WatchAndReport`).
 * **File format.** The file name (without `.md`) is the nickname: lower case letters, digits, `-` and `_`, at most 32 characters. A header between two `---` lines, then the prompt:
 
   ```
@@ -144,17 +145,18 @@ Re-run `AgentSharp.HandoffLive` to see whether adding created personas changes h
 
 ## 11. Implementation phases
 
-| Phase | Deliverable | User-visible result |
+| Phase | Deliverable | Status |
 |---|---|---|
-| 0 | Alchemist prompt in `SystemPromptBuilder`, reviewed against the prompt-review checklist | The alchemist drafts a persona prompt to a file |
-| 1a | Persona registry replacing the static lists | No change for users; built-ins still work |
-| 1b | `create_digital` tool with validation and approval | The alchemist can create a persona that exists in the session |
-| 1c | File load at startup, `/status` marking, promotion | Created personas persist and can be handed to |
-| 2 | Throwaway personas | One-problem specialists |
+| 0 | Alchemist persona (`Superprompts/alchemist.md`) | Built. Not yet reviewed against the prompt-review checklist |
+| 1a | Persona registry, files, watcher, retirement | Built |
+| 1b | `create_digital` tool with validation and approval (Destructive, asked every time) | Built |
+| 1c | File load at startup, `/personas`, `/status` list and `[user]`/`[project]` tags, `/handoff`, `/return` | Built in both apps. Promotion is an edit of `handoff:` in the file |
+| 2 | Throwaway personas | Not built (see section 4) |
 
 ## 12. Open questions for the owner
 
-* Does `create_digital` stay create-only, or later take edit, promote and retire actions?
-* Are project-level persona files committed to the repository?
-* What is the cap on created personas?
-* How does the user promote a created persona to a handoff target?
+* Does `create_digital` stay create-only, or later take edit, promote and retire actions? (Today: create-only.)
+* Are project-level persona files committed to the repository? (Not decided; a project file can add personas but never replace one.)
+* The cap on created personas is 20 (`CreateDigitalTool.MaxCreatedPersonas`). Is that right?
+* Promotion to a handoff target is a manual edit of `handoff: true` in the file. Should there be a command or tool action for it?
+* Should the handoff tool's name list refresh when persona files change, instead of once per session?

@@ -37,7 +37,7 @@ model called (with the `handoff` arguments), the handoff stack, and the start of
 It ends with a summary ("as expected" or "NOT as expected" per scenario) and the files the automatic
 saves wrote. A run is one sample: the "fit" scenarios are judgment calls, so a single miss means "look at
 the transcript", not "broken". Re-run it after changing the `handoff` tool description or the persona
-catalog in `SystemPromptBuilder`.
+catalog (each persona's `role` and `handoff` line in `AgentSharpLib/Superprompts/*.md`).
 
 Last run (2026-10-29, `claude-sonnet-5-5`): all eight prompts as expected; the full output is under "Sample output" below.
 
