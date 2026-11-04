@@ -98,6 +98,13 @@ Review the prompt against the checklist in [prompt-review-backlog.md](../prompt-
 
 **Why it doesn't work today.** Personas are compiled in: the prompts are constants in `SystemPromptBuilder`, and `Personas` and `HandoffPersonas` are static. A new persona needs a code change and a rebuild. The existing `sub_agent` tool creates throwaway workers for one task; those are not named personas you can hand off to and return from.
 
+### 5.0 Names and roles (decided)
+
+* **The persona is the alchemist.** The name is deliberately utilitarian, not a human-style nickname like Andy or Cody: it is a utility persona, and the name says what it does. It does the design work: interviews the user about what the persona is for, its voice, its limits and when others should hand off to it; drafts the prompt using `docs/superpromptguide.md`; writes the one-line role other personas see; revises with the user; then calls the tool and offers a handoff to the new persona.
+* **The tool is `create_persona`.** It does the mechanics and has no judgment: validates the nickname (safe character set, no shadowing, no collision, cap on created personas), shows the full prompt for approval, writes the persona file, and registers the persona so it can be handed to in the same session. A created persona starts as not a handoff target. It gets no tool or approval privileges the others lack.
+* **Why the split.** The persona proposes and the tool enforces, so the approval gate and validation apply even if the alchemist's prompt is influenced by web content or a pasted document. Any persona can call `create_persona`.
+* **Open.** Whether `create_persona` later takes edit, promote and retire actions or stays create-only.
+
 ### 5.1 Three stages, cheapest first
 
 | Stage | What it is | What it takes |
