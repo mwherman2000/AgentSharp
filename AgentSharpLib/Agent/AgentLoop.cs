@@ -1321,7 +1321,7 @@ public class AgentLoop
         var scope = Field("scope");
         return $"Create persona '{Field("nickname")}' in the {(scope.Length == 0 ? "user" : scope)} folder\n" +
                $"  Name:    {Field("name")}\n  Role:    {Field("role")}\n  Aliases: {(aliases.Length == 0 ? "(none)" : aliases)}\n" +
-               "  Handoff target: no\n  Prompt:\n" +
+               $"  Handoff target: {(!input.TryGetProperty("handoff", out var h) || h.ValueKind != JsonValueKind.False ? "yes" : "no")}\n  Prompt:\n" +
                string.Join("\n", Field("prompt").Replace("\r\n", "\n").Split('\n').Select(l => "    | " + l));
     }
 

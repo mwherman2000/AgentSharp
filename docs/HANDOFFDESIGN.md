@@ -14,7 +14,7 @@ Handoff passes a running conversation, with its full history, from one persona (
 | Item | Behavior |
 |---|---|
 | Tool | `handoff(persona, reason)`, risk level `ReadOnly` (no approval prompt) |
-| Targets | The personas whose file says `handoff: true`: `ray`, `donald`, `andy`, `lucy`, `connie`, `code`, `alchemist` today (`SystemPromptBuilder.HandoffPersonas`, read from the persona registry; a created persona is not a target until its file says so) |
+| Targets | The personas whose file says `handoff: true`: `ray`, `donald`, `andy`, `lucy`, `connie`, `code`, `alchemist` today (`SystemPromptBuilder.HandoffPersonas`, read from the persona registry; a persona created with `create_digital` is a target by default) |
 | When it takes effect | After the current turn finishes, for the user's next prompt |
 | History | The same `ConversationHistory` instance continues; prompt numbers carry on |
 | Console | `Handoff: Andy Pando -> Donald J. Pando (reason)` printed through `IAgentOutput.Info`; the prompt label changes on the next prompt |
@@ -173,7 +173,7 @@ Both are required. The reason is shown to the user in the console line and to th
 ## Not built
 
 * A cooldown between handoffs.
-* A refreshed `handoff` tool schema when persona files change. The tool's list of names is built once per session, so a persona that becomes a target mid-session is offered to the model after `/clear` or a restart (the persona catalog in each prompt and the tool's validation use the current set).
+* A refreshed "Personas you can hand off to" list inside the system prompt when persona files change. The `handoff` tool's own schema and description are rebuilt as the set changes, so the model is offered a new target on its next call; the list in the system prompt is built only when a conversation starts, is cleared, is loaded or is handed over.
 * Per-prompt persona attribution: telling the persona which persona wrote each earlier turn (see `docs/backlog/Handoff-REPL-Command.md`). Today it only knows who is in the stack.
 * Persisting the handoff-received note across `/save` and `/load`. The stack is saved; the note (who handed over and why) is not, so a loaded conversation starts without it.
 

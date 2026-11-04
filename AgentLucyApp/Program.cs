@@ -497,31 +497,31 @@ static void PrintHelp(string agentName)
 {
     Console.WriteLine($"""
         Commands:
-          /help, /h, /?        Show this help
-          /clear, /cls [persona]  Start a new conversation with {agentName}, or with another persona (for example alchemist)
-          /personas            List the personas, including ones created with create_digital
-          /handoff <persona> [reason]  Hand this conversation, with its history, to another persona
-          /return [reason]     Hand it back to the persona that handed it over (the stack is saved with /save)
-          /compact -N | +N | N Drop the oldest turns making up at least N% of the estimated tokens (-N), or keep the most recent turns making up at least N% (+N or N)
+          /help, /h, /?                     Show this help
+          /clear, /cls [persona]            Start a new conversation with {agentName}, or with another persona (for example alchemist)
+          /personas                         List the personas, including ones created with create_digital
+          /handoff <persona> [reason]       Hand this conversation, with its history, to another persona
+          /return [reason]                  Hand it back to the persona that handed it over (the stack is saved with /save)
+          /compact -N | +N | N              Drop the oldest turns making up at least N% of the estimated tokens (-N), or keep the most recent turns making up at least N% (+N or N)
           /save [id] [--tools] [--no-thinking]
-                               Send a "Checkpoint (/save)" prompt, wait for the reply, then save (and a .docx transcript; the flags shape the transcript only)
-          /load, /resume <id>  Continue a saved conversation (sends a "Resumed (/load)" prompt)
-          /sessions, /ls       List saved conversations
-          /status              Model, tools, token usage, directory
-          /model               Show the current provider and model
-          /memory, /mem [clear]  Show {agentName}'s MEMORY.md, or delete it
+                                            Send a "Checkpoint (/save)" prompt, wait for the reply, then save (and a .docx transcript; the flags shape the transcript only)
+          /load, /resume <id>               Continue a saved conversation (sends a "Resumed (/load)" prompt)
+          /sessions, /ls                    List saved conversations
+          /status                           Model, superprompts, handoff stack, tools, token usage, directory
+          /model                            Show the current provider and model
+          /memory, /mem [clear]             Show {agentName}'s MEMORY.md, or delete it
           /transcribe [name] [--tools] [--no-thinking]
-                               Write a Q&A transcript (<name>.md, or <name>.docx);
-                               --tools adds tool calls and results, --no-thinking omits thoughts
-          /exit, /quit, /q     Quit
-          Ctrl+C               Interrupt {agentName} mid-reply (at the prompt: quit)
+                                            Write a Q&A transcript (<name>.md, or <name>.docx);
+                                            --tools adds tool calls and results, --no-thinking omits thoughts
+          /exit, /quit, /q                  Quit
+          Ctrl+C                            Interrupt {agentName} mid-reply (at the prompt: quit)
 
         Diagnostics:
-          /sync                Toggle streaming vs. non-streaming replies
-          /request             Toggle dumping each request sent to the model
-          /history             Toggle dumping the conversation history with each request
-          /tools               Toggle dumping the tool definitions with each request
-          /jaeger [endpoint]   Send OpenTelemetry traces to Jaeger (default {AgentTelemetry.DefaultJaegerEndpoint})
+          /sync                             Toggle streaming vs. non-streaming replies
+          /request                          Toggle dumping each request sent to the model
+          /history                          Toggle dumping the conversation history with each request
+          /tools                            Toggle dumping the tool definitions with each request
+          /jaeger [endpoint]                Send OpenTelemetry traces to Jaeger (default {AgentTelemetry.DefaultJaegerEndpoint})
         """);
 }
 

@@ -140,8 +140,8 @@ You are Tess Pando, a tea expert. ...
 
 The file name (lower case letters, digits, `-`, `_`) is the persona's name. A file watcher reloads
 the folders whenever a file is added, changed or deleted; an invalid file is skipped with a warning and
-the last good version of a persona stays in use. `handoff: true` lets the other personas hand
-conversations to it. See [docs/ALCHEMISTDESIGN.md](docs/ALCHEMISTDESIGN.md) for the format and rules.
+the last good version of a persona stays in use. `handoff: true` lets the other personas, and the
+model's `handoff` tool, hand conversations to it. Personas made with `create_digital` are targets by default. See [docs/ALCHEMISTDESIGN.md](docs/ALCHEMISTDESIGN.md) for the format and rules.
 
 The **alchemist** persona designs a new persona with you and creates it with the `create_digital`
 tool, which is a Destructive tool: you are shown the whole persona and approve it every time ("always

@@ -608,7 +608,7 @@ public class ReplHost
             .AddRow("/save [[id]] [[--tools]] [[--no-thinking]]", "Send a \"Checkpoint (/save)\" prompt, wait for the reply, then save the conversation (and a .docx transcript; without an id it is named <persona>-saved-<time>; the flags shape the transcript only)")
             .AddRow("/load, /resume <id>", "Continue a saved conversation (sends a \"Resumed (/load)\" prompt and shows the reply)")
             .AddRow("/sessions, /ls", "List saved conversations")
-            .AddRow("/status", "Model, tools, token usage, directory")
+            .AddRow("/status", "Model, superprompts, handoff stack, tools, token usage, directory")
             .AddRow("/model", "Show the current provider and model")
             .AddRow("/memory, /mem [[clear]]", "Show MEMORY.md, or delete it")
             .AddRow("/transcribe [[name]] [[--tools]] [[--no-thinking]]", "Write a Q&A transcript (<name>.md, or <name>.docx; without a name it is <persona>-transcription-<time>.docx); --tools adds tool calls and results, --no-thinking omits thoughts")

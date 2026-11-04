@@ -13,7 +13,9 @@ public abstract class ToolBase : ITool
     public abstract ToolRiskLevel RiskLevel { get; }
 
     private JsonElement? _cachedSchema;
-    public JsonElement InputSchema => _cachedSchema ??= BuildInputSchema();
+    /// <summary>The input schema. Built once and kept; a tool whose schema depends on something that changes while
+    /// the app runs (the handoff tool's list of personas) overrides this.</summary>
+    public virtual JsonElement InputSchema => _cachedSchema ??= BuildInputSchema();
 
     public abstract Task<ToolResult> ExecuteAsync(JsonElement input, CancellationToken ct = default);
 

@@ -63,13 +63,28 @@ public class CreateDigitalToolTests : IDisposable
     }
 
     [Fact]
-    public async Task Create_IsNotAHandoffTarget()
+    public async Task Create_IsAHandoffTargetByDefault()
     {
-        await Tool().ExecuteAsync(Input(Valid()));
+        var result = await Tool().ExecuteAsync(Input(Valid()));
+
+        Assert.True(_published.Find("tess")!.IsHandoffTarget);
+        Assert.Contains("tess", _published.HandoffKeys);
+        Assert.Contains("handoff: true", File.ReadAllText(Path.Combine(_user, "tess.md")));
+        Assert.Contains("handoff target", result.Output);
+    }
+
+    [Fact]
+    public async Task Create_WithHandoffFalse_IsNotAHandoffTarget()
+    {
+        var result = await Tool().ExecuteAsync(Input(new
+        {
+            nickname = "tess", name = "Tess Pando", role = "r", prompt = "You are Tess.", handoff = false
+        }));
 
         Assert.False(_published.Find("tess")!.IsHandoffTarget);
         Assert.DoesNotContain("tess", _published.HandoffKeys);
         Assert.Contains("handoff: false", File.ReadAllText(Path.Combine(_user, "tess.md")));
+        Assert.Contains("not a handoff target", result.Output);
     }
 
     [Fact]
@@ -344,5 +359,65 @@ public class CreateDigitalToolTests : IDisposable
             Count++;
             return Task.FromResult(answer);
         }
+    }
+}
+
+public class NewPersonaHandoffTests
+{
+    // These change the process-wide persona registry for a moment, under a name no other test uses.
+    private static Persona Extra(string key, bool handoff) =>
+        new(key, [], "Extra Pando", "You are Extra.", "an extra persona", handoff, 5000, PersonaSource.User, "test");
+
+    private static PersonaCatalog With(params Persona[] personas)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "agentsharp_hot_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            foreach (var p in personas)
+                File.WriteAllText(Path.Combine(dir, p.Key + ".md"),
+                    $"---\nname: {p.Name}\nrole: {p.Role}\nhandoff: {(p.IsHandoffTarget ? "true" : "false")}\n---\n{p.Prompt}");
+            return PersonaCatalog.Load(dir, null);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public async Task TheHandoffTool_OffersAndAcceptsAPersonaCreatedAfterItWasBuilt_AndNotOneThatIsNot()
+    {
+        var queue = new HandoffQueue { CurrentPersona = "andy" };
+        var tool = new HandoffTool(queue);
+        var before = tool.InputSchema.GetRawText();
+        Assert.DoesNotContain("zz-hot", before);
+
+        PersonaRegistry.Set(With(Extra("zz-hot", handoff: true), Extra("zz-cold", handoff: false)));
+        try
+        {
+            var after = tool.InputSchema.GetRawText();
+            Assert.Contains("zz-hot", after);                          // offered to the model now
+            Assert.DoesNotContain("zz-cold", after);                   // a non-target is not
+            Assert.Contains("zz-hot", tool.Description);
+            Assert.Contains("zz-hot: an extra persona", tool.Description);   // its role too, so the model knows what it is for
+            Assert.DoesNotContain("zz-cold", tool.Description);
+
+            var ok = await tool.ExecuteAsync(JsonDocument.Parse("""{"persona":"zz-hot","reason":"r"}""").RootElement);
+            Assert.False(ok.IsError, ok.Output);
+            Assert.Equal("zz-hot", queue.Pending!.Value.Persona);
+        }
+        finally
+        {
+            PersonaRegistry.Set(PersonaCatalog.BuiltIn);
+        }
+
+        // and it is withdrawn when the persona stops being a target
+        Assert.DoesNotContain("zz-hot", tool.InputSchema.GetRawText());
+    }
+
+    [Fact]
+    public void TheSchema_IsNotRebuilt_WhenNothingChanged()
+    {
+        var tool = new HandoffTool(new HandoffQueue());
+
+        Assert.Equal(tool.InputSchema.GetRawText(), tool.InputSchema.GetRawText());
     }
 }

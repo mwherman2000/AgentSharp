@@ -10,8 +10,9 @@ namespace AgentSharpLib.Tools.Implementations;
 /// what it is given. The Alchemist persona does the designing. It is <see cref="ToolRiskLevel.Destructive"/>, so
 /// the user always sees the full persona and approves it before anything is written, and the session
 /// "always allow" answer does not skip that (see <c>ApprovalGate</c>).
-/// <para>A created persona starts as not a handoff target and never replaces an existing persona or file.
-/// To let other personas hand off to it, the user sets <c>handoff: true</c> in its file.</para>
+/// <para>A created persona is a handoff target by default, so the user (<c>/handoff</c>) and the model (the <c>handoff</c>
+/// tool) can hand a conversation to it as soon as it exists; <c>handoff: false</c> opts out. It never replaces an
+/// existing persona or file.</para>
 /// </summary>
 public class CreateDigitalTool : ToolBase
 {
@@ -42,7 +43,7 @@ public class CreateDigitalTool : ToolBase
     public override string Description =>
         "Create a new persona from a finished definition: writes it as a file and makes it available in this session. " +
         "The user is shown the complete persona and must approve it first. Use it only after the user has seen the full " +
-        "prompt and agreed to it. The new persona is not a handoff target; the user can start it with /clear <nickname>. " +
+        "prompt and agreed to it. The new persona can be handed to straight away (the handoff tool and /handoff accept it) unless handoff is false, and the user can start it with /clear <nickname>. " +
         "It never replaces an existing persona.";
     public override ToolRiskLevel RiskLevel => ToolRiskLevel.Destructive;
 
@@ -56,6 +57,7 @@ public class CreateDigitalTool : ToolBase
             role = new { type = "string", description = "One line on what the persona is for. The other personas read this when deciding whether to hand over to it." },
             prompt = new { type = "string", description = "The full persona prompt, starting with the role in the second person (\"You are ...\")" },
             aliases = new { type = "array", items = new { type = "string" }, description = "Optional other names that select the persona, with the same rules as the nickname" },
+            handoff = new { type = "boolean", description = "Whether other personas (and the handoff tool) may hand a conversation to this persona. Default true; use false for a persona that should only be started by the user." },
             scope = new { type = "string", @enum = new[] { "user", "project" }, description = "\"user\" (default) saves it for this user in every project; \"project\" saves it in this project's .agentsharp/superprompts folder" }
         },
         required = new[] { "nickname", "name", "role", "prompt" }
@@ -68,6 +70,7 @@ public class CreateDigitalTool : ToolBase
         var role = GetRequiredString(input, "role").Trim();
         var prompt = GetRequiredString(input, "prompt");
         var scope = (GetOptionalString(input, "scope") ?? "user").Trim().ToLowerInvariant();
+        var handoff = GetOptionalBool(input, "handoff", true);
 
         var aliases = new List<string>();
         if (input.TryGetProperty("aliases", out var aliasElement) && aliasElement.ValueKind == JsonValueKind.Array)
@@ -91,7 +94,7 @@ public class CreateDigitalTool : ToolBase
             .Append("name: ").Append(name).Append('\n')
             .Append("aliases: ").Append(string.Join(", ", aliases)).Append('\n')
             .Append("role: ").Append(role).Append('\n')
-            .Append("handoff: false\n")
+            .Append("handoff: ").Append(handoff ? "true" : "false").Append('\n')
             .Append("---\n")
             .Append(prompt.Replace("\r\n", "\n").Replace('\r', '\n'))
             .ToString();
@@ -131,7 +134,9 @@ public class CreateDigitalTool : ToolBase
 
         return ToolResult.Success(
             $"Created persona '{nickname}' ({name}) at {path}. It is available now: the user starts it with /clear {nickname}. " +
-            "It is not a handoff target; to allow handoffs to it, the user sets handoff: true in the file.");
+            (handoff
+                ? "It is a handoff target: the handoff tool and /handoff accept it now, and the user can start it with /clear."
+                : "It is not a handoff target (handoff: false); only the user can start it, with /clear or /handoff."));
     }
 
     private string? Validate(string nickname, string name, string role, string prompt, string scope, List<string> aliases)

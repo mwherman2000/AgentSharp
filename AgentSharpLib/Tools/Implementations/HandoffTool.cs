@@ -51,8 +51,28 @@ public sealed class HandoffTool : ToolBase
         "Use it when the user asks for a persona by name, or when another persona would clearly serve the " +
         "request better than you; otherwise just answer. " +
         $"The persona argument is one of {string.Join(", ", SystemPromptBuilder.HandoffPersonas)}, or \"{SystemPromptBuilder.ReturnTarget}\" " +
+        "(who they are: " + string.Join("; ", PersonaRegistry.Current.Personas.Where(p => p.IsHandoffTarget).Select(p => $"{p.Key}: {p.Role}")) + "). " +
         "(only after the conversation was handed to you) to give it back when your part is done or you cannot help.";
     public override ToolRiskLevel RiskLevel => ToolRiskLevel.ReadOnly;
+
+    // The persona names are part of the schema (an enum), and personas can be created while the app runs, so the
+    // schema is rebuilt whenever the list of handoff targets changes. It is read for every request to the model.
+    private string? _schemaFor;
+    private JsonElement _schema;
+
+    public override JsonElement InputSchema
+    {
+        get
+        {
+            var key = string.Join('|', SystemPromptBuilder.HandoffPersonas);
+            if (_schemaFor != key)
+            {
+                _schema = BuildInputSchema();
+                _schemaFor = key;
+            }
+            return _schema;
+        }
+    }
 
     protected override JsonElement BuildInputSchema() => SchemaFrom(new
     {

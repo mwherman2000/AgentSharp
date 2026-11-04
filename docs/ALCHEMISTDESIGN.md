@@ -52,7 +52,7 @@ Personas are compiled in. The prompts are constants in `SystemPromptBuilder`, an
 * `create_digital` takes `temporary: true`; no file is written, the persona exists only in the registry and in the session file (so `/load` and the handoff stack still resolve it);
 * it is shown with a "(temporary)" tag in `/status`, the persona list and the approval prompt, and in saved transcripts, so nobody mistakes it for a saved one;
 * it is dropped when the conversation is cleared or the app exits, and it can be kept by an explicit "save" that writes it as a user or project file;
-* it counts toward the cap on created personas, and it is never a handoff target unless the user promotes it.
+* it counts toward the cap on created personas, and it is a handoff target like any created persona (unless created with `handoff: false`).
 
 **Recommendation.** Start with stage 0: it costs one prompt, shows whether the interview and drafting are any good, and tells us what stage 1 must enforce. Stage 2 only after stage 1 has been used for a while.
 
@@ -68,7 +68,7 @@ Personas are compiled in. The prompts are constants in `SystemPromptBuilder`, an
 | `role` | One line. This is what the other personas see when deciding whether to hand off. |
 | `prompt` | The full persona prompt. |
 
-A new persona is never a handoff target at creation. There is no input to set it; promotion is a separate user decision (see section 9).
+`handoff` (optional boolean, default **true**): whether other personas and the `handoff` tool may hand a conversation to the new persona. A created persona is a handoff target by default, so the user (`/handoff`) and the model can hand to it the moment it exists; pass `false` for a persona only the user should start. The approval prompt shows the value ("Handoff target: yes" or "no").
 
 ### 5.2 Steps
 
@@ -130,7 +130,7 @@ A new persona is never a handoff target at creation. There is no input to set it
   `name` is required. `role` defaults to the name, `handoff` to false, `aliases` to none. `order` sorts the list and the lowest is the default persona; a new persona without it goes last, and an override without it keeps the built-in's position. An invalid file is skipped with a warning and the rest still load.
 * **Where.** Built-in (embedded), user (`~/.agentsharp/superprompts`), project (`.agentsharp/superprompts` in the working directory). A user file may add a persona or replace a built-in one. A project file may only add new ones, because a repository you clone could otherwise change what a persona you trust says. Open: whether project-level ones are committed to the repository.
 * **Load.** At startup, from all three, in that order. A key or alias must not clash with another persona's.
-* **Limits.** The `handoff` tool's schema (its list of persona names) is built once per session, so a new handoff target appears to the model after `/clear` or a restart, though the tool's own validation and the persona list in each prompt use the current set.
+* **Limits.** The handoff tool's schema and description follow the registry (see section 9), but the persona list inside the system prompt is built when a conversation starts, is cleared, is loaded or is handed over.
 * **Files are not locked.** A locked file would stop your editor saving (many editors replace the file by renaming), has no effect on Linux and macOS, and would block any tool that writes persona files. Instead, a persona whose file is deleted or becomes invalid is *retired*: the registry keeps its last good version, it still resolves by name and alias, so a conversation using it carries on, but it is not listed and cannot be handed to. A file with its name coming back makes it live again. Retired personas are kept until the app exits, and a retired name can still be typed in `--Superprompt` or `/clear`. If an invalid edit is to a file that replaced a built-in, the built-in takes over again, with a warning.
 * **Handoff stack.** The saved stack stores nicknames, so a stack that names a created persona resolves only if its file is still present; otherwise `/load` reports it as missing.
 
@@ -138,11 +138,11 @@ A new persona is never a handoff target at creation. There is no input to set it
 
 * The alchemist is a built-in persona, listed like the others, with its nickname `alchemist`.
 * `/status` and the persona list say which personas are built-in and which were created.
-* Handoff to and return from a created persona work the same as for built-in ones, once it has been promoted to a handoff target.
+* Handoff to and return from a created persona work the same as for built-in ones. The `handoff` tool's list of names (an enum) and its description (names and one-line roles of the targets) are rebuilt whenever the set of targets changes, and the tool definitions are sent with every request, so the model is offered a new persona on its next call, in the same session.
 
-## 9. Promotion to a handoff target
+## 9. Handoff targets
 
-Adding a nickname to `HandoffPersonas` makes the tool schema, the persona list in each prompt and the validation follow. For created personas that list must become dynamic. Promotion is a user action, not something the tool or the alchemist does on its own. Open: whether it is a second tool action, a slash command, or an edit of the persona file.
+A persona is a handoff target when its file says `handoff: true`; `create_digital` writes `true` unless told otherwise. `SystemPromptBuilder.HandoffPersonas` reads the registry, so the tool's validation, its schema (rebuilt when the set changes, `HandoffTool.InputSchema`) and its description follow at once. One thing is not refreshed mid-conversation: the "Personas you can hand off to" list inside the system prompt, which is built when a conversation starts, is cleared, is loaded or is handed to another persona. The tool description carries the same names and roles, so the model still knows a new persona's role. To turn handoff on or off later, edit the `handoff:` line in the file; the file tools ask about that edit (it is a header change, so even a per-file grant does not cover it).
 
 ## 10. Testing
 
@@ -150,8 +150,9 @@ Adding a nickname to `HandoffPersonas` makes the tool schema, the persona list i
 |---|---|
 | A valid call writes the file and registers the persona | Happy path; the persona resolves by nickname and alias. |
 | Each refusal in 5.3 is enforced | One test per refusal; nothing is written. |
-| A created persona is not a handoff target | Not in the handoff tool schema until promoted. |
-| A promoted persona is a handoff target | Modeled on `Code_IsAHandoffTarget_...` in `AgentBuilderTests`. |
+| A created persona is a handoff target by default | In `HandoffKeys`; the file says `handoff: true`. |
+| `handoff: false` opts out | Not in `HandoffKeys`; the file says `handoff: false`. |
+| The handoff tool follows the registry | A persona added after the tool was built appears in its schema, description and validation; a non-target does not; it is withdrawn when it stops being a target. |
 | Decline writes nothing | Approval refused, no file, no registration. |
 | Created personas load at startup | Round trip through the file. |
 | A saved stack naming a missing persona is reported on `/load` | No crash. |
@@ -165,7 +166,7 @@ Re-run `AgentSharp.HandoffLive` to see whether adding created personas changes h
 | 0 | Alchemist persona (`Superprompts/alchemist.md`) | Built. Not yet reviewed against the prompt-review checklist |
 | 1a | Persona registry, files, watcher, retirement | Built |
 | 1b | `create_digital` tool with validation and approval (Destructive, asked every time) | Built |
-| 1c | File load at startup, `/personas`, `/status` list and `[user]`/`[project]` tags, `/handoff`, `/return` | Built in both apps. Promotion is an edit of `handoff:` in the file |
+| 1c | File load at startup, `/personas`, `/status` list and `[user]`/`[project]` tags, `/handoff`, `/return` | Built in both apps. Created personas are handoff targets by default; to change it, edit `handoff:` in the file |
 | 2 | Throwaway personas | Not built (see section 4) |
 
 ## 12. Open questions for the owner
@@ -173,7 +174,8 @@ Re-run `AgentSharp.HandoffLive` to see whether adding created personas changes h
 * Does `create_digital` stay create-only, or later take edit, promote and retire actions? (Today: create-only.)
 * Are project-level persona files committed to the repository? (Not decided; a project file can add personas but never replace one.)
 * The cap on created personas is 20 (`CreateDigitalTool.MaxCreatedPersonas`). Is that right?
-* Promotion to a handoff target is a manual edit of `handoff: true` in the file. Should there be a command or tool action for it?
+* Created personas are handoff targets by default. Every target is described in every prompt, so many of them cost tokens and can blur routing; the cap of 20 is the only limit. Should the default change once there are many (for example `false` beyond some count), or should a triage persona choose among them?
+* Should the "Personas you can hand off to" list in the system prompt refresh mid-conversation too, instead of only when a conversation starts, is cleared, is loaded or is handed over?
 * Should the handoff tool's name list refresh when persona files change, instead of once per session?
 * The per-file grant covers the prompt but not the header (section 6, option C). Should a changed `handoff:` line ever be grantable, or always asked about? Today: always.
 * Should a grant also be offered for `create_digital`'s file after it is created (so the alchemist can refine a persona it just made without asking each time)? Today: only the file tools' prompt offers it, so the first refinement asks and `s` then grants.

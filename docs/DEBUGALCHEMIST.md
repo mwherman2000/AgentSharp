@@ -87,7 +87,7 @@ A successful call returns the file path and `/clear <nickname>` as the way to us
 
 `write_file` and `edit_file` are asked about too when their path is inside a `.agentsharp/superprompts` folder: the same prompt, with the warning "This writes a persona (superprompt) file...", every time and with no "always allow" (see [ALCHEMISTDESIGN.md](ALCHEMISTDESIGN.md) section 6). If a persona appears that nobody approved, look at the file's `Path` (`PersonaRegistry.Current.Find("x").Path`) and at the tool calls in the transcript; a symbolic link or a Windows 8.3 short name into the folder is not recognized.
 
-`create_digital` is `Destructive`, so every call asks. The prompt shows the nickname, scope, name, role, aliases, "Handoff target: no", and the whole prompt, each line prefixed `|`. Answering `s` (always allow) is treated as allow-once for this tool only (`ApprovalGate.AlwaysAsk`); other tools keep their "always allow". If the prompt looks like escaped JSON, `AgentLoop.SummarizeCreateDigital` was bypassed: check that the tool name is exactly `create_digital`.
+`create_digital` is `Destructive`, so every call asks. The prompt shows the nickname, scope, name, role, aliases, "Handoff target: yes" (or "no" when created with `handoff: false`), and the whole prompt, each line prefixed `|`. Answering `s` (always allow) is treated as allow-once for this tool only (`ApprovalGate.AlwaysAsk`); other tools keep their "always allow". If the prompt looks like escaped JSON, `AgentLoop.SummarizeCreateDigital` was bypassed: check that the tool name is exactly `create_digital`.
 
 ## The alchemist behaves badly
 
@@ -114,7 +114,7 @@ dotnet test AgentSharp.Tests --filter "FullyQualifiedName~SystemPromptBuilder"
 | File | Covers |
 |---|---|
 | `Context/PersonaCatalogTests.cs` | Built-ins load without warnings; aliases and handoff targets; override and clash rules; invalid files; CRLF and BOM; ordering; retirement; the watcher (add, change, delete, invalid edit, dispose) |
-| `Tools/CreateDigitalToolTests.cs` | Writes and registers; not a handoff target; scopes; every refusal; no overwrite; the cap; no temp files; approval is asked every time |
+| `Tools/CreateDigitalToolTests.cs` | Writes and registers; handoff target by default and `handoff: false`; the handoff tool follows the registry; scopes; every refusal; no overwrite; the cap; no temp files; approval is asked every time |
 
 The watcher tests wait up to 5 seconds for a reload; a failure that says a file "was not picked up" on a loaded machine is more likely timing than a bug, so re-run it once before digging.
 
@@ -170,15 +170,15 @@ dotnet run --project AgentLucyApp -- --provider anthropic --model claude-sonnet-
 
 1. **Interview.** Type: `I want a persona called tess who recommends teas.` Expect questions about audience, voice and limits, not a tool call. Answer briefly, or say "go with sensible defaults".
 2. **Draft.** Expect a nickname, display name, role and the whole prompt in a code block. If it jumps to creating without showing the prompt, that is a bug in `alchemist.md` (the approval prompt in step 3 is the real guard).
-3. **Approve.** Say the draft is good. Expect `Alchemist Pando wants to run create_digital (Destructive):` with the nickname, scope, name, role, aliases, `Handoff target: no`, and the whole prompt, each line starting `|`. The prompt offers only `a = allow, d = deny` (no `s` always allow).
+3. **Approve.** Say the draft is good. Expect `Alchemist Pando wants to run create_digital (Destructive):` with the nickname, scope, name, role, aliases, `Handoff target: yes`, and the whole prompt, each line starting `|`. The prompt offers only `a = allow, d = deny` (no `s` always allow).
 4. **Deny first.** Answer `n`. Expect the model to say the request was not approved. `~/.agentsharp/superprompts/tess.md` must not exist.
-5. **Approve.** Ask it to try again and answer `y`. Expect a result naming the file path and `/clear tess`. Check the file: header with `handoff: false`, then the prompt.
+5. **Approve.** Ask it to try again and answer `y`. Expect a result naming the file path and `/clear tess`. Check the file: header with `handoff: true` (the default), then the prompt.
 6. **Same session.** Run `/personas`. Expect `tess` listed with `[user]`. Run `/clear tess`. Expect `(new conversation with Tess Pando)`, and a reply in Tess's voice to a question.
 7. **Watcher: change.** Edit `tess.md` in an editor (change a sentence in the prompt) and save. Within a second, expect `Superprompts reloaded: changed tess` on the console. Run `/clear tess` and check the new wording is used.
 8. **Watcher: invalid edit.** Delete the first `---` line from `tess.md` and save. Expect `Superprompt file skipped: ...tess.md: the file must start with a '---' header line.` and `Superprompts reloaded: removed tess`. `/personas` no longer lists `tess`, but `/clear tess` still works with the last good prompt (retired). Restore the line and save: `added tess`, and it is listed again.
 9. **Watcher: delete and restore.** Delete the file: `removed tess`; `/clear tess` still works. Put it back: `added tess`.
 10. **Refusals.** Go back to the alchemist (`/clear alchemist`) and ask for a persona with nickname `andy`, then one with the alias `trump`. Expect the tool to refuse with `already used by the persona ...` and no file written. Ask for the nickname `My Persona`: expect `Invalid nickname`.
-11. **Handoff target.** Change `handoff: false` to `handoff: true` in `tess.md` and save. Start a different persona with `/clear lucy` and ask which personas it can hand off to; after a restart (the handoff tool's list is built once per session) the model can hand off to `tess`.
+11. **Handoff target.** `tess` was created with `handoff: true`, so no restart or edit is needed. In the same session ask the model (as `lucy` or any persona) to hand off to `tess`; expect a `handoff` tool call naming `tess` and, on your next prompt, `Handoff: Lucy Pando -> Tess Pando`. Then set `handoff: false` in `tess.md` (the file tools ask, since it is a header edit) and ask again: the tool now refuses `tess`, and `/handoff tess` still works.
 12. **Handoff and return.** `/handoff tess trying it`, ask a question, `/return done`. Expect the persona and the prompt name to change each way and the stack line to follow.
 13. **Project scope.** In a scratch project folder, ask the alchemist for a persona with scope `project`. Expect the file in `.agentsharp/superprompts/` there, tagged `[project]` in `/personas`. Then add a `.agentsharp/superprompts/andy.md` by hand and restart: expect `Superprompt file skipped: ... a Project file cannot replace it`.
 14. **Per-file grant, prompt only.** With `tess` created, ask the model (any persona) to change one sentence of the prompt in `~/.agentsharp/superprompts/tess.md` using `edit_file`. Expect the approval prompt with the warning "This writes a persona (superprompt) file..." and the key `s = allow edits to this file's prompt for this session (header changes still ask): tess.md`. Answer `s`. Ask for another prompt-only edit: expect no prompt. Ask it to change `handoff: false` to `handoff: true`: expect the prompt again with "This edit changes the persona's header...". Ask for an edit to a different persona file: expect the usual prompt. Restart the app: the grant is gone.
