@@ -72,6 +72,14 @@ public class ApprovalGate
         if (tool.RiskLevel == ToolRiskLevel.ReadOnly)
             return true;
 
+        // Writing a persona file is asked about every time, whatever the tool's own risk level or an earlier
+        // "always allow": the persona's prompt would control the conversation once it is used or handed to,
+        // so it must not appear without the user seeing it. create_digital asks too; this covers the file tools.
+        if (WritesPersonaFile(tool, input))
+            return await PromptForApproval(tool, inputSummary,
+                "This writes a persona (superprompt) file. A persona's prompt controls the conversation once it is used or handed to.",
+                ct, askEveryTime: true);
+
         // Check if user has granted "always allow" for this tool
         if (_alwaysAllowed.ContainsKey(tool.Name))
             return true;
@@ -102,7 +110,18 @@ public class ApprovalGate
     public bool IsShellCommandDangerous(string command) =>
         _shellClassifier.IsDangerous(command);
 
-    private async Task<bool> PromptForApproval(ITool tool, string inputSummary, string? dangerReason, CancellationToken ct)
+    /// <summary>The file tools that take a <c>path</c> and change what is at it.</summary>
+    private static readonly HashSet<string> FileWriters = new(StringComparer.OrdinalIgnoreCase) { "write_file", "edit_file" };
+
+    private static bool WritesPersonaFile(ITool tool, JsonElement input) =>
+        FileWriters.Contains(tool.Name)
+        && input.ValueKind == JsonValueKind.Object
+        && input.TryGetProperty("path", out var path)
+        && path.ValueKind == JsonValueKind.String
+        && Context.PersonaRegistry.IsPersonaFilePath(path.GetString());
+
+    private async Task<bool> PromptForApproval(ITool tool, string inputSummary, string? dangerReason, CancellationToken ct,
+        bool askEveryTime = false)
     {
         // No one to ask (one-shot/autonomous host, or a library consumer that didn't
         // supply a prompt): deny cleanly. A denied result feeds back to the model as
@@ -120,14 +139,15 @@ public class ApprovalGate
             // Another concurrent agent may have just been granted "always allow" for
             // this same tool while this call was waiting for the lock -- re-check so
             // we don't prompt redundantly for something already approved.
-            if (_alwaysAllowed.ContainsKey(tool.Name))
+            if (!askEveryTime && _alwaysAllowed.ContainsKey(tool.Name))
                 return true;
 
             var answer = await _prompt.PromptAsync(
-                new ApprovalRequest(tool.Name, tool.RiskLevel, inputSummary, dangerReason), ct);
+                new ApprovalRequest(tool.Name, tool.RiskLevel, inputSummary, dangerReason,
+                    OfferAlways: !askEveryTime && !AlwaysAsk.Contains(tool.Name)), ct);
 
             // "Always allow" is honored for most tools, but not for tools that must be approved every time.
-            if (answer == ApprovalResult.AlwaysAllow && !AlwaysAsk.Contains(tool.Name))
+            if (answer == ApprovalResult.AlwaysAllow && !askEveryTime && !AlwaysAsk.Contains(tool.Name))
                 _alwaysAllowed[tool.Name] = 0;
 
             return answer != ApprovalResult.Deny;

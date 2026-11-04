@@ -83,7 +83,9 @@ A successful call returns the file path and `/clear <nickname>` as the way to us
 
 ### Approval
 
-`create_digital` only governs itself: `write_file` and `edit_file` can still write persona files without this prompt (see the known gap in [ALCHEMISTDESIGN.md](ALCHEMISTDESIGN.md) section 6). If a persona appears that nobody approved, look at the file's `Path` (`PersonaRegistry.Current.Find("x").Path`) and at the tool calls in the transcript.
+**Why `s` (always allow) is not offered** for `create_digital` or for a write to a persona file: the gate remembers "always" by tool name for the session, so one answer would approve every later persona write unseen, and a persona's prompt controls the conversation once it is used. If you see an app that offers `s` on one of these, `ApprovalRequest.OfferAlways` is being set wrongly. Reasoning in [ALCHEMISTDESIGN.md](ALCHEMISTDESIGN.md) section 6.
+
+`write_file` and `edit_file` are asked about too when their path is inside a `.agentsharp/superprompts` folder: the same prompt, with the warning "This writes a persona (superprompt) file...", every time and with no "always allow" (see [ALCHEMISTDESIGN.md](ALCHEMISTDESIGN.md) section 6). If a persona appears that nobody approved, look at the file's `Path` (`PersonaRegistry.Current.Find("x").Path`) and at the tool calls in the transcript; a symbolic link or a Windows 8.3 short name into the folder is not recognized.
 
 `create_digital` is `Destructive`, so every call asks. The prompt shows the nickname, scope, name, role, aliases, "Handoff target: no", and the whole prompt, each line prefixed `|`. Answering `s` (always allow) is treated as allow-once for this tool only (`ApprovalGate.AlwaysAsk`); other tools keep their "always allow". If the prompt looks like escaped JSON, `AgentLoop.SummarizeCreateDigital` was bypassed: check that the tool name is exactly `create_digital`.
 

@@ -35,8 +35,8 @@ public sealed class ConsoleApprovalPrompt : IApprovalPrompt
         AnsiConsole.MarkupLine($"[yellow]Action:[/] {Markup.Escape(request.InputSummary)}");
         AnsiConsole.WriteLine();
 
-        // create_digital is always asked (ApprovalGate.AlwaysAsk), so don't offer "always allow" for it.
-        var offerAlways = request.ToolName != "create_digital";
+        // Some calls are asked about every time (create_digital, writes to persona files), so don't offer "always allow".
+        var offerAlways = request.OfferAlways;
         AnsiConsole.MarkupLine(offerAlways
             ? "[yellow]Allow this tool execution?[/] (a = allow, d = deny, s = always allow this session)"
             : "[yellow]Allow this tool execution?[/] (a = allow, d = deny)");

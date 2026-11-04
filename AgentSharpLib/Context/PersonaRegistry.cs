@@ -22,6 +22,29 @@ public static class PersonaRegistry
     public static string ProjectDirectory(string projectDirectory) => Path.Combine(projectDirectory, ".agentsharp", "superprompts");
 
     /// <summary>
+    /// True if <paramref name="path"/> is inside a persona folder: any <c>.agentsharp/superprompts</c> directory, which
+    /// covers the user folder and every project folder. Relative paths are resolved against the current directory, as
+    /// the file tools do, and the comparison ignores case. The file tools use this to ask the user before they write
+    /// a persona file, because a persona's prompt controls the conversation once it is used or handed to.
+    /// </summary>
+    public static bool IsPersonaFilePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+        string full;
+        try { full = Path.GetFullPath(path.Trim()); }
+        catch (Exception) { return false; }
+
+        var parts = full.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        // Needs something after the folder name: the folder itself is not a file to write.
+        for (var i = 0; i + 2 < parts.Length; i++)
+            if (string.Equals(parts[i], ".agentsharp", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(parts[i + 1], "superprompts", StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
+    /// <summary>
     /// Loads the persona files from the user folder and the project folder now, and again whenever one changes,
     /// until the returned watcher is disposed. The user folder is created if it does not exist (the project folder is not).
     /// </summary>

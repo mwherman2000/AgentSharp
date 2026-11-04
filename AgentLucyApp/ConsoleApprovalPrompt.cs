@@ -5,7 +5,8 @@ namespace AgentLucyApp;
 /// <summary>
 /// Asks at the terminal before the agent runs a Destructive tool (e.g. a shell command).
 /// Answers, as in the main app: a = allow once, d = deny, s = always allow this tool for the session
-/// (not offered for create_digital, which is always asked). Whole words work too.
+/// (not offered when the call is asked about every time, e.g. create_digital or a write to a persona file).
+/// Whole words work too.
 /// </summary>
 internal sealed class ConsoleApprovalPrompt(Func<string> agentName) : IApprovalPrompt
 {
@@ -21,7 +22,7 @@ internal sealed class ConsoleApprovalPrompt(Func<string> agentName) : IApprovalP
         Console.WriteLine($"  {request.InputSummary}");
         if (request.DangerReason is not null)
             Console.WriteLine($"  Warning: {request.DangerReason}");
-        Console.Write(request.ToolName == "create_digital"
+        Console.Write(!request.OfferAlways
             ? "Allow this tool execution? (a = allow, d = deny): "
             : "Allow this tool execution? (a = allow, d = deny, s = always allow this session): ");
         Console.ResetColor();
@@ -30,7 +31,7 @@ internal sealed class ConsoleApprovalPrompt(Func<string> agentName) : IApprovalP
         return Task.FromResult(answer switch
         {
             "a" or "allow" or "y" or "yes" => ApprovalResult.Allow,
-            "s" or "always" when request.ToolName != "create_digital" => ApprovalResult.AlwaysAllow,
+            "s" or "always" when request.OfferAlways => ApprovalResult.AlwaysAllow,
             _ => ApprovalResult.Deny
         });
     }

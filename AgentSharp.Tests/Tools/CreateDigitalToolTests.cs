@@ -254,6 +254,88 @@ public class CreateDigitalToolTests : IDisposable
         Assert.Equal(1, prompt.Count);
     }
 
+    private static JsonElement PathInput(string path) => JsonSerializer.SerializeToElement(new { path, content = "x" });
+
+    [Theory]
+    [InlineData("write_file")]
+    [InlineData("edit_file")]
+    public async Task FileTools_AskBeforeWritingAPersonaFile_EvenThoughTheyAreWriteLevel(string toolName)
+    {
+        var prompt = new CountingPrompt(ApprovalResult.Allow);
+        var gate = new ApprovalGate(prompt);
+        var tool = new FakeTool(toolName, ToolRiskLevel.Write, _ => ToolResult.Success("ok"));
+
+        Assert.True(await gate.CheckApprovalAsync(tool, "write", PathInput("C:/Users/x/.agentsharp/superprompts/evil.md")));
+
+        Assert.Equal(1, prompt.Count);
+    }
+
+    [Theory]
+    [InlineData("work/.agentsharp/superprompts/evil.md")]
+    [InlineData("work/.AgentSharp/SuperPrompts/evil.md")]
+    [InlineData("work/.agentsharp\\superprompts\\evil.md")]
+    [InlineData("work/sub/../.agentsharp/superprompts/evil.md")]
+    [InlineData("work/.agentsharp/superprompts/nested/evil.md")]
+    public async Task FileTools_AskForEveryWayOfSpellingAPersonaPath(string path)
+    {
+        var prompt = new CountingPrompt(ApprovalResult.Deny);
+        var gate = new ApprovalGate(prompt);
+        var tool = new FakeTool("write_file", ToolRiskLevel.Write, _ => ToolResult.Success("ok"));
+
+        Assert.False(await gate.CheckApprovalAsync(tool, "write", PathInput(path)));
+
+        Assert.Equal(1, prompt.Count);
+    }
+
+    [Theory]
+    [InlineData("work/notes.md")]
+    [InlineData("work/.agentsharp/config.json")]
+    [InlineData("work/superprompts/x.md")]
+    [InlineData("work/.agentsharp/superprompts")]
+    public async Task FileTools_DoNotAskForOtherPaths(string path)
+    {
+        var prompt = new CountingPrompt(ApprovalResult.Deny);
+        var gate = new ApprovalGate(prompt);
+        var tool = new FakeTool("write_file", ToolRiskLevel.Write, _ => ToolResult.Success("ok"));
+
+        Assert.True(await gate.CheckApprovalAsync(tool, "write", PathInput(path)));
+
+        Assert.Equal(0, prompt.Count);
+    }
+
+    [Fact]
+    public async Task APersonaFileWrite_IsAskedEveryTime_AndAlwaysAllowDoesNotStick()
+    {
+        var prompt = new CountingPrompt(ApprovalResult.AlwaysAllow);
+        var gate = new ApprovalGate(prompt);
+        var tool = new FakeTool("write_file", ToolRiskLevel.Write, _ => ToolResult.Success("ok"));
+        var persona = PathInput("work/.agentsharp/superprompts/a.md");
+
+        await gate.CheckApprovalAsync(tool, "write", persona);
+        await gate.CheckApprovalAsync(tool, "write", persona);
+        // and an ordinary write is still auto-approved, with no prompt
+        await gate.CheckApprovalAsync(tool, "write", PathInput("work/readme.md"));
+
+        Assert.Equal(2, prompt.Count);
+    }
+
+    [Fact]
+    public async Task APersonaFileWrite_IsDenied_WhenNoOneCanAnswer()
+    {
+        var gate = new ApprovalGate();
+        var tool = new FakeTool("write_file", ToolRiskLevel.Write, _ => ToolResult.Success("ok"));
+
+        Assert.False(await gate.CheckApprovalAsync(tool, "write", PathInput("work/.agentsharp/superprompts/a.md")));
+    }
+
+    [Fact]
+    public void IsPersonaFilePath_HandlesEmptyAndInvalidInput()
+    {
+        Assert.False(PersonaRegistry.IsPersonaFilePath(null));
+        Assert.False(PersonaRegistry.IsPersonaFilePath("  "));
+        Assert.False(PersonaRegistry.IsPersonaFilePath("bad\0path/.agentsharp/superprompts/x.md"));
+    }
+
     private sealed class CountingPrompt(ApprovalResult answer) : IApprovalPrompt
     {
         public int Count { get; private set; }
