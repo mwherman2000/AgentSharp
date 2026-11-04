@@ -6,7 +6,7 @@ namespace AgentSharpLib;
 /// Settings for building an agent: which LLM to talk to and how, plus per-turn
 /// limits and persona selection. A plain settings bag -- the library never reads
 /// the environment, command line, or config files itself; hosts populate this
-/// however they like (the CLI does it in AgentSharpApp.Cli.CommandLineParser).
+/// however they like (the CLI does it in AgentSharpLib.CommandLineParser).
 /// Property names double as the snake_case keys of ~/.agentsharp/config.json.
 /// </summary>
 public class AgentOptions

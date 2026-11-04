@@ -180,6 +180,37 @@ public class PersonaCatalogTests : IDisposable
     }
 
     [Fact]
+    public void DescribeChangesFrom_ReportsAddedChangedAndRemoved_AndNullWhenNothingChanged()
+    {
+        File(_user, "tutor", "name: Tutor", "first");
+        File(_user, "gone", "name: Gone");
+        var before = PersonaCatalog.Load(_user, null);
+        Assert.Null(before.DescribeChangesFrom(PersonaCatalog.Load(_user, null)));
+
+        File(_user, "tutor", "name: Tutor", "second");
+        File(_user, "fresh", "name: Fresh");
+        System.IO.File.Delete(Path.Combine(_user, "gone.md"));
+        var after = PersonaCatalog.Load(_user, null);
+
+        var text = after.DescribeChangesFrom(before)!;
+        Assert.Contains("added fresh", text);
+        Assert.Contains("changed tutor", text);
+        Assert.Contains("removed gone", text);
+    }
+
+    [Fact]
+    public void NewWarningsSince_ListsOnlyTheFilesSkippedByThisReload()
+    {
+        WriteFile(Path.Combine(_user, "broken.md"), "nope");
+        var before = PersonaCatalog.Load(_user, null);
+        WriteFile(Path.Combine(_user, "broken2.md"), "also nope");
+        var after = PersonaCatalog.Load(_user, null);
+
+        Assert.Single(after.NewWarningsSince(before));
+        Assert.Contains("broken2.md", after.NewWarningsSince(before).Single());
+    }
+
+    [Fact]
     public void Role_DefaultsToTheName()
     {
         File(_user, "plain", "name: Plain Persona");

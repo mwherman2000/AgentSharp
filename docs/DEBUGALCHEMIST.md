@@ -114,6 +114,80 @@ dotnet test AgentSharp.Tests --filter "FullyQualifiedName~SystemPromptBuilder"
 
 The watcher tests wait up to 5 seconds for a reload; a failure that says a file "was not picked up" on a loaded machine is more likely timing than a bug, so re-run it once before digging.
 
+## Demo and test script
+
+Run this end to end after any change to personas, the watcher, `create_digital` or the approval prompt. Parts A and B need no API key or model. Part C needs a model and a real terminal, because the approval prompt cannot be answered from piped input. Both apps have `/personas`, `/handoff <persona> [reason]`, `/return [reason]` and `/clear [persona]`, and both print the same reload and skipped-file notices, so every step works in either. The steps below name the Lucy app because it accepts piped commands (Part B); the main app needs a real console, so use it for Part C only. Both apps also accept the same command-line options (`--dir`, `--prompt` for one-shot, `--help`, `--version`, `~/.agentsharp/config.json`; see `CommandLineParser`) and the same approval keys (`a` allow, `d` deny, `s` always allow; no `s` for `create_digital`). The remaining differences are presentation only (the main app uses colour and tables, the Lucy app plain text) and the defaults: the Lucy app starts as `lucy` and keeps its sessions in `~/.agentsharp/lucy`.
+
+Setup, from the repository root. Use a throwaway key if you have no real one (it is only used from Part C):
+
+```
+dotnet build AgentSharp.sln
+$env:ANTHROPIC_API_KEY = "<your key>"      # PowerShell; Part C only
+```
+
+Clean up first, so earlier runs do not interfere: delete `~/.agentsharp/superprompts/tess.md` and `.agentsharp/superprompts/` if they exist.
+
+### Part A: automated tests (about 5 seconds)
+
+```
+dotnet test AgentSharp.Tests --filter "FullyQualifiedName~Persona|FullyQualifiedName~CreateDigital|FullyQualifiedName~SystemPromptBuilder"
+```
+
+Expect `Passed!` and no failures. A failure that says a file "was not picked up" is probably timing; re-run once.
+
+### Part B: commands with no model (piped input)
+
+Piped input runs commands only. Do not send a line that is not a command, because that calls the model.
+
+```
+printf '/personas\n/handoff\n/return\n/handoff alchemist testing\n/handoff nosuch\n/return back\n/clear alchemist\n/clear nosuch\n/exit\n' | dotnet run --no-build --project AgentLucyApp
+```
+
+| Step | Expect |
+|---|---|
+| `/personas` | 13 personas, `andy` first and `alchemist` last, each with its role; no `[user]` or `[project]` tags yet |
+| `/handoff` | `Usage: /handoff <persona> [reason]. Handoff stack: (empty)` |
+| `/return` | `Nothing to return to: this conversation has not been handed over.` |
+| `/handoff alchemist testing` | An auto-save line, then `Handoff: Lucy Pando -> Alchemist Pando (testing). Handoff stack: Lucy Pando > Alchemist Pando (current)`; the prompt becomes `Alchemist Pando>` |
+| `/handoff nosuch` | `Unknown --Superprompt 'nosuch'. Valid options: ...`; nothing changes |
+| `/return back` | An auto-save line, `Return: Alchemist Pando -> Lucy Pando (back)`, stack `(empty)` |
+| `/clear alchemist` | `(new conversation with Alchemist Pando)` |
+| `/clear nosuch` | The same "Unknown" message; the persona stays Alchemist Pando |
+
+The handoff and return auto-saves write a `.docx` transcript into the current directory and a session file in `~/.agentsharp/lucy/sessions`. Delete both after the test (names start `lucy-handoff-` and `alchemist-return-`).
+
+### Part C: the real flow (model and terminal)
+
+Start the app as the alchemist:
+
+```
+dotnet run --project AgentLucyApp -- --provider anthropic --model claude-sonnet-5 --Superprompt alchemist
+```
+
+1. **Interview.** Type: `I want a persona called tess who recommends teas.` Expect questions about audience, voice and limits, not a tool call. Answer briefly, or say "go with sensible defaults".
+2. **Draft.** Expect a nickname, display name, role and the whole prompt in a code block. If it jumps to creating without showing the prompt, that is a bug in `alchemist.md` (the approval prompt in step 3 is the real guard).
+3. **Approve.** Say the draft is good. Expect `Alchemist Pando wants to run create_digital (Destructive):` with the nickname, scope, name, role, aliases, `Handoff target: no`, and the whole prompt, each line starting `|`. The prompt offers only `a = allow, d = deny` (no `s` always allow).
+4. **Deny first.** Answer `n`. Expect the model to say the request was not approved. `~/.agentsharp/superprompts/tess.md` must not exist.
+5. **Approve.** Ask it to try again and answer `y`. Expect a result naming the file path and `/clear tess`. Check the file: header with `handoff: false`, then the prompt.
+6. **Same session.** Run `/personas`. Expect `tess` listed with `[user]`. Run `/clear tess`. Expect `(new conversation with Tess Pando)`, and a reply in Tess's voice to a question.
+7. **Watcher: change.** Edit `tess.md` in an editor (change a sentence in the prompt) and save. Within a second, expect `Superprompts reloaded: changed tess` on the console. Run `/clear tess` and check the new wording is used.
+8. **Watcher: invalid edit.** Delete the first `---` line from `tess.md` and save. Expect `Superprompt file skipped: ...tess.md: the file must start with a '---' header line.` and `Superprompts reloaded: removed tess`. `/personas` no longer lists `tess`, but `/clear tess` still works with the last good prompt (retired). Restore the line and save: `added tess`, and it is listed again.
+9. **Watcher: delete and restore.** Delete the file: `removed tess`; `/clear tess` still works. Put it back: `added tess`.
+10. **Refusals.** Go back to the alchemist (`/clear alchemist`) and ask for a persona with nickname `andy`, then one with the alias `trump`. Expect the tool to refuse with `already used by the persona ...` and no file written. Ask for the nickname `My Persona`: expect `Invalid nickname`.
+11. **Handoff target.** Change `handoff: false` to `handoff: true` in `tess.md` and save. Start a different persona with `/clear lucy` and ask which personas it can hand off to; after a restart (the handoff tool's list is built once per session) the model can hand off to `tess`.
+12. **Handoff and return.** `/handoff tess trying it`, ask a question, `/return done`. Expect the persona and the prompt name to change each way and the stack line to follow.
+13. **Project scope.** In a scratch project folder, ask the alchemist for a persona with scope `project`. Expect the file in `.agentsharp/superprompts/` there, tagged `[project]` in `/personas`. Then add a `.agentsharp/superprompts/andy.md` by hand and restart: expect `Superprompt file skipped: ... a Project file cannot replace it`.
+
+Clean up: delete `~/.agentsharp/superprompts/tess.md` and the scratch project; delete any test sessions and transcripts the run created.
+
+### One-shot check of the approval gate (no terminal needed)
+
+```
+dotnet run --no-build --project AgentSharpApp -- -p anthropic -m claude-sonnet-5 --Superprompt alchemist "Create persona tess (name Tess Pando, role tea expert) with the prompt 'You are Tess Pando, a tea expert.' I approve it; create it now with create_digital."
+```
+
+Expect `Auto-denied create_digital -- Destructive tool needs approval but no interactive console is attached.` and no file. This shows the tool is called and the gate refuses an unattended run; it cannot show an approved write.
+
 ## Not built yet: temporary personas
 
 A temporary persona (stage 2 in the design) is one that is created for one conversation and not saved as a file. It is **not implemented**: `create_digital` always writes a file. The intended way to mark one is described in [ALCHEMISTDESIGN.md](ALCHEMISTDESIGN.md) section 4.

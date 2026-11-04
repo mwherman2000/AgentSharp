@@ -1,4 +1,4 @@
-using AgentSharpApp.Cli;
+using AgentSharpLib;
 
 namespace AgentSharp.Tests.Cli;
 

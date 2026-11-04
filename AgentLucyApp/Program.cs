@@ -15,7 +15,27 @@ using AgentSharpLib.Transcripts;
 // supplies the console I/O.
 // ============================================================================
 
-var options = ParseArgs(args);
+// Same command line as the main app: --provider, --model, --api-key, --base-url, --timeout, --max-tokens,
+// --max-iterations, --dir, --Superprompt, --prompt (one-shot), --help, --version; ~/.agentsharp/config.json
+// and the AGENT_* variables apply too (see CommandLineParser). Lucy is the default persona.
+var commandLine = CommandLineParser.Parse(args);
+if (commandLine.ShowHelp)
+{
+    PrintUsage(Console.Out);
+    return 0;
+}
+if (commandLine.ShowVersion)
+{
+    Console.WriteLine("AgentLucy v0.1.0");
+    return 0;
+}
+var options = commandLine.Options;
+options.SuperPrompt ??= "lucy";
+
+// Set the process directory first: everything that reads it (the project scan, memory, session files,
+// transcripts, the project superprompts folder) follows, as in the main app.
+if (options.WorkingDirectory is not null)
+    Directory.SetCurrentDirectory(options.WorkingDirectory);
 
 // Tracing is off unless AGENT_ENABLE_OTEL is set, or /jaeger turns it on mid-session.
 AgentTelemetry.Initialize();
@@ -28,46 +48,35 @@ var sessions = new SessionManager(Path.Combine(
 
 // Personas: the built-in superprompts, plus any files in ~/.agentsharp/superprompts and
 // ./.agentsharp/superprompts, rescanned whenever one is added, changed or deleted.
-using var personaWatcher = PersonaRegistry.Watch(Directory.GetCurrentDirectory());
-foreach (var warning in PersonaRegistry.Current.Warnings)
-    Console.Error.WriteLine($"Superprompt file skipped: {warning}");
-PersonaRegistry.Changed += (old, now) =>
-{
-    var added = now.Keys.Except(old.Keys).ToList();
-    var removed = old.Keys.Except(now.Keys).ToList(); // still resolve for a conversation already using one
-    var changed = now.Personas.Where(p => old.Find(p.Key) is { } o && (o.Prompt != p.Prompt || o.Name != p.Name || o.Role != p.Role
-        || o.IsHandoffTarget != p.IsHandoffTarget)).Select(p => p.Key).ToList();
-    var parts = new[] { added.Count > 0 ? "added " + string.Join(", ", added) : "", changed.Count > 0 ? "changed " + string.Join(", ", changed) : "",
-        removed.Count > 0 ? "removed " + string.Join(", ", removed) : "" }.Where(s => s.Length > 0).ToList();
-    if (parts.Count > 0)
-        Console.Error.WriteLine("Superprompts reloaded: " + string.Join("; ", parts));
-    foreach (var w in now.Warnings.Except(old.Warnings))
-        Console.Error.WriteLine($"Superprompt file skipped: {w}");
-};
+using var personaWatcher = PersonaRegistry.WatchAndReport(Directory.GetCurrentDirectory(),
+    what => Console.Error.WriteLine(what), warning => Console.Error.WriteLine(warning));
 
-AgentSession lucy;
+AgentSession lucy = null!; // assigned below; the approval prompt reads it later to name the current persona
 try
 {
     lucy = await new AgentBuilder()
         .WithOptions(options)
         .WithOutput(new ConsoleAgentOutput())
-        .WithApprovalPrompt(new ConsoleApprovalPrompt())
+        .WithApprovalPrompt(new ConsoleApprovalPrompt(() => SystemPromptBuilder.ResolveAgentName(lucy.SuperPrompt)))
         .WithSessionManager(sessions)
         .BuildAsync();
 }
 catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
 {
     Console.Error.WriteLine(ex.Message);
-    Console.Error.WriteLine("Usage: AgentLucyApp [--provider <name>] [--model <name>] [--api-key <key>] [--max-tokens <n>] [--Superprompt <name>]");
+    PrintUsage(Console.Error);
     return 1;
 }
 
 var agentName = SystemPromptBuilder.ResolveAgentName(lucy.SuperPrompt);
 
-Console.ForegroundColor = ConsoleColor.Magenta;
-Console.WriteLine($"{agentName}  ({lucy.Llm.ProviderName} / {lucy.Llm.ModelId})");
-Console.ResetColor();
-Console.WriteLine("Type a message, or /help for commands.");
+if (commandLine.Prompt is null)
+{
+    Console.ForegroundColor = ConsoleColor.Magenta;
+    Console.WriteLine($"{agentName}  ({lucy.Llm.ProviderName} / {lucy.Llm.ModelId})");
+    Console.ResetColor();
+    Console.WriteLine("Type a message, or /help for commands.");
+}
 
 // Ctrl+C during a reply cancels just that turn; at the prompt it exits as usual.
 CancellationTokenSource? turnCts = null;
@@ -79,6 +88,14 @@ Console.CancelKeyPress += (_, e) =>
         cts.Cancel();
     }
 };
+
+// One-shot mode (a prompt on the command line): run a single turn and exit, as the main app does.
+if (commandLine.Prompt is { } oneShotPrompt)
+{
+    var completed = await RunTurnAsync(oneShotPrompt);
+    AgentTelemetry.Shutdown();
+    return completed ? 0 : 1;
+}
 
 var running = true;
 while (running)
@@ -114,11 +131,56 @@ while (running)
                 running = false;
                 break;
             case "/help" or "/h" or "/?":
-                PrintHelp(agentName);
+                PrintHelp(SystemPromptBuilder.ResolveAgentName(lucy.SuperPrompt));
                 break;
             case "/clear" or "/cls":
-                lucy.Reset();
-                Console.WriteLine("(new conversation)");
+                // An optional persona name starts the new conversation as that persona, including one
+                // just made with create_digital (see /personas).
+                try
+                {
+                    lucy.Reset(string.IsNullOrWhiteSpace(argument) ? null : argument);
+                }
+                catch (ArgumentException ex)
+                {
+                    Console.WriteLine(ex.Message);
+                    break;
+                }
+                agentName = SystemPromptBuilder.ResolveAgentName(lucy.SuperPrompt);
+                Console.WriteLine(string.IsNullOrWhiteSpace(argument) ? "(new conversation)" : $"(new conversation with {agentName})");
+                break;
+            case "/handoff":
+                // Hand this conversation, history and all, to another persona: /handoff <persona> [reason].
+                // Any persona is allowed here (the model's handoff tool is limited to the handoff targets).
+                var handoffParts = (argument ?? "").Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (handoffParts.Length == 0)
+                {
+                    Console.WriteLine($"Usage: /handoff <persona> [reason]. Handoff stack: {lucy.DescribeHandoffStack()}");
+                    break;
+                }
+                try
+                {
+                    lucy.Handoff(handoffParts[0], handoffParts.Length > 1 ? handoffParts[1] : null);
+                }
+                catch (ArgumentException ex)
+                {
+                    Console.WriteLine(ex.Message);
+                    break;
+                }
+                agentName = SystemPromptBuilder.ResolveAgentName(lucy.SuperPrompt);
+                break;
+            case "/return":
+                // Hand the conversation back to the persona that handed it over: /return [reason].
+                if (lucy.HandoffStack.Count == 0)
+                {
+                    Console.WriteLine($"Nothing to return to: this conversation has not been handed over. Handoff stack: {lucy.DescribeHandoffStack()}");
+                    break;
+                }
+                lucy.Return(string.IsNullOrWhiteSpace(argument) ? null : argument);
+                agentName = SystemPromptBuilder.ResolveAgentName(lucy.SuperPrompt);
+                break;
+            case "/personas":
+                foreach (var persona in PersonaRegistry.Current.Personas)
+                    Console.WriteLine($"  {persona.Key,-12} {persona.Name} - {persona.Role}{(persona.Source == PersonaSource.BuiltIn ? "" : $" [{persona.Source.ToString().ToLowerInvariant()}]")}");
                 break;
             case "/compact":
                 if (!HistoryCompactor.TryParse(argument, out var compactPercent, out var compactDropOldest))
@@ -435,7 +497,10 @@ static void PrintHelp(string agentName)
     Console.WriteLine($"""
         Commands:
           /help, /h, /?        Show this help
-          /clear, /cls         Start a new conversation with {agentName}
+          /clear, /cls [persona]  Start a new conversation with {agentName}, or with another persona (for example alchemist)
+          /personas            List the personas, including ones created with create_digital
+          /handoff <persona> [reason]  Hand this conversation, with its history, to another persona
+          /return [reason]     Hand it back to the persona that handed it over (the stack is saved with /save)
           /compact -N | +N | N Drop the oldest turns making up at least N% of the estimated tokens (-N), or keep the most recent turns making up at least N% (+N or N)
           /save [id] [--tools] [--no-thinking]
                                Send a "Checkpoint (/save)" prompt, wait for the reply, then save (and a .docx transcript; the flags shape the transcript only)
@@ -459,26 +524,25 @@ static void PrintHelp(string agentName)
         """);
 }
 
-// Minimal flags; the provider's usual key variable (e.g. ANTHROPIC_API_KEY) is used
-// when --api-key isn't given.
-static AgentOptions ParseArgs(string[] args)
+// The same --help text as the main app has (both build it from CommandLineParser's tables).
+static void PrintUsage(TextWriter output)
 {
-    var options = new AgentOptions();
-    for (int i = 0; i + 1 < args.Length; i++)
-    {
-        switch (args[i].ToLowerInvariant())
-        {
-            case "--provider" or "-p": options.Provider = args[++i]; break;
-            case "--model" or "-m": options.Model = args[++i]; break;
-            case "--api-key" or "-k": options.ApiKey = args[++i]; break;
-            case "--max-tokens" when int.TryParse(args[i + 1], out var n): options.MaxTokens = n; i++; break;
-            case "--superprompt": options.SuperPrompt = args[++i]; break;
-        }
-    }
-    // Lucy unless --Superprompt picks another persona (SystemPromptBuilder.AvailableSuperPrompts).
-    options.SuperPrompt ??= "lucy";
-    options.ApiKey ??= LlmClientFactory.ApiKeyEnvironmentVariables(options.Provider)
-        .Select(Environment.GetEnvironmentVariable)
-        .FirstOrDefault(v => v is not null);
-    return options;
+    output.WriteLine("AgentLucy - chat with a digital person (the main app's sibling: same options and commands)");
+    output.WriteLine();
+    output.WriteLine("USAGE:");
+    output.WriteLine("  AgentLucyApp                        Start interactive chat");
+    output.WriteLine("  AgentLucyApp \"hello\"                One-shot mode");
+    output.WriteLine("  AgentLucyApp --prompt \"hello\"      One-shot mode (explicit)");
+    output.WriteLine();
+    output.WriteLine("OPTIONS:");
+    foreach (var (flags, description) in CommandLineParser.OptionHelp(CommandLineParser.SuperPromptHelp("lucy")))
+        output.WriteLine($"  {flags,-26}{description}");
+    output.WriteLine();
+    output.WriteLine("ENVIRONMENT VARIABLES:");
+    foreach (var (name, description) in CommandLineParser.EnvironmentHelp)
+        output.WriteLine($"  {name,-26}{description}");
+    output.WriteLine();
+    output.WriteLine("REPL COMMANDS:");
+    foreach (var (command, description) in CommandLineParser.ReplCommandHelp)
+        output.WriteLine($"  {command,-30}{description}");
 }

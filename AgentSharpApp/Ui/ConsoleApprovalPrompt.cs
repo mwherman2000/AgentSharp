@@ -35,7 +35,11 @@ public sealed class ConsoleApprovalPrompt : IApprovalPrompt
         AnsiConsole.MarkupLine($"[yellow]Action:[/] {Markup.Escape(request.InputSummary)}");
         AnsiConsole.WriteLine();
 
-        AnsiConsole.MarkupLine("[yellow]Allow this tool execution?[/] (a = allow, d = deny, s = always allow this session)");
+        // create_digital is always asked (ApprovalGate.AlwaysAsk), so don't offer "always allow" for it.
+        var offerAlways = request.ToolName != "create_digital";
+        AnsiConsole.MarkupLine(offerAlways
+            ? "[yellow]Allow this tool execution?[/] (a = allow, d = deny, s = always allow this session)"
+            : "[yellow]Allow this tool execution?[/] (a = allow, d = deny)");
 
         // Console.ReadKey has no cancellable overload, so a plain blocking call
         // here would swallow Ctrl+C: OnCancelKeyPress cancels the turn's token,
@@ -62,7 +66,7 @@ public sealed class ConsoleApprovalPrompt : IApprovalPrompt
             if (keyAvailable)
             {
                 key = Console.ReadKey(intercept: true).Key;
-                if (key == ConsoleKey.A || key == ConsoleKey.D || key == ConsoleKey.S)
+                if (key == ConsoleKey.A || key == ConsoleKey.D || (key == ConsoleKey.S && offerAlways))
                     break;
             }
             else

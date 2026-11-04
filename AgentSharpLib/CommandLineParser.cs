@@ -1,14 +1,13 @@
 using System.Globalization;
 using System.Text.Json;
-using AgentSharpLib;
 using AgentSharpLib.Llm;
 
-namespace AgentSharpApp.Cli;
+namespace AgentSharpLib;
 
 /// <summary>What the CLI was asked to do.</summary>
 /// <param name="Prompt">One-shot prompt (<c>--prompt X</c>, or the first bare argument);
 /// null means start the interactive REPL.</param>
-internal sealed record CommandLine(AgentOptions Options, string? Prompt, bool ShowHelp, bool ShowVersion);
+public sealed record CommandLine(AgentOptions Options, string? Prompt, bool ShowHelp, bool ShowVersion);
 
 /// <summary>
 /// Builds <see cref="AgentOptions"/> for the CLI. Later sources override earlier ones:
@@ -21,8 +20,73 @@ internal sealed record CommandLine(AgentOptions Options, string? Prompt, bool Sh
 /// </list>
 /// Flags are matched case-insensitively.
 /// </summary>
-internal static class CommandLineParser
+public static class CommandLineParser
 {
+    /// <summary>The options both apps accept, as (flags, description) pairs, for their --help text, so the two
+    /// stay the same. <paramref name="superPromptHelp"/> says which persona is the default and lists the others.</summary>
+    public static IReadOnlyList<(string Flags, string Description)> OptionHelp(string superPromptHelp) =>
+    [
+        ("-p, --provider <name>", "LLM provider: anthropic, openai, grok, gemini, ollama"),
+        ("-m, --model <name>", "Model identifier (e.g., claude-sonnet-4-20250514, gpt-4o)"),
+        ("-k, --api-key <key>", "API key (or set via environment variable)"),
+        ("--base-url <url>", "Custom API base URL for compatible providers"),
+        ("--timeout <minutes>", "Request timeout, e.g. for slow local Ollama models (default: 60)"),
+        ("--max-tokens <n>", "Max output tokens per request (default: 128000; lower this for small-context local models)"),
+        ("--max-iterations <n>", "Max LLM/tool round-trips per turn (default: 100)"),
+        ("--dir <path>", "Project directory to run in (default: current directory)"),
+        ("--Superprompt <name>", superPromptHelp),
+        ("--prompt <text>", "One-shot mode: run a single prompt and exit (a bare first argument does the same)"),
+        ("-h, --help", "Show this help"),
+        ("-v, --version", "Show version"),
+    ];
+
+    /// <summary>The slash commands both apps accept, as (command, description) pairs, for their --help text.</summary>
+    public static IReadOnlyList<(string Command, string Description)> ReplCommandHelp { get; } =
+    [
+        ("/help", "Show commands"),
+        ("/exit", "Exit the agent"),
+        ("/clear [persona]", "Start a new conversation, optionally as another persona"),
+        ("/personas", "List the personas, including ones created with create_digital"),
+        ("/handoff <persona> [reason]", "Hand the conversation, with its history, to another persona"),
+        ("/return [reason]", "Hand it back to the persona that handed it over"),
+        ("/compact -N | +N | N", "Drop the oldest turns (-N drops N%, +N keeps N%)"),
+        ("/save [id]", "Save the session"),
+        ("/load <id>", "Load a saved session"),
+        ("/sessions", "List saved sessions"),
+        ("/status", "Agent status"),
+        ("/model", "Show the current provider and model"),
+        ("/memory [clear]", "View or delete memory"),
+        ("/transcribe [name]", "Write a Q&A transcript"),
+        ("/request", "Toggle request trace"),
+        ("/history", "Toggle history trace"),
+        ("/tools", "Toggle tools trace"),
+        ("/sync", "Toggle SendAsync (non-streaming) vs StreamAsync (default)"),
+        ("/jaeger [endpoint]", "Switch OTel export to Jaeger"),
+    ];
+
+    /// <summary>The environment variables both apps read, as (name, description) pairs.</summary>
+    public static IReadOnlyList<(string Name, string Description)> EnvironmentHelp { get; } =
+    [
+        ("ANTHROPIC_API_KEY", "API key for Anthropic (Claude)"),
+        ("OPENAI_API_KEY", "API key for OpenAI"),
+        ("XAI_API_KEY", "API key for xAI (Grok)"),
+        ("GEMINI_API_KEY", "API key for Google (Gemini); ollama needs no API key (run 'ollama serve' locally)"),
+        ("AGENT_PROVIDER", "Default provider"),
+        ("AGENT_MODEL", "Default model"),
+        ("AGENT_API_KEY", "Generic API key (any provider)"),
+        ("AGENT_TIMEOUT_MINUTES", "Request timeout in minutes (default: 60, Ollama only)"),
+        ("AGENT_MAX_TOKENS", "Max output tokens per request (default: 128000)"),
+        ("AGENT_MAX_ITERATIONS", "Max LLM/tool round-trips per turn (default: 100)"),
+        ("AGENT_BASE_URL", "Custom API base URL"),
+        ("AGENT_ENABLE_OTEL", "Emit OpenTelemetry traces via the console exporter (default: off)"),
+    ];
+
+    /// <summary>The persona line for --help: "andy (default), angie, ..." for the current registry, with
+    /// <paramref name="defaultPersona"/> first.</summary>
+    public static string SuperPromptHelp(string defaultPersona) =>
+        "Base persona/prompt: " + defaultPersona + " (default), " +
+        string.Join(", ", Context.PersonaRegistry.Current.Keys.Where(k => k != defaultPersona));
+
     public static string DefaultConfigPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agentsharp", "config.json");
 

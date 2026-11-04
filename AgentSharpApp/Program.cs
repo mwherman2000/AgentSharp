@@ -2,7 +2,6 @@ using AgentSharpLib;
 using AgentSharpLib.Context;
 using AgentSharpLib.Memory;
 using AgentSharpLib.Telemetry;
-using AgentSharpApp.Cli;
 using AgentSharpApp.Ui;
 using Spectre.Console;
 
@@ -58,22 +57,9 @@ internal class Program
 
             // --- Personas: built-in superprompts, plus any files in ~/.agentsharp/superprompts and
             // ./.agentsharp/superprompts, rescanned whenever one is added, changed or deleted ---
-            using var personaWatcher = PersonaRegistry.Watch(Directory.GetCurrentDirectory());
-            foreach (var warning in PersonaRegistry.Current.Warnings)
-                AnsiConsole.MarkupLine($"[yellow]Superprompt file skipped:[/] {Markup.Escape(warning)}");
-            PersonaRegistry.Changed += (old, now) =>
-            {
-                var added = now.Keys.Except(old.Keys).ToList();
-                var removed = old.Keys.Except(now.Keys).ToList(); // still resolve for a conversation already using one
-                var changed = now.Personas.Where(p => old.Find(p.Key) is { } o && (o.Prompt != p.Prompt || o.Name != p.Name || o.Role != p.Role
-                    || o.IsHandoffTarget != p.IsHandoffTarget)).Select(p => p.Key).ToList();
-                if (added.Count + removed.Count + changed.Count > 0)
-                    AnsiConsole.MarkupLine("[grey]Superprompts reloaded:[/] " + Markup.Escape(string.Join("; ",
-                        new[] { added.Count > 0 ? "added " + string.Join(", ", added) : "", changed.Count > 0 ? "changed " + string.Join(", ", changed) : "",
-                                removed.Count > 0 ? "removed " + string.Join(", ", removed) : "" }.Where(s => s.Length > 0))));
-                foreach (var w in now.Warnings.Except(old.Warnings))
-                    AnsiConsole.MarkupLine($"[yellow]Superprompt file skipped:[/] {Markup.Escape(w)}");
-            };
+            using var personaWatcher = PersonaRegistry.WatchAndReport(Directory.GetCurrentDirectory(),
+                what => AnsiConsole.MarkupLine("[grey]" + Markup.Escape(what) + "[/]"),
+                warning => AnsiConsole.MarkupLine("[yellow]" + Markup.Escape(warning) + "[/]"));
 
             // --- Agent (LLM client, tools, approval, memory, sub-agents, project scan) ---
             // Output and approval are the only terminal-specific pieces; everything
@@ -142,46 +128,15 @@ internal class Program
             AnsiConsole.MarkupLine("  agentsharp \"fix the bug in main.cs\"  One-shot mode");
             AnsiConsole.MarkupLine("  agentsharp --prompt \"explain this\"   One-shot mode (explicit)\n");
             AnsiConsole.MarkupLine("[bold]OPTIONS:[/]");
-            AnsiConsole.MarkupLine("  -p, --provider <name>    LLM provider: anthropic, openai, grok, gemini, ollama");
-            AnsiConsole.MarkupLine("  -m, --model <name>       Model identifier (e.g., claude-sonnet-4-20250514, gpt-4o)");
-            AnsiConsole.MarkupLine("  -k, --api-key <key>      API key (or set via environment variable)");
-            AnsiConsole.MarkupLine("      --base-url <url>     Custom API base URL for compatible providers");
-            AnsiConsole.MarkupLine("      --timeout <minutes>  Request timeout, e.g. for slow local Ollama models (default: 60)");
-            AnsiConsole.MarkupLine("      --max-tokens <n>     Max output tokens per request (default: 128000; lower this for small-context local models)");
-            AnsiConsole.MarkupLine("      --max-iterations <n> Max LLM/tool round-trips per turn (default: 100)");
-            AnsiConsole.MarkupLine("      --dir <path>         Project directory to run in (default: current directory)");
-            AnsiConsole.MarkupLine($"      --Superprompt <name> Base persona/prompt: {SystemPromptBuilder.AvailableSuperPrompts[0]} (default), {string.Join(", ", SystemPromptBuilder.AvailableSuperPrompts.Skip(1))}");
-            AnsiConsole.MarkupLine("  -h, --help               Show this help");
-            AnsiConsole.MarkupLine("  -v, --version            Show version\n");
-            AnsiConsole.MarkupLine("[bold]ENVIRONMENT VARIABLES:[/]");
-            AnsiConsole.MarkupLine("  ANTHROPIC_API_KEY        API key for Anthropic (Claude)");
-            AnsiConsole.MarkupLine("  OPENAI_API_KEY           API key for OpenAI");
-            AnsiConsole.MarkupLine("  XAI_API_KEY              API key for xAI (Grok)");
-            AnsiConsole.MarkupLine("  GEMINI_API_KEY           API key for Google (Gemini)");
-            AnsiConsole.MarkupLine("                           (ollama needs no API key; run 'ollama serve' locally)");
-            AnsiConsole.MarkupLine("  AGENT_PROVIDER           Default provider");
-            AnsiConsole.MarkupLine("  AGENT_MODEL              Default model");
-            AnsiConsole.MarkupLine("  AGENT_API_KEY            Generic API key (any provider)");
-            AnsiConsole.MarkupLine("  AGENT_TIMEOUT_MINUTES    Request timeout in minutes (default: 60, Ollama only)");
-            AnsiConsole.MarkupLine("  AGENT_MAX_TOKENS         Max output tokens per request (default: 128000)");
-            AnsiConsole.MarkupLine("  AGENT_MAX_ITERATIONS     Max LLM/tool round-trips per turn (default: 100)");
-            AnsiConsole.MarkupLine("  AGENT_BASE_URL           Custom API base URL");
-            AnsiConsole.MarkupLine("  AGENT_ENABLE_OTEL        Emit OpenTelemetry traces via the console exporter (default: off)\n");
+            foreach (var (flags, description) in CommandLineParser.OptionHelp(CommandLineParser.SuperPromptHelp(SystemPromptBuilder.AvailableSuperPrompts[0])))
+                AnsiConsole.MarkupLine($"  {Markup.Escape(flags.PadRight(26))}{Markup.Escape(description)}");
+            AnsiConsole.MarkupLine("\n[bold]ENVIRONMENT VARIABLES:[/]");
+            foreach (var (name, description) in CommandLineParser.EnvironmentHelp)
+                AnsiConsole.MarkupLine($"  {Markup.Escape(name.PadRight(26))}{Markup.Escape(description)}");
+            AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[bold]REPL COMMANDS:[/]");
-            AnsiConsole.MarkupLine("  /help       Show commands");
-            AnsiConsole.MarkupLine("  /exit       Exit the agent");
-            AnsiConsole.MarkupLine("  /clear      Clear conversation");
-            AnsiConsole.MarkupLine("  /compact    Drop the oldest turns (-N drops N%, +N keeps N%)");
-            AnsiConsole.MarkupLine("  /save       Save session");
-            AnsiConsole.MarkupLine("  /load <id>  Load session");
-            AnsiConsole.MarkupLine("  /sessions   List sessions");
-            AnsiConsole.MarkupLine("  /status     Agent status");
-            AnsiConsole.MarkupLine("  /memory     View memory");
-            AnsiConsole.MarkupLine("  /request    Toggle request trace");
-            AnsiConsole.MarkupLine("  /history    Toggle history trace");
-            AnsiConsole.MarkupLine("  /tools      Toggle tools trace");
-            AnsiConsole.MarkupLine("  /sync       Toggle SendAsync (non-streaming) vs StreamAsync (default)");
-            AnsiConsole.MarkupLine($"  /jaeger     Switch OTel export to Jaeger (OTLP @ {AgentTelemetry.DefaultJaegerEndpoint})");
+            foreach (var (command, description) in CommandLineParser.ReplCommandHelp)
+                AnsiConsole.MarkupLine($"  {Markup.Escape(command.PadRight(30))}{Markup.Escape(description)}");
         }
     }
 }

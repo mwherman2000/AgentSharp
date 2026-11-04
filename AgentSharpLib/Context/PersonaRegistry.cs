@@ -41,6 +41,26 @@ public static class PersonaRegistry
     /// became invalid) is kept as <see cref="PersonaCatalog.Retired"/>, so a conversation already using it keeps
     /// working on its last good version instead of failing on the next prompt. Nothing is locked on disk.
     /// </summary>
+    /// <summary>
+    /// <see cref="Watch"/> plus the notices both apps print: files skipped at startup and after each reload, and
+    /// what changed ("added x; changed y; removed z"). <paramref name="info"/> and <paramref name="warning"/>
+    /// receive plain text and may be called from a thread-pool thread.
+    /// </summary>
+    public static PersonaWatcher WatchAndReport(string? projectDirectory, Action<string> info, Action<string> warning)
+    {
+        var watcher = Watch(projectDirectory);
+        foreach (var w in Current.Warnings)
+            warning($"Superprompt file skipped: {w}");
+        Changed += (old, now) =>
+        {
+            if (now.DescribeChangesFrom(old) is { } what)
+                info($"Superprompts reloaded: {what}");
+            foreach (var w in now.NewWarningsSince(old))
+                warning($"Superprompt file skipped: {w}");
+        };
+        return watcher;
+    }
+
     internal static void Set(PersonaCatalog catalog)
     {
         PersonaCatalog old;

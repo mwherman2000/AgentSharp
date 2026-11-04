@@ -55,6 +55,28 @@ public sealed class PersonaCatalog
     internal PersonaCatalog WithRetired(IReadOnlyList<Persona> retired) =>
         new(Personas.ToList(), Warnings.ToList(), retired);
 
+    /// <summary>
+    /// One line on what changed since <paramref name="previous"/> ("added x; changed y; removed z"), or null if
+    /// nothing a user would notice did. Both apps print this after a reload.
+    /// </summary>
+    public string? DescribeChangesFrom(PersonaCatalog previous)
+    {
+        var added = Keys.Except(previous.Keys).ToList();
+        var removed = previous.Keys.Except(Keys).ToList();
+        var changed = Personas.Where(p => previous.Find(p.Key) is { } o && (o.Prompt != p.Prompt || o.Name != p.Name
+            || o.Role != p.Role || o.IsHandoffTarget != p.IsHandoffTarget)).Select(p => p.Key).ToList();
+        var parts = new[]
+        {
+            added.Count > 0 ? "added " + string.Join(", ", added) : "",
+            changed.Count > 0 ? "changed " + string.Join(", ", changed) : "",
+            removed.Count > 0 ? "removed " + string.Join(", ", removed) + " (still usable by a conversation already using it)" : "",
+        }.Where(s => s.Length > 0).ToList();
+        return parts.Count == 0 ? null : string.Join("; ", parts);
+    }
+
+    /// <summary>Warnings in this catalog that <paramref name="previous"/> did not have: the files skipped by this reload.</summary>
+    public IEnumerable<string> NewWarningsSince(PersonaCatalog previous) => Warnings.Except(previous.Warnings);
+
     /// <summary>The persona with this key or alias (case-insensitive), or null. Includes <see cref="Retired"/> ones.</summary>
     public Persona? Find(string name) => _lookup.GetValueOrDefault(name.Trim().ToLowerInvariant());
 

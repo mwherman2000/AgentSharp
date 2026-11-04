@@ -221,6 +221,32 @@ public class ReplHost
                     AnsiConsole.MarkupLine($"[green]Superprompt switched to:[/] {Markup.Escape(SystemPromptBuilder.ResolveAgentName(_session.SuperPrompt))}");
                 break;
 
+            case CommandType.Handoff:
+                // Hand this conversation, history and all, to another persona: /handoff <persona> [reason].
+                // Any persona is allowed here (the model's handoff tool is limited to the handoff targets).
+                // The session prints the "Handoff: A -> B ... Handoff stack: ..." line itself.
+                var handoffParts = (command.Argument ?? "").Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (handoffParts.Length == 0)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]Usage:[/] /handoff <persona> [[reason]]. [bold]Handoff stack:[/] {Markup.Escape(_session.DescribeHandoffStack())}");
+                    break;
+                }
+                try
+                {
+                    _session.Handoff(handoffParts[0], handoffParts.Length > 1 ? handoffParts[1] : null);
+                }
+                catch (ArgumentException ex)
+                {
+                    AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
+                }
+                break;
+
+            case CommandType.Personas:
+                foreach (var persona in PersonaRegistry.Current.Personas)
+                    AnsiConsole.MarkupLine($"  [bold]{Markup.Escape(persona.Key),-12}[/] {Markup.Escape(persona.Name)} - {Markup.Escape(persona.Role)}" +
+                        (persona.Source == PersonaSource.BuiltIn ? "" : $" [dim][[{persona.Source.ToString().ToLowerInvariant()}]][/]"));
+                break;
+
             case CommandType.Return:
                 // Hand the conversation back to the persona that handed it over (the optional argument is
                 // the reason); applies to the next prompt. The session prints the "Return: A -> B ... Handoff
@@ -575,6 +601,8 @@ public class ReplHost
             .AddRow("/help, /h, /?", "Show this help")
             .AddRow("/compact -N | +N | N", "Drop the oldest turns making up at least N% of the estimated tokens (-N), or keep only the most recent turns making up at least N% (+N or N). Saves the session first (with a .docx transcript) and again after, automatically, as <persona>-compact-before-<time> and -after-<time>")
             .AddRow("/clear, /cls [[persona]]", $"Start a new conversation; optionally switch persona ({string.Join(", ", SystemPromptBuilder.AvailableSuperPrompts)})")
+            .AddRow("/personas", "List the personas, including ones created with create_digital (the alchemist's tool)")
+            .AddRow("/handoff <persona> [[reason]]", "Hand the conversation, with its history, to another persona (the same history continues); shows the handoff stack")
             .AddRow("/return [[reason]]", "Hand the conversation back to the persona that handed it over (the same history continues); shows the handoff stack. The stack is saved with /save and restored by /load")
             .AddRow("/save [[id]] [[--tools]] [[--no-thinking]]", "Send a \"Checkpoint (/save)\" prompt, wait for the reply, then save the conversation (and a .docx transcript; without an id it is named <persona>-saved-<time>; the flags shape the transcript only)")
             .AddRow("/load, /resume <id>", "Continue a saved conversation (sends a \"Resumed (/load)\" prompt and shows the reply)")

@@ -1,4 +1,5 @@
 using AgentSharpApp.Ui;
+using AgentSharpLib;
 
 namespace AgentSharp.Tests.Ui;
 
@@ -14,6 +15,8 @@ public class CommandParserTests
     [InlineData("/clear", CommandType.Clear)]
     [InlineData("/cls", CommandType.Clear)]
     [InlineData("/return", CommandType.Return)]
+    [InlineData("/handoff", CommandType.Handoff)]
+    [InlineData("/personas", CommandType.Personas)]
     [InlineData("/compact", CommandType.Compact)]
     [InlineData("/save", CommandType.Save)]
     [InlineData("/sessions", CommandType.Sessions)]
@@ -75,5 +78,19 @@ public class CommandParserTests
         var result = CommandParser.Parse("/transcribe session1");
         Assert.Equal(CommandType.Transcript, result.Type);
         Assert.Equal("session1", result.Argument);
+    }
+
+    // Both apps print their --help from CommandLineParser.ReplCommandHelp, so a command added to the
+    // main app's parser without a line there would be missing from both help screens.
+    [Fact]
+    public void EveryCommand_IsListedInTheSharedHelp()
+    {
+        var listed = CommandLineParser.ReplCommandHelp.Select(c => c.Command.Split(' ')[0]).ToHashSet();
+
+        foreach (var type in Enum.GetValues<CommandType>().Where(t => t is not (CommandType.None or CommandType.Unknown)))
+        {
+            var name = type == CommandType.Transcript ? "/transcribe" : "/" + type.ToString().ToLowerInvariant();
+            Assert.Contains(name, listed);
+        }
     }
 }
