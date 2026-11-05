@@ -339,7 +339,10 @@ public class ReplHost
                     AnsiConsole.MarkupLine($"[red]Session not found:[/] {command.Argument}");
                     break;
                 }
-                _session.Restore(history, await _sessions.LoadHandoffAsync(command.Argument)); // the stack, if it was handed over
+                // Like /clear <persona>: the persona in effect when the session was saved takes over (and the
+                // handoff stack, if it was handed over). Sessions saved before the persona was recorded keep the current one.
+                _session.Restore(history, await _sessions.LoadHandoffAsync(command.Argument));
+                AnsiConsole.MarkupLine($"[green]Superprompt switched to:[/] {Markup.Escape(SystemPromptBuilder.ResolveAgentName(_session.SuperPrompt))}");
                 await _session.Loop.RefreshTokenCountAsync(ct); // the provider's own count, when it will say
                 AnsiConsole.MarkupLine($"[green]Session loaded:[/] {command.Argument} ({history.Count} messages, {history.QuestionCount} questions, {_session.Loop.DescribeTokenCount()})");
                 if (_session.HandoffStack.Count > 0)

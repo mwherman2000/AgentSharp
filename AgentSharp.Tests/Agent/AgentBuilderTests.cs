@@ -466,7 +466,7 @@ public class AgentBuilderTests
 
         session.Reset();
         Assert.Empty(session.HandoffStack);
-        Assert.Null(session.HandoffState);
+        Assert.Empty(session.HandoffState!.Stack);
 
         session.Restore(new ConversationHistory(), state);
         Assert.Equal("ray", session.SuperPrompt);

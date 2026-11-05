@@ -180,8 +180,8 @@ public class SessionManager
         try
         {
             var session = JsonSerializer.Deserialize<SessionData>(await File.ReadAllTextAsync(path), JsonOptions);
-            return session is { HandoffStack.Count: > 0, HandoffPersona: not null }
-                ? new HandoffState(session.HandoffStack, session.HandoffPersona)
+            return session is { HandoffPersona: not null }
+                ? new HandoffState(session.HandoffStack ?? [], session.HandoffPersona)
                 : null;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)

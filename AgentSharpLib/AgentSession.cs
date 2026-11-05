@@ -181,10 +181,11 @@ public sealed class AgentSession
     /// that handed the conversation over, so a conversation that was never handed over has 1.</summary>
     public int PromptDepth => _handoffStack.Count + 1;
 
-    /// <summary>What to save with the conversation so it can be returned after a /load, or null
-    /// when there is nothing to return to.</summary>
+    /// <summary>What to save with the conversation so a /load can bring back the persona in charge
+    /// (and the stack to return through, empty if never handed over), or null when a custom system
+    /// prompt is in use.</summary>
     public HandoffState? HandoffState =>
-        _handoffStack.Count == 0 || _useCustomSystemPrompt
+        _useCustomSystemPrompt
             ? null
             : new HandoffState(_handoffStack.ToList(), SystemPromptBuilder.ResolveKey(_superPrompt));
 
