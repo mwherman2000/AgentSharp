@@ -99,4 +99,17 @@ public class ToolRegistry
     /// </summary>
     public IReadOnlyList<ToolDefinition> GetDefinitions()
         => _tools.Values.Select(t => t.ToDefinition()).ToList();
+
+    /// <summary>Tool definitions for the tools <paramref name="allowed"/> accepts.</summary>
+    public IReadOnlyList<ToolDefinition> GetDefinitions(Func<ITool, bool> allowed)
+        => _tools.Values.Where(allowed).Select(t => t.ToDefinition()).ToList();
+
+    /// <summary>A new registry holding only the tools <paramref name="allowed"/> accepts.</summary>
+    public ToolRegistry Filtered(Func<ITool, bool> allowed)
+    {
+        var copy = new ToolRegistry();
+        foreach (var tool in _tools.Values.Where(allowed))
+            copy.Register(tool);
+        return copy;
+    }
 }

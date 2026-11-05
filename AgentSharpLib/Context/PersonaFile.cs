@@ -16,6 +16,8 @@ namespace AgentSharpLib.Context;
 /// </code>
 /// The key is the file name without its extension. <c>name</c> is required; <c>role</c> defaults to the name,
 /// <c>handoff</c> to false and <c>aliases</c> to none. <c>order</c> is optional (see <see cref="OrderUnset"/>).
+/// <c>tools</c> (an allow-list) and <c>deny</c> (a deny-list), both comma separated tool names, narrow which tools the
+/// persona may use (see <see cref="ToolPolicy"/>); a <c>tools:</c> line with no names means no tools but <c>handoff</c>.
 /// Unknown header lines are ignored.
 /// </summary>
 public static partial class PersonaFile
@@ -77,6 +79,8 @@ public static partial class PersonaFile
         var aliases = new List<string>();
         var handoff = false;
         var order = OrderUnset;
+        List<string>? allow = null;
+        var deny = new List<string>();
         foreach (var line in header.Split('\n'))
         {
             if (string.IsNullOrWhiteSpace(line) || line.TrimStart().StartsWith('#')) continue;
@@ -99,6 +103,13 @@ public static partial class PersonaFile
                 case "handoff":
                     if (!bool.TryParse(value, out handoff)) { error = $"handoff must be true or false, not '{value}'."; return false; }
                     break;
+                case "tools":
+                    allow = [];
+                    if (!TryReadToolNames(value, allow, out error)) return false;
+                    break;
+                case "deny":
+                    if (!TryReadToolNames(value, deny, out error)) return false;
+                    break;
                 case "order":
                     if (!int.TryParse(value, out order) || order == OrderUnset) { error = $"order must be a whole number, not '{value}'."; return false; }
                     break;
@@ -108,7 +119,25 @@ public static partial class PersonaFile
         if (string.IsNullOrWhiteSpace(body)) { error = "the file has no prompt after the header."; return false; }
 
         persona = new Persona(key, aliases, name, body, string.IsNullOrWhiteSpace(role) ? name : role,
-            handoff, order, source, path);
+            handoff, order, source, path, allow is null && deny.Count == 0 ? null : new ToolPolicy(allow, deny));
+        return true;
+    }
+
+    [GeneratedRegex("^[a-z0-9][a-z0-9_.-]{0,63}$")]
+    private static partial Regex ValidToolName();
+
+    /// <summary>True if <paramref name="name"/> can be a tool name in a <c>tools:</c> or <c>deny:</c> line.</summary>
+    public static bool IsValidToolName(string name) => ValidToolName().IsMatch(name);
+
+    private static bool TryReadToolNames(string value, List<string> into, out string error)
+    {
+        error = "";
+        foreach (var t in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var tool = t.ToLowerInvariant();
+            if (!ValidToolName().IsMatch(tool)) { error = $"'{t}' is not a valid tool name."; return false; }
+            if (!into.Contains(tool)) into.Add(tool);
+        }
         return true;
     }
 }

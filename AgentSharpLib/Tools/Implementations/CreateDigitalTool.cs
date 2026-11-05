@@ -47,6 +47,10 @@ public class CreateDigitalTool : ToolBase
         "It never replaces an existing persona.";
     public override ToolRiskLevel RiskLevel => ToolRiskLevel.Destructive;
 
+    /// <summary>The persona that designs personas. No other persona is offered this tool or may call it.</summary>
+    public const string OnlyPersona = "alchemist";
+    public override IReadOnlyList<string>? OnlyPersonas { get; } = [OnlyPersona];
+
     protected override JsonElement BuildInputSchema() => SchemaFrom(new
     {
         type = "object",
@@ -58,6 +62,8 @@ public class CreateDigitalTool : ToolBase
             prompt = new { type = "string", description = "The full persona prompt, starting with the role in the second person (\"You are ...\")" },
             aliases = new { type = "array", items = new { type = "string" }, description = "Optional other names that select the persona, with the same rules as the nickname" },
             handoff = new { type = "boolean", description = "Whether other personas (and the handoff tool) may hand a conversation to this persona. Default true; use false for a persona that should only be started by the user." },
+            tools = new { type = "array", items = new { type = "string" }, description = "Optional allow-list: the only tools (by name, such as read_file) the persona may use, besides handoff. Omit it for every tool. An empty list means none." },
+            deny = new { type = "array", items = new { type = "string" }, description = "Optional tools (by name) the persona may not use, removed from whatever it would otherwise have. A persona can be restricted this way, never given more than the others have." },
             scope = new { type = "string", @enum = new[] { "user", "project" }, description = "\"user\" (default) saves it for this user in every project; \"project\" saves it in this project's .agentsharp/superprompts folder" }
         },
         required = new[] { "nickname", "name", "role", "prompt" }
@@ -78,6 +84,15 @@ public class CreateDigitalTool : ToolBase
                 if (a.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(a.GetString()))
                     aliases.Add(a.GetString()!.Trim().ToLowerInvariant());
 
+        List<string>? allow = null;
+        if (input.TryGetProperty("tools", out var toolsElement) && toolsElement.ValueKind == JsonValueKind.Array)
+            allow = ReadNames(toolsElement);
+        var deny = input.TryGetProperty("deny", out var denyElement) && denyElement.ValueKind == JsonValueKind.Array
+            ? ReadNames(denyElement) : [];
+        foreach (var toolName in (allow ?? []).Concat(deny))
+            if (!PersonaFile.IsValidToolName(toolName))
+                return ToolResult.Error($"Invalid tool name '{toolName}': use the tool's name, such as read_file.");
+
         var problem = Validate(nickname, name, role, prompt, scope, aliases);
         if (problem is not null)
             return ToolResult.Error(problem);
@@ -89,13 +104,15 @@ public class CreateDigitalTool : ToolBase
         if (File.Exists(path))
             return ToolResult.Error($"A file already exists at {path}. Choose another nickname; create_digital never overwrites.");
 
-        var text = new StringBuilder()
+        var header = new StringBuilder()
             .Append("---\n")
             .Append("name: ").Append(name).Append('\n')
             .Append("aliases: ").Append(string.Join(", ", aliases)).Append('\n')
             .Append("role: ").Append(role).Append('\n')
-            .Append("handoff: ").Append(handoff ? "true" : "false").Append('\n')
-            .Append("---\n")
+            .Append("handoff: ").Append(handoff ? "true" : "false").Append('\n');
+        if (allow is not null) header.Append("tools: ").Append(string.Join(", ", allow)).Append('\n');
+        if (deny.Count > 0) header.Append("deny: ").Append(string.Join(", ", deny)).Append('\n');
+        var text = header.Append("---\n")
             .Append(prompt.Replace("\r\n", "\n").Replace('\r', '\n'))
             .ToString();
 
@@ -137,6 +154,16 @@ public class CreateDigitalTool : ToolBase
             (handoff
                 ? "It is a handoff target: the handoff tool and /handoff accept it now, and the user can start it with /clear."
                 : "It is not a handoff target (handoff: false); only the user can start it, with /clear or /handoff."));
+    }
+
+    private static List<string> ReadNames(JsonElement array)
+    {
+        var names = new List<string>();
+        foreach (var e in array.EnumerateArray())
+            if (e.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(e.GetString())
+                && e.GetString()!.Trim().ToLowerInvariant() is var n && !names.Contains(n))
+                names.Add(n);
+        return names;
     }
 
     private string? Validate(string nickname, string name, string role, string prompt, string scope, List<string> aliases)

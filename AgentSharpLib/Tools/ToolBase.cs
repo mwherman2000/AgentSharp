@@ -12,6 +12,9 @@ public abstract class ToolBase : ITool
     public abstract string Description { get; }
     public abstract ToolRiskLevel RiskLevel { get; }
 
+    /// <summary>See <see cref="ITool.OnlyPersonas"/>. Null: every persona.</summary>
+    public virtual IReadOnlyList<string>? OnlyPersonas => null;
+
     private JsonElement? _cachedSchema;
     /// <summary>The input schema. Built once and kept; a tool whose schema depends on something that changes while
     /// the app runs (the handoff tool's list of personas) overrides this.</summary>

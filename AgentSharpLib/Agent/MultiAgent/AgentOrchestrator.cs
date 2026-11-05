@@ -31,6 +31,8 @@ public class AgentOrchestrator
     private readonly int _maxConcurrentSubAgents;
     private readonly IAgentOutput _output;
     private readonly SessionUsage? _sessionUsage;
+    /// <summary>Which tools the delegating persona may use; a sub-agent gets no others.</summary>
+    private readonly ToolScope? _toolScope;
     private readonly ConcurrentDictionary<string, SubAgent> _agents = new();
 
     /// <summary>Default cap on how many sub-agents RunParallelAsync actually runs at
@@ -53,8 +55,10 @@ public class AgentOrchestrator
         int maxIterations = AgentLoop.DefaultMaxIterations,
         int maxConcurrentSubAgents = DefaultMaxConcurrentSubAgents,
         IAgentOutput? output = null,
-        SessionUsage? sessionUsage = null)
+        SessionUsage? sessionUsage = null,
+        ToolScope? toolScope = null)
     {
+        _toolScope = toolScope;
         _llm = llm;
         _tools = tools;
         _approval = approval;
@@ -72,7 +76,9 @@ public class AgentOrchestrator
     /// </summary>
     public SubAgent Spawn(string name, string task)
     {
-        var agent = new SubAgent(name, task, _llm, _tools, _approval, _systemPrompt, _maxTokens, _maxIterations, _output, _sessionUsage);
+        // A sub-agent works for the persona that delegated, so it gets only the tools that persona may use.
+        var tools = _toolScope is null ? _tools : _tools.Filtered(_toolScope.Permits);
+        var agent = new SubAgent(name, task, _llm, tools, _approval, _systemPrompt, _maxTokens, _maxIterations, _output, _sessionUsage);
         _agents[agent.Id] = agent;
         return agent;
     }

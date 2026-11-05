@@ -35,6 +35,8 @@ How to find out why a persona is missing, not loading, not offered for handoff, 
 | `the header needs a 'name:' line` | No `name:` | Add it |
 | `the file has no prompt after the header` | Nothing but whitespace after the closing `---` | Write the prompt |
 | `handoff must be true or false` / `order must be a whole number` | Bad value | Fix it |
+| `'x' is not a valid tool name` | A `tools:` or `deny:` entry has a space or other character | Use tool names such as `read_file`, comma separated |
+| Tool result `The tool 'x' is not available to ...` | The persona's `tools:`/`deny:` lines exclude it, or `x` is `create_digital` and the persona is not the alchemist | Edit the lines, or hand over to a persona that may use it |
 | `alias '...' is not a valid name` | Alias has a space, capital letter or other character | Fix it |
 | `'x' already exists (BuiltIn) and a Project file cannot replace it` | A project file reuses a built-in or user persona's name | Rename it, or move the file to the user folder if you want to replace the built-in |
 | `'x' is already used by 'y'` | Its key or alias is another persona's key or alias | Pick another name |

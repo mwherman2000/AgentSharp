@@ -21,6 +21,13 @@ public interface ITool
     JsonElement InputSchema { get; }
     ToolRiskLevel RiskLevel { get; }
 
+    /// <summary>
+    /// The personas (canonical keys) that may use this tool, or null for every persona. A tool that only
+    /// one persona should have, such as <c>create_digital</c> for the alchemist, names it here; <see cref="ToolScope"/>
+    /// then keeps the tool out of every other persona's tool list and refuses its calls.
+    /// </summary>
+    IReadOnlyList<string>? OnlyPersonas => null;
+
     Task<ToolResult> ExecuteAsync(JsonElement input, CancellationToken ct = default);
 
     /// <summary>

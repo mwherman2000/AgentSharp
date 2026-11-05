@@ -67,6 +67,7 @@ Personas are compiled in. The prompts are constants in `SystemPromptBuilder`, an
 | `full_name` | Display name. |
 | `role` | One line. This is what the other personas see when deciding whether to hand off. |
 | `prompt` | The full persona prompt. |
+| `tools`, `deny` | Optional arrays of tool names that limit the persona (written as `tools:` / `deny:` header lines). Omit both for every tool. |
 
 `handoff` (optional boolean, default **true**): whether other personas and the `handoff` tool may hand a conversation to the new persona. A created persona is a handoff target by default, so the user (`/handoff`) and the model can hand to it the moment it exists; pass `false` for a persona only the user should start. The approval prompt shows the value ("Handoff target: yes" or "no").
 
@@ -90,7 +91,19 @@ Personas are compiled in. The prompts are constants in `SystemPromptBuilder`, an
 
 ## 6. Governance and safety
 
-* **Same privileges.** Personas share the same tools, so a created persona can run shell commands like any other. The approval gate still applies. `create_digital` gives it nothing more.
+* **Same privileges by default, narrower on request.** A persona gets every tool unless its file says otherwise, so a created persona can run shell commands like any other. The approval gate still applies. `create_digital` gives it nothing more, and it can only give it less: see "Limiting a persona's tools" below.
+* **`create_digital` is the alchemist's alone.** The tool names `alchemist` in `ITool.OnlyPersonas`. `ToolScope` leaves it out of every other persona's tool list and refuses a call to it from any other persona (or from a custom system prompt), so a persona built from a handed-over conversation cannot create more personas. The approval prompt still applies to the alchemist.
+
+### Limiting a persona's tools
+
+Two sources narrow what a persona may use, and `ToolScope` (set by the session to the persona in charge) applies both:
+
+| Source | Where | Effect |
+|---|---|---|
+| The persona | `tools:` and `deny:` lines in its file header | `tools: read_file, grep` is an allow-list (only those); `deny: run_shell` removes tools from what is left; deny wins; `tools:` with no names means none. No line, no limit. |
+| The tool | `ITool.OnlyPersonas` | A tool offered to the named personas only (`create_digital`: `alchemist`). |
+
+`handoff` is never removed, so a restricted persona can still hand the conversation on or back. Enforcement is in three places, because a model can call a tool it was not offered: the tool list sent with each request (`AgentLoop.BuildRequest`), the dispatch of each tool call (a refused call returns an error to the model and the tool does not run), and sub-agents (`AgentOrchestrator` gives a sub-agent only the delegating persona's tools). The persona's file is read at each check, so a reloaded file narrows a running conversation at once; a deleted file keeps its last good limits (a retired persona). A limit can only narrow: there is no way to give a persona a tool the session lacks. Editing `tools:` or `deny:` in a persona file is a header edit, so the file tools ask about it even after a per-file grant. `create_digital` takes optional `tools` and `deny` arrays and shows them in the approval prompt ("Tools: only read_file, grep"). Tool names are not checked against the registry (a misspelled name in `tools:` simply matches nothing, which fails safe; in `deny:` it removes nothing).
 * **Injected content.** A prompt built from web content or a pasted document could carry instructions. The user sees the full prompt before anything is written.
 * **The file tools are covered too.** `write_file` and `edit_file` are `Write`-level, which is normally auto-approved, so on their own they could write a persona file (or set `handoff: true` in one) without the `create_digital` approval. `ApprovalGate` therefore asks about any `write_file` or `edit_file` whose path is inside a `.agentsharp/superprompts` folder (`PersonaRegistry.IsPersonaFilePath`; user and project folders alike, case-insensitive, `..` resolved), every time, with no "always allow", and denies it when no one can answer. Not covered: a path reached through a symbolic link or a Windows 8.3 short name, and a persona file changed by a program the user runs (`run_shell` is Destructive and is asked about anyway).
 * **Why there is no "always allow" for persona writes.** Both `create_digital` and a file-tool write into a `superprompts` folder are asked about every time, and an `s` answer counts as allow-once (`ApprovalRequest.OfferAlways` is false, so neither app offers it).

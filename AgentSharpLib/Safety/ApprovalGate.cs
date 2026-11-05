@@ -84,7 +84,7 @@ public class ApprovalGate
                 return true;
             return await PromptForApproval(tool, inputSummary,
                 granted
-                    ? "This edit changes the persona's header (name, aliases, role, handoff or order), so it is asked about even though edits to this file were allowed."
+                    ? "This edit changes the persona's header (name, aliases, role, handoff, order, tools or deny), so it is asked about even though edits to this file were allowed."
                     : "This writes a persona (superprompt) file. A persona's prompt controls the conversation once it is used or handed to.",
                 ct, askEveryTime: true, fileGrantKey: personaPath);
         }

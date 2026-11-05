@@ -21,6 +21,7 @@ public enum PersonaSource
 /// <param name="Order">Sort position; the lowest is the default persona.</param>
 /// <param name="Source">Which folder the definition came from.</param>
 /// <param name="Path">The file it was read from, or the embedded resource name.</param>
+/// <param name="Tools">Which tools it may use (the file's <c>tools:</c> and <c>deny:</c> lines); null means all of them.</param>
 public sealed record Persona(
     string Key,
     IReadOnlyList<string> Aliases,
@@ -30,4 +31,5 @@ public sealed record Persona(
     bool IsHandoffTarget,
     int Order,
     PersonaSource Source,
-    string Path);
+    string Path,
+    ToolPolicy? Tools = null);

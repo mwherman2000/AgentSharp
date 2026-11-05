@@ -173,11 +173,12 @@ public sealed class AgentBuilder
 
         var memory = _memory ? new MemoryManager() : null;
         var usage = new SessionUsage();
+        var toolScope = new ToolScope();
 
         if (_subAgents)
         {
             var subAgentPrompt = _systemPrompt ?? new SystemPromptBuilder(project, memory, superPrompt).Build();
-            var orchestrator = new AgentOrchestrator(llm, tools, approval, subAgentPrompt, maxTokens, maxIterations, output: output, sessionUsage: usage);
+            var orchestrator = new AgentOrchestrator(llm, tools, approval, subAgentPrompt, maxTokens, maxIterations, output: output, sessionUsage: usage, toolScope: toolScope);
             tools.Register(new SubAgentTool(orchestrator));
         }
         if (memory is not null)
@@ -192,6 +193,6 @@ public sealed class AgentBuilder
         foreach (var tool in _tools)
             tools.Register(tool);
 
-        return new AgentSession(llm, tools, approval, output, project, memory, maxTokens, maxIterations, superPrompt, _systemPrompt, usage, handoff, _sessions);
+        return new AgentSession(llm, tools, approval, output, project, memory, maxTokens, maxIterations, superPrompt, _systemPrompt, usage, handoff, _sessions, toolScope);
     }
 }

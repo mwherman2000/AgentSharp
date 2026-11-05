@@ -285,8 +285,10 @@ public class AgentLoop
         SessionUsage? sessionUsage = null,
         IConnectivityProbe? connectivity = null,
         TimeSpan? networkWait = null,
-        TimeSpan? networkPoll = null)
+        TimeSpan? networkPoll = null,
+        ToolScope? toolScope = null)
     {
+        _toolScope = toolScope;
         _connectivity = connectivity;
         _networkWait = networkWait ?? DefaultNetworkWait;
         _networkPoll = networkPoll ?? DefaultNetworkPoll;
@@ -300,6 +302,9 @@ public class AgentLoop
         _output = output ?? NullAgentOutput.Instance;
         _sessionUsage = sessionUsage;
     }
+
+    /// <summary>Which tools the persona in charge may use; null means all of them.</summary>
+    private readonly ToolScope? _toolScope;
 
     /// <summary>How long to wait for a lost network connection to come back before giving up on the turn, and how often to check.</summary>
     private static readonly TimeSpan DefaultNetworkWait = TimeSpan.FromSeconds(30);
@@ -903,7 +908,7 @@ public class AgentLoop
         SystemPrompt = _systemPrompt,
         // A /compact, handoff or /status record is local bookkeeping for saves and transcripts, not part of the conversation.
         Messages = WithCompactionNote(_history.Messages.Where(m => !m.Kind.IsLocalRecord()).ToList()),
-        Tools = _tools.GetDefinitions(),
+        Tools = _toolScope is null ? _tools.GetDefinitions() : _tools.GetDefinitions(_toolScope.Permits),
         MaxTokens = _maxTokens
     };
 
@@ -1267,6 +1272,23 @@ public class AgentLoop
             }
 
             var tool = _tools.Get(toolUse.Name);
+
+            // The model may call a tool it was not offered (it remembers one from earlier in the conversation, or from
+            // another persona): the persona's tool limits are enforced here, not only in the list it was sent.
+            if (tool is not null && _toolScope?.Denial(tool) is { } notAllowed)
+            {
+                var notAllowedResult = ToolResult.Error(notAllowed);
+                toolActivity?.SetStatus(ActivityStatusCode.Error, notAllowed);
+                toolResults.Add(new ToolResultBlock
+                {
+                    ToolUseId = toolUse.Id,
+                    Content = notAllowedResult.Output,
+                    IsError = true
+                });
+                OnToolEnd?.Invoke(toolUse.Name, notAllowedResult);
+                continue;
+            }
+
             var inputSummary = SummarizeInput(toolUse.Name, toolUse.Input);
             toolActivity?.SetTag("tool.input", toolUse.Input.GetRawText());
 
@@ -1319,9 +1341,14 @@ public class AgentLoop
         var aliases = input.TryGetProperty("aliases", out var a) && a.ValueKind == JsonValueKind.Array
             ? string.Join(", ", a.EnumerateArray().Select(x => x.ToString())) : "";
         var scope = Field("scope");
+        IEnumerable<string> Names(string name) => input.TryGetProperty(name, out var arr) && arr.ValueKind == JsonValueKind.Array
+            ? arr.EnumerateArray().Select(x => x.ToString()) : [];
+        var hasAllow = input.TryGetProperty("tools", out var t) && t.ValueKind == JsonValueKind.Array;
+        var toolLimit = (hasAllow ? $"only {string.Join(", ", Names("tools"))}" : "all tools")
+            + (Names("deny").Any() ? $"; not {string.Join(", ", Names("deny"))}" : "");
         return $"Create persona '{Field("nickname")}' in the {(scope.Length == 0 ? "user" : scope)} folder\n" +
                $"  Name:    {Field("name")}\n  Role:    {Field("role")}\n  Aliases: {(aliases.Length == 0 ? "(none)" : aliases)}\n" +
-               $"  Handoff target: {(!input.TryGetProperty("handoff", out var h) || h.ValueKind != JsonValueKind.False ? "yes" : "no")}\n  Prompt:\n" +
+               $"  Handoff target: {(!input.TryGetProperty("handoff", out var h) || h.ValueKind != JsonValueKind.False ? "yes" : "no")}\n  Tools: {toolLimit}\n  Prompt:\n" +
                string.Join("\n", Field("prompt").Replace("\r\n", "\n").Split('\n').Select(l => "    | " + l));
     }
 

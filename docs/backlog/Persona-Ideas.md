@@ -117,7 +117,7 @@ Review the prompt against the checklist in [prompt-review-backlog.md](../prompt-
 ### 5.2 Things to settle before stage 1
 
 * **Approval.** A created persona's prompt is shown in full and approved before the persona exists, using the same approval prompt as file writes. It is a handoff target by default.
-* **Safety.** Personas share the same tools, so a created persona can run shell commands like any other. The approval gate still applies, but a prompt built from web content or a pasted document could carry instructions. `create_digital` only writes what the user approves, and a created persona gets no tool or approval privileges the others lack.
+* **Safety.** Personas have every tool unless their file limits them (`tools:` / `deny:`), so a created persona can run shell commands like any other. The approval gate still applies, but a prompt built from web content or a pasted document could carry instructions. `create_digital` only writes what the user approves, and a created persona gets no tool or approval privileges the others lack.
 * **Quality.** The first-pass review in [prompt-review-backlog.md](../prompt-review-backlog.md) found real problems in the hand-written prompts, so a generated prompt should go through a critic persona first (see 2.1). That is a natural use of handoff and return.
 * **Too many targets.** Every handoff target is described in every persona's prompt. Many created personas would cost tokens and make routing worse. Put a cap on them, or add the triage persona (2.1) to choose among them.
 * **Names.** A created persona must not shadow a built-in one, and nicknames need a safe character set (the nickname becomes part of file names and of the saved handoff stack).

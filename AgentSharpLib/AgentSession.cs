@@ -22,6 +22,7 @@ public sealed class AgentSession
     private string? _superPrompt;
     private bool _useCustomSystemPrompt;
     private readonly HandoffQueue? _handoff;
+    private readonly ToolScope _toolScope;
     private string? _handoffContext;
     private readonly List<string> _handoffStack = [];
 
@@ -76,8 +77,10 @@ public sealed class AgentSession
         string? customSystemPrompt,
         SessionUsage usage,
         HandoffQueue? handoff = null,
-        SessionManager? sessions = null)
+        SessionManager? sessions = null,
+        ToolScope? toolScope = null)
     {
+        _toolScope = toolScope ?? new ToolScope();
         _handoff = handoff;
         Sessions = sessions;
         Usage = usage;
@@ -358,7 +361,10 @@ public sealed class AgentSession
             : new SystemPromptBuilder(Project, Memory, _superPrompt, offerHandoff: _handoff is not null,
                 handoffContext: _handoffContext, returnTo: returnTo, handoffStack: _handoffStack).Build();
 
-        var loop = new AgentLoop(Llm, Tools, Approval, systemPrompt, history, MaxTokens, MaxIterations, Output, Usage);
+        // Which tools the persona in charge may use; empty when a custom system prompt is in use (no persona).
+        _toolScope.Persona = _useCustomSystemPrompt ? "" : SystemPromptBuilder.ResolveKey(_superPrompt);
+
+        var loop = new AgentLoop(Llm, Tools, Approval, systemPrompt, history, MaxTokens, MaxIterations, Output, Usage, toolScope: _toolScope);
         loop.OnToolStart += (name, summary) => OnToolStart?.Invoke(name, summary);
         loop.OnToolEnd += (name, result) => OnToolEnd?.Invoke(name, result);
         return loop;

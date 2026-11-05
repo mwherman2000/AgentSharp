@@ -4,7 +4,7 @@ namespace AgentSharpLib.Context;
 
 /// <summary>
 /// Works out whether a <c>write_file</c> or <c>edit_file</c> call on a persona file would change its header (the name,
-/// aliases, role, handoff flag or order) or only its prompt. <see cref="Safety.ApprovalGate"/> uses it: a user who
+/// aliases, role, handoff flag, order, or the tools/deny limits) or only its prompt. <see cref="Safety.ApprovalGate"/> uses it: a user who
 /// allowed edits to one persona file for the session still gets asked when an edit touches the header, because the
 /// header decides, for example, whether the model can hand the conversation to the persona.
 /// </summary>
