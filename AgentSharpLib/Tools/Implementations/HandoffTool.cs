@@ -41,7 +41,16 @@ public sealed class HandoffTool : ToolBase
 {
     private readonly HandoffQueue _queue;
 
-    public HandoffTool(HandoffQueue queue) => _queue = queue;
+    private readonly Func<PersonaCatalog> _catalog;
+
+    public HandoffTool(HandoffQueue queue) : this(queue, null) { }
+
+    /// <summary>For tests: read the personas from another catalog. Null takes the live registry.</summary>
+    internal HandoffTool(HandoffQueue queue, Func<PersonaCatalog>? catalog)
+    {
+        _queue = queue;
+        _catalog = catalog ?? (() => PersonaRegistry.Current);
+    }
 
     public override string Name => "handoff";
     public override string Description =>
@@ -50,8 +59,8 @@ public sealed class HandoffTool : ToolBase
         "first and tell the user you are handing over; call this at most once per turn. " +
         "Use it when the user asks for a persona by name, or when another persona would clearly serve the " +
         "request better than you; otherwise just answer. " +
-        $"The persona argument is one of {string.Join(", ", SystemPromptBuilder.HandoffPersonas)}, or \"{SystemPromptBuilder.ReturnTarget}\" " +
-        "(who they are: " + string.Join("; ", PersonaRegistry.Current.Personas.Where(p => p.IsHandoffTarget).Select(p => $"{p.Key}: {p.Role}")) + "). " +
+        $"The persona argument is one of {string.Join(", ", _catalog().HandoffKeys)}, or \"{SystemPromptBuilder.ReturnTarget}\" " +
+        "(who they are: " + string.Join("; ", _catalog().Personas.Where(p => p.IsHandoffTarget).Select(p => $"{p.Key}: {p.Role}")) + "). " +
         "(only after the conversation was handed to you) to give it back when your part is done or you cannot help.";
     public override ToolRiskLevel RiskLevel => ToolRiskLevel.ReadOnly;
 
@@ -64,7 +73,7 @@ public sealed class HandoffTool : ToolBase
     {
         get
         {
-            var key = string.Join('|', SystemPromptBuilder.HandoffPersonas);
+            var key = string.Join('|', _catalog().HandoffKeys);
             if (_schemaFor != key)
             {
                 _schema = BuildInputSchema();
@@ -82,7 +91,7 @@ public sealed class HandoffTool : ToolBase
             persona = new
             {
                 type = "string",
-                @enum = SystemPromptBuilder.HandoffPersonas.Append(SystemPromptBuilder.ReturnTarget).ToArray(),
+                @enum = _catalog().HandoffKeys.Append(SystemPromptBuilder.ReturnTarget).ToArray(),
                 description = "The persona to hand the conversation to, or \"return\" to give it back to the persona that handed it to you"
             },
             reason = new { type = "string", description = "One sentence on what the user needs and why this persona suits it (or why you are returning); shown to the user and to that persona" }
@@ -111,14 +120,14 @@ public sealed class HandoffTool : ToolBase
         string key;
         try
         {
-            key = SystemPromptBuilder.ResolveKey(persona);
+            key = _catalog().Find(persona)?.Key ?? throw new ArgumentException(persona);
         }
         catch (ArgumentException)
         {
             return Task.FromResult(ToolResult.Error(Unavailable(persona)));
         }
 
-        if (!SystemPromptBuilder.HandoffPersonas.Contains(key))
+        if (!_catalog().HandoffKeys.Contains(key))
             return Task.FromResult(ToolResult.Error(Unavailable(persona)));
         if (key == _queue.CurrentPersona)
             return Task.FromResult(ToolResult.Error($"You already are {key}. Pick a different persona, or just answer."));
@@ -129,6 +138,6 @@ public sealed class HandoffTool : ToolBase
             "Finish answering the current prompt and tell the user you are handing over. Do not call handoff again."));
     }
 
-    private static string Unavailable(string persona) =>
-        $"Cannot hand off to '{persona}'. Valid personas: {string.Join(", ", SystemPromptBuilder.HandoffPersonas)}.";
+    private string Unavailable(string persona) =>
+        $"Cannot hand off to '{persona}'. Valid personas: {string.Join(", ", _catalog().HandoffKeys)}.";
 }

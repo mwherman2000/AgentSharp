@@ -234,6 +234,8 @@ public class PersonaCatalogTests : IDisposable
     }
 }
 
+// Replaces the process-wide registry, so it runs alone among the classes in this collection.
+[Collection("PersonaRegistry")]
 public class PersonaRetirementTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "agentsharp_retire_" + Guid.NewGuid().ToString("N")[..8]);

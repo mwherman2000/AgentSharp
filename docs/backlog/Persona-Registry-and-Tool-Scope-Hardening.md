@@ -2,20 +2,20 @@
 
 | | |
 |---|---|
-| Status | **Backlogged. Nothing is built.** Two small items found while reviewing concurrency, neither a known runtime fault. |
+| Status | Item 1 (the flaky test) is **fixed**; item 2 (the sub-agent tool snapshot) is **backlogged**, not built and not a known runtime fault. |
 | Date | 2026-11-05 |
 | Raised by | Michael W. Herman |
 | Affects (when taken up) | `AgentSharp.Tests/Tools/CreateDigitalToolTests.cs` (`NewPersonaHandoffTests`), `AgentSharp.Tests/Context/PersonaCatalogTests.cs`, `AgentSharpLib/Tools/Implementations/HandoffTool.cs`, `AgentSharpLib/Agent/MultiAgent/` |
 
 ---
 
-## 1. A flaky test: the persona registry is global
+## 1. A flaky test: the persona registry is global (fixed 2026-11-05)
 
 `NewPersonaHandoffTests.TheHandoffTool_OffersAndAcceptsAPersonaCreatedAfterItWasBuilt_AndNotOneThatIsNot` fails now and then (seen on a clean checkout too, about one run in five). It calls `PersonaRegistry.Set` with a catalog holding `zz-hot`, then reads the handoff tool's schema. xUnit runs test classes in parallel, and the retired-persona tests in `PersonaCatalogTests` also call `Set` on the same static registry, so one can replace the catalog between the other's `Set` and its assertions.
 
 This is a test problem only. `PersonaRegistry.Current` is a `volatile` reference to an immutable catalog and `Set` takes a lock, so the app is safe to reload while it runs.
 
-Options:
+Fixed with option 2: `HandoffTool` takes an optional catalog provider (internal constructor), `NewPersonaHandoffTests` passes its own catalog, and `PersonaRetirementTests` joined the `PersonaRegistry` collection. The suite passed six runs in a row (545 tests). The options considered were:
 
 1. Put every class that calls `PersonaRegistry.Set` or `Watch` in one xUnit collection (`[Collection("PersonaRegistry")]`), so they run one after another. Two attributes; a new test that calls `Set` must remember to join.
 2. **Recommended.** Give `HandoffTool` an optional catalog provider with an internal test constructor, as `ToolScope` and `CreateDigitalTool` have, and have `NewPersonaHandoffTests` pass its own catalog so it never touches the global one. The `PersonaCatalogTests` registry tests exercise the real `Set` retirement logic, so they stay on the global registry and join a collection (option 1).

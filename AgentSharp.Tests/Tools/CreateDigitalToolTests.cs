@@ -364,7 +364,7 @@ public class CreateDigitalToolTests : IDisposable
 
 public class NewPersonaHandoffTests
 {
-    // These change the process-wide persona registry for a moment, under a name no other test uses.
+    // These use their own catalog, so they never touch the process-wide registry other tests share.
     private static Persona Extra(string key, bool handoff) =>
         new(key, [], "Extra Pando", "You are Extra.", "an extra persona", handoff, 5000, PersonaSource.User, "test");
 
@@ -386,11 +386,12 @@ public class NewPersonaHandoffTests
     public async Task TheHandoffTool_OffersAndAcceptsAPersonaCreatedAfterItWasBuilt_AndNotOneThatIsNot()
     {
         var queue = new HandoffQueue { CurrentPersona = "andy" };
-        var tool = new HandoffTool(queue);
+        PersonaCatalog catalog = PersonaCatalog.BuiltIn;
+        var tool = new HandoffTool(queue, () => catalog);
         var before = tool.InputSchema.GetRawText();
         Assert.DoesNotContain("zz-hot", before);
 
-        PersonaRegistry.Set(With(Extra("zz-hot", handoff: true), Extra("zz-cold", handoff: false)));
+        catalog = With(Extra("zz-hot", handoff: true), Extra("zz-cold", handoff: false));
         try
         {
             var after = tool.InputSchema.GetRawText();
@@ -406,7 +407,7 @@ public class NewPersonaHandoffTests
         }
         finally
         {
-            PersonaRegistry.Set(PersonaCatalog.BuiltIn);
+            catalog = PersonaCatalog.BuiltIn;   // the persona stops being a target
         }
 
         // and it is withdrawn when the persona stops being a target
