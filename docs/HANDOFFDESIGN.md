@@ -88,7 +88,7 @@ Return: Ray Pando -> Andy Pando. Handoff stack: (empty)
 * **Saved** by `/save` and restored by `/load` with the rest of the history. It is not a prompt, so it does not use up a prompt number.
 * **Transcript:** its own entry, `H21`, with the number of the prompt whose turn it ended (the same rule as `E21` and `M21`) and no answer part. The transcript's header still shows the persona in charge when it was written.
 * **Console:** the same text, printed through `IAgentOutput.Handoff`, in magenta in the CLI. `/return` prints this line (it is the only output of a successful return); with nothing to return to it prints the notice and `(empty)`.
-* **Command prompt prefix:** `ReplHost.PromptPrefix(number, superPrompt)` builds it fresh for every prompt (`21 Ray Pando>`), so it follows `/clear <persona>`, a handoff made by the model and `/return`. The Lucy app resolves the name per prompt for the same reason.
+* **Command prompt prefix:** `ReplHost.PromptPrefix(number, superPrompt, depth)` builds it fresh for every prompt (`21 Ray Pando>`, with one more ">" for each persona in the handoff stack: `AgentSession.PromptDepth`), so it follows `/clear <persona>`, a handoff made by the model and `/return`. The Lucy app resolves the name per prompt for the same reason.
 * **`/status` is recorded the same way.** Each `/status` adds a `PromptKind.Sts` record (code `sts`, label `T`) holding the listing exactly as printed, so `/save` keeps it and a transcript shows it as `T21`, in a preformatted block (10pt Consolas in a .docx transcript), with the number of the prompt it follows and no answer part. Like the `M` and `H` records it is never sent to the model, is not "the last answer", and counts for nothing in the context size: `PromptKinds.IsLocalRecord` names the three kinds, and the provider's exact count stays exact when one is added. Both apps record it.
 * **One stack format.** `/status`, `/return`, `/load`, the console line and the history record all use `AgentSession.DescribeHandoffStack()`: `Andy Pando > Ray Pando > Donald J. Pando (current)`, or `(empty)`.
 
@@ -184,9 +184,9 @@ Needs `ANTHROPIC_API_KEY` set. It spends a handful of real model calls. Run the 
 | # | Type | You should see |
 |---|---|---|
 | 1 | *(start the app)* | The prompt reads `1 Andy Pando>`. |
-| 2 | `Hand this conversation to Ray.` | Andy says it is handing over, then `Auto-saved andy-handoff-ray-<time> (transcript: ...)` and `Handoff: Andy Pando -> Ray Pando (...). Handoff stack: Andy Pando > Ray Pando (current)`. The next prompt reads `2 Ray Pando>`. |
+| 2 | `Hand this conversation to Ray.` | Andy says it is handing over, then `Auto-saved andy-handoff-ray-<time> (transcript: ...)` and `Handoff: Andy Pando -> Ray Pando (...). Handoff stack: Andy Pando > Ray Pando (current)`. The next prompt reads `2 Ray Pando>>` (one ">" for each persona in the handoff stack). |
 | 3 | `Which persona are you, and who handed you this conversation?` | Ray answers and names Andy. `/status` shows `Handoff stack: Andy Pando > Ray Pando (current)`. |
-| 4 | `/return` | `Return: Ray Pando -> Andy Pando. Handoff stack: (empty)`. The prompt is `Andy Pando>` again. |
+| 4 | `/return` | `Return: Ray Pando -> Andy Pando. Handoff stack: (empty)`. The prompt is `Andy Pando>` again (one ">" again). |
 | 5 | `I'd like to talk with a persistent digital person who has memory and relationships.` | Andy hands off to Lucy on its own: a `Handoff: Andy Pando -> Lucy Pando` line, and the next prompt is `Lucy Pando>`. |
 | 6 | `/save`, then `/transcribe`, then `/clear`, then `/load <the lucy-saved-... name>`, then `/status` | The files `lucy-saved-<time>` and `lucy-transcription-<time>.docx` are written. After the load, `/status` shows `Handoff stack: Andy Pando > Lucy Pando (current)`. In the transcript, each switch is an `H` entry. |
 

@@ -177,6 +177,10 @@ public sealed class AgentSession
     /// it was never handed over (or has been returned all the way).</summary>
     public IReadOnlyList<string> HandoffStack => _handoffStack;
 
+    /// <summary>How many ">" the command prompt shows: one for the persona in charge and one for each persona
+    /// that handed the conversation over, so a conversation that was never handed over has 1.</summary>
+    public int PromptDepth => _handoffStack.Count + 1;
+
     /// <summary>What to save with the conversation so it can be returned after a /load, or null
     /// when there is nothing to return to.</summary>
     public HandoffState? HandoffState =>

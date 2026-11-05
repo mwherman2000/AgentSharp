@@ -370,11 +370,19 @@ public class AgentBuilderTests
         await session.SendAsync("hi");
         Assert.Equal("2 Ray Pando>", AgentSharpApp.Ui.ReplHost.PromptPrefix(session.History.QuestionCount + 1, session.SuperPrompt));
 
+        Assert.Equal(1, session.PromptDepth);
+
+        // one ">" more for each persona that handed the conversation over
         session.Handoff("donald");
-        Assert.Equal("2 Donald J. Pando>", AgentSharpApp.Ui.ReplHost.PromptPrefix(session.History.QuestionCount + 1, session.SuperPrompt));
+        Assert.Equal(2, session.PromptDepth);
+        Assert.Equal("2 Donald J. Pando>>", AgentSharpApp.Ui.ReplHost.PromptPrefix(session.History.QuestionCount + 1, session.SuperPrompt, session.PromptDepth));
+
+        session.Handoff("andy");
+        Assert.Equal("2 Andy Pando>>>", AgentSharpApp.Ui.ReplHost.PromptPrefix(session.History.QuestionCount + 1, session.SuperPrompt, session.PromptDepth));
 
         session.Return();
-        Assert.Equal("2 Ray Pando>", AgentSharpApp.Ui.ReplHost.PromptPrefix(session.History.QuestionCount + 1, session.SuperPrompt));
+        session.Return();
+        Assert.Equal("2 Ray Pando>", AgentSharpApp.Ui.ReplHost.PromptPrefix(session.History.QuestionCount + 1, session.SuperPrompt, session.PromptDepth));
     }
 
     [Fact]

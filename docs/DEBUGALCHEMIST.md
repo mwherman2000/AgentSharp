@@ -154,7 +154,7 @@ printf '/personas\n/handoff\n/return\n/handoff alchemist testing\n/handoff nosuc
 | `/personas` | 13 personas, `andy` first and `alchemist` last, each with its role; no `[user]` or `[project]` tags yet |
 | `/handoff` | `Usage: /handoff <persona> [reason]. Handoff stack: (empty)` |
 | `/return` | `Nothing to return to: this conversation has not been handed over.` |
-| `/handoff alchemist testing` | An auto-save line, then `Handoff: Lucy Pando -> Alchemist Pando (testing). Handoff stack: Lucy Pando > Alchemist Pando (current)`; the prompt becomes `Alchemist Pando>` |
+| `/handoff alchemist testing` | An auto-save line, then `Handoff: Lucy Pando -> Alchemist Pando (testing). Handoff stack: Lucy Pando > Alchemist Pando (current)`; the prompt becomes `Alchemist Pando>>` |
 | `/handoff nosuch` | `Unknown --Superprompt 'nosuch'. Valid options: ...`; nothing changes |
 | `/return back` | An auto-save line, `Return: Alchemist Pando -> Lucy Pando (back)`, stack `(empty)` |
 | `/clear alchemist` | `(new conversation with Alchemist Pando)` |

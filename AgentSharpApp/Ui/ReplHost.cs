@@ -483,10 +483,11 @@ public class ReplHost
     }
 
     /// <summary>The command prompt's text, numbered like the Q&amp;A pairs in a transcript and named by full
-    /// name for the persona now in charge: "21 Ray Pando>". Built fresh for every prompt, so it follows
+    /// name for the persona now in charge: "21 Ray Pando>", with one more ">" for each persona that handed the
+    /// conversation over ("21 Ray Pando>>" after one handoff). Built fresh for every prompt, so it follows
     /// /clear, a handoff and a return.</summary>
-    public static string PromptPrefix(int number, string? superPrompt) =>
-        $"{number} {SystemPromptBuilder.ResolveAgentName(superPrompt)}>";
+    public static string PromptPrefix(int number, string? superPrompt, int depth = 1) =>
+        $"{number} {SystemPromptBuilder.ResolveAgentName(superPrompt)}{new string('>', Math.Max(1, depth))}";
 
     /// <summary>Prints one /status row ("Label: value", the note dimmed) and adds the same text, without markup, to <paramref name="record"/>.</summary>
     private static void PrintStatusRow(System.Text.StringBuilder record, string label, string value, string? note = null)
@@ -641,7 +642,7 @@ public class ReplHost
         var lines = new List<string>();
         var current = new System.Text.StringBuilder();
         // Built per prompt: /clear <persona>, a handoff and /return can all switch the agent mid-session.
-        AnsiConsole.Markup($"[bold blue]{Markup.Escape(PromptPrefix(_session.History.QuestionCount + 1, _session.SuperPrompt))}[/] ");
+        AnsiConsole.Markup($"[bold blue]{Markup.Escape(PromptPrefix(_session.History.QuestionCount + 1, _session.SuperPrompt, _session.PromptDepth))}[/] ");
 
         // historyIndex == history.Count means "not currently navigating history"
         // (i.e. showing the user's own in-progress draft).
