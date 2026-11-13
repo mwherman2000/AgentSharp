@@ -286,8 +286,10 @@ public class AgentLoop
         IConnectivityProbe? connectivity = null,
         TimeSpan? networkWait = null,
         TimeSpan? networkPoll = null,
-        ToolScope? toolScope = null)
+        ToolScope? toolScope = null,
+        string? identityReminder = null)
     {
+        _identityReminder = identityReminder;
         _toolScope = toolScope;
         _connectivity = connectivity;
         _networkWait = networkWait ?? DefaultNetworkWait;
@@ -302,6 +304,10 @@ public class AgentLoop
         _output = output ?? NullAgentOutput.Instance;
         _sessionUsage = sessionUsage;
     }
+
+    /// <summary>Who the assistant is now, set once the conversation has passed between personas. Added to a copy of the latest
+    /// prompt in each request, because earlier assistant turns written by other personas outweigh the system prompt otherwise.</summary>
+    private readonly string? _identityReminder;
 
     /// <summary>Which tools the persona in charge may use; null means all of them.</summary>
     private readonly ToolScope? _toolScope;
@@ -907,7 +913,7 @@ public class AgentLoop
     {
         SystemPrompt = _systemPrompt,
         // A /compact, handoff or /status record is local bookkeeping for saves and transcripts, not part of the conversation.
-        Messages = WithCompactionNote(_history.Messages.Where(m => !m.Kind.IsLocalRecord()).ToList()),
+        Messages = WithIdentityReminder(WithCompactionNote(_history.Messages.Where(m => !m.Kind.IsLocalRecord()).ToList())),
         Tools = _toolScope is null ? _tools.GetDefinitions() : _tools.GetDefinitions(_toolScope.Permits),
         MaxTokens = _maxTokens
     };
@@ -917,6 +923,23 @@ public class AgentLoop
     /// the history is untouched), instead of letting it guess from what it can see that work may have been lost. Inside an
     /// existing message because a separate one would put two messages of the same role in a row.
     /// </summary>
+    /// <summary>Tell the model, inside a copy of the latest typed prompt, which persona it is (see <see cref="_identityReminder"/>).</summary>
+    private List<ChatMessage> WithIdentityReminder(List<ChatMessage> messages)
+    {
+        if (_identityReminder is null) return messages;
+        for (var i = messages.Count - 1; i >= 0; i--)
+        {
+            if (messages[i].Role != MessageRole.User) continue;
+            var blocks = messages[i].Content.ToList();
+            var textAt = blocks.FindIndex(b => b is TextBlock);
+            if (textAt < 0) continue; // a tool result: keep looking back for the typed prompt
+            blocks[textAt] = new TextBlock { Text = _identityReminder + "\n\n" + ((TextBlock)blocks[textAt]).Text };
+            messages[i] = messages[i] with { Content = blocks };
+            break;
+        }
+        return messages;
+    }
+
     private List<ChatMessage> WithCompactionNote(List<ChatMessage> messages)
     {
         if (_history.PromptOffset == 0 || messages.Count == 0 || messages[0].Role != MessageRole.User) return messages;

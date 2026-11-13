@@ -353,6 +353,14 @@ public sealed class AgentSession
         ConversationTranscript.Write(History, SystemPrompt, Project.WorkingDirectory, name, Usage, options,
             _useCustomSystemPrompt ? null : SystemPromptBuilder.ResolveKey(_superPrompt));
 
+    /// <summary>Once the conversation has passed between personas, a line saying who is in charge now. Earlier assistant
+    /// turns by other personas outweigh the system prompt, so the model needs it next to the prompt it is answering.</summary>
+    private string? IdentityReminder() =>
+        _useCustomSystemPrompt || (_handoffStack.Count == 0 && _handoffContext is null)
+            ? null
+            : $"[Note from the application: you are {SystemPromptBuilder.ResolveAgentName(_superPrompt)} ({SystemPromptBuilder.ResolveKey(_superPrompt)}). " +
+              "Earlier assistant turns may have been written by other personas; they were not you. Answer as yourself.]";
+
     private AgentLoop CreateLoop(ConversationHistory? history)
     {
         var returnTo = _handoffStack.Count > 0 ? _handoffStack[^1] : null;
@@ -370,7 +378,8 @@ public sealed class AgentSession
         // Which tools the persona in charge may use; empty when a custom system prompt is in use (no persona).
         _toolScope.Persona = _useCustomSystemPrompt ? "" : SystemPromptBuilder.ResolveKey(_superPrompt);
 
-        var loop = new AgentLoop(Llm, Tools, Approval, systemPrompt, history, MaxTokens, MaxIterations, Output, Usage, toolScope: _toolScope);
+        var loop = new AgentLoop(Llm, Tools, Approval, systemPrompt, history, MaxTokens, MaxIterations, Output, Usage, toolScope: _toolScope,
+            identityReminder: IdentityReminder());
         loop.OnToolStart += (name, summary) => OnToolStart?.Invoke(name, summary);
         loop.OnToolEnd += (name, result) => OnToolEnd?.Invoke(name, result);
         return loop;

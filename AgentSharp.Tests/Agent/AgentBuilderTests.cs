@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text;
 using AgentSharpLib;
 using AgentSharpLib.Agent;
@@ -275,6 +276,25 @@ public class AgentBuilderTests
 
         session.Reset();
         Assert.DoesNotContain("Handoff received", session.SystemPrompt);
+    }
+
+    private static string Text(IEnumerable<AgentSharpLib.Llm.ChatMessage> messages) =>
+        string.Join("\n", messages.SelectMany(m => m.Content).OfType<AgentSharpLib.Llm.TextBlock>().Select(b => b.Text));
+
+    [Fact]
+    public async Task AfterAHandoff_TheLatestPromptCarriesAnIdentityReminder_ButTheHistoryDoesNot()
+    {
+        var llm = new FakeStreamingLlmClient().Enqueue(Reply("one")).Enqueue(Reply("two"));
+        var session = await Isolated(llm).WithSuperPrompt("andy").BuildAsync();
+        await session.SendAsync("hi");
+        Assert.DoesNotContain("Note from the application", Text(llm.Requests[0].Messages));
+
+        session.Handoff("ray");
+        await session.SendAsync("who are you");
+
+        var sent = Text(llm.Requests[1].Messages);
+        Assert.Contains("you are Ray Pando (ray)", sent);
+        Assert.DoesNotContain("Note from the application", Text(session.History.Messages));
     }
 
     [Fact]
