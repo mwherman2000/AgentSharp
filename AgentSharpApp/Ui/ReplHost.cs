@@ -228,17 +228,21 @@ public class ReplHost
                 var handoffParts = (command.Argument ?? "").Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 if (handoffParts.Length == 0)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]Usage:[/] /handoff <persona> [[reason]]. [bold]Handoff stack:[/] {Markup.Escape(_session.DescribeHandoffStack())}");
+                    AnsiConsole.MarkupLine($"[yellow]Usage:[/] /handoff <persona> [[prompt]]. [bold]Handoff stack:[/] {Markup.Escape(_session.DescribeHandoffStack())}");
                     break;
                 }
                 try
                 {
-                    _session.Handoff(handoffParts[0], handoffParts.Length > 1 ? handoffParts[1] : null);
+                    _session.Handoff(handoffParts[0]);
                 }
                 catch (ArgumentException ex)
                 {
                     AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
+                    break;
                 }
+                // Text after the persona is submitted as the next prompt, so the new persona answers it now.
+                if (handoffParts.Length > 1)
+                    await RunTurnAsync(handoffParts[1], ct);
                 break;
 
             case CommandType.Personas:
@@ -607,7 +611,7 @@ public class ReplHost
             .AddRow("/compact -N | +N | N", "Drop the oldest turns making up at least N% of the estimated tokens (-N), or keep only the most recent turns making up at least N% (+N or N). Saves the session first (with a .docx transcript) and again after, automatically, as <persona>-compact-before-<time> and -after-<time>")
             .AddRow("/clear, /cls [[persona]]", $"Start a new conversation; optionally switch persona ({string.Join(", ", SystemPromptBuilder.AvailableSuperPrompts)})")
             .AddRow("/personas", "List the personas, including ones created with create_digital (the alchemist's tool)")
-            .AddRow("/handoff <persona> [[reason]]", "Hand the conversation, with its history, to another persona (the same history continues); shows the handoff stack")
+            .AddRow("/handoff <persona> [[prompt]]", "Hand the conversation, with its history, to another persona, then submit the optional prompt to it; shows the handoff stack")
             .AddRow("/return [[reason]]", "Hand the conversation back to the persona that handed it over (the same history continues); shows the handoff stack. The stack is saved with /save and restored by /load")
             .AddRow("/save [[id]] [[--tools]] [[--no-thinking]]", "Send a \"Checkpoint (/save)\" prompt, wait for the reply, then save the conversation (and a .docx transcript; without an id it is named <persona>-saved-<time>; the flags shape the transcript only)")
             .AddRow("/load, /resume <id>", "Continue a saved conversation (sends a \"Resumed (/load)\" prompt and shows the reply)")

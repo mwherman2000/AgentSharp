@@ -47,7 +47,7 @@ public static class CommandLineParser
         ("/exit", "Exit the agent"),
         ("/clear [persona]", "Start a new conversation, optionally as another persona"),
         ("/personas", "List the personas, including ones created with create_digital"),
-        ("/handoff <persona> [reason]", "Hand the conversation, with its history, to another persona"),
+        ("/handoff <persona> [prompt]", "Hand the conversation, with its history, to another persona"),
         ("/return [reason]", "Hand it back to the persona that handed it over"),
         ("/compact -N | +N | N", "Drop the oldest turns (-N drops N%, +N keeps N%)"),
         ("/save [id]", "Save the session"),
