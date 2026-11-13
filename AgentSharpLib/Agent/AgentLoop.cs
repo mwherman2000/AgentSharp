@@ -374,7 +374,8 @@ public class AgentLoop
     private void AddUserPrompt(string text, PromptKind kind = PromptKind.Std)
     {
         _history.AddUserMessage(text, kind);
-        if (kind != PromptKind.Std)
+        // An Ini prompt is echoed by the session before the turn header, where a typed prompt appears.
+        if (kind is not (PromptKind.Std or PromptKind.Ini))
             _output.SystemPrompt(kind, _history.QuestionCount, text);
     }
 

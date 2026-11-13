@@ -114,6 +114,9 @@ public sealed class AgentSession
         string reply;
         try
         {
+            // A prompt the model queued is shown above its turn header, like a typed one.
+            if (kind == PromptKind.Ini)
+                Output.SystemPrompt(kind, History.QuestionCount + 1, message);
             Output.TurnStart(History.TurnCount + 1);
             reply = await (AgentFlags.SyncMode
                 ? Loop.RunTurnNonStreamingAsync(message, ct, kind)
