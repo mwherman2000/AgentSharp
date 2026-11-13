@@ -18,12 +18,12 @@ public sealed class HandoffQueue
     /// to; null when nothing has been handed over. Set by the session.</summary>
     public string? ReturnTo { get; set; }
 
-    /// <summary>The persona and reason waiting to be applied, or null.</summary>
-    public (string Persona, string? Reason)? Pending { get; private set; }
+    /// <summary>The persona, and the prompt to run as its first turn (null for none), waiting to be applied, or null.</summary>
+    public (string Persona, string? Prompt)? Pending { get; private set; }
 
-    internal void Request(string persona, string? reason) => Pending = (persona, reason);
+    internal void Request(string persona, string? prompt) => Pending = (persona, string.IsNullOrWhiteSpace(prompt) ? null : prompt.Trim());
 
-    internal (string Persona, string? Reason)? Take()
+    internal (string Persona, string? Prompt)? Take()
     {
         var pending = Pending;
         Pending = null;
@@ -55,8 +55,10 @@ public sealed class HandoffTool : ToolBase
     public override string Name => "handoff";
     public override string Description =>
         "Hand this conversation, with its full history, to another persona, or return it to the persona that " +
-        "handed it to you. The switch takes effect on the user's next prompt, so answer the current prompt " +
+        "handed it to you. The switch takes effect when the current turn ends, so answer the current prompt " +
         "first and tell the user you are handing over; call this at most once per turn. " +
+        "Pass prompt, written as if the user had asked it, to have the new persona act on it right away as its first turn " +
+        "(without it the new persona waits for the user's next prompt). " +
         "Use it when the user asks for a persona by name, or when another persona would clearly serve the " +
         "request better than you; otherwise just answer. " +
         $"The persona argument is one of {string.Join(", ", _catalog().HandoffKeys)}, or \"{SystemPromptBuilder.ReturnTarget}\" " +
@@ -94,15 +96,15 @@ public sealed class HandoffTool : ToolBase
                 @enum = _catalog().HandoffKeys.Append(SystemPromptBuilder.ReturnTarget).ToArray(),
                 description = "The persona to hand the conversation to, or \"return\" to give it back to the persona that handed it to you"
             },
-            reason = new { type = "string", description = "One sentence on what the user needs and why this persona suits it (or why you are returning); shown to the user and to that persona" }
+            prompt = new { type = "string", description = "Optional. A prompt, written as if the user had asked it, that the new persona answers immediately as its first turn: what the user needs and any context it must have. Omit it to leave the new persona waiting for the user" }
         },
-        required = new[] { "persona", "reason" }
+        required = new[] { "persona" }
     });
 
     public override Task<ToolResult> ExecuteAsync(JsonElement input, CancellationToken ct = default)
     {
         var persona = GetRequiredString(input, "persona");
-        var reason = GetOptionalString(input, "reason");
+        var prompt = GetOptionalString(input, "prompt");
 
         if (_queue.Pending is { } queued)
             return Task.FromResult(ToolResult.Error($"A handoff to {queued.Persona} is already queued for the next prompt."));
@@ -111,9 +113,9 @@ public sealed class HandoffTool : ToolBase
         {
             if (_queue.ReturnTo is null)
                 return Task.FromResult(ToolResult.Error("Nothing to return to: this conversation was not handed to you by another persona."));
-            _queue.Request(SystemPromptBuilder.ReturnTarget, reason);
+            _queue.Request(SystemPromptBuilder.ReturnTarget, prompt);
             return Task.FromResult(ToolResult.Success(
-                $"Return to {_queue.ReturnTo} queued; it takes effect on the user's next prompt. " +
+                $"Return to {_queue.ReturnTo} queued; it takes effect when this turn ends{(_queue.Pending?.Prompt is null ? ", and the next prompt goes to them" : ", and they act on your prompt at once")}. " +
                 "Finish answering the current prompt and tell the user you are handing back. Do not call handoff again."));
         }
 
@@ -132,9 +134,9 @@ public sealed class HandoffTool : ToolBase
         if (key == _queue.CurrentPersona)
             return Task.FromResult(ToolResult.Error($"You already are {key}. Pick a different persona, or just answer."));
 
-        _queue.Request(key, reason);
+        _queue.Request(key, prompt);
         return Task.FromResult(ToolResult.Success(
-            $"Handoff to {key} queued; it takes effect on the user's next prompt. " +
+            $"Handoff to {key} queued; it takes effect when this turn ends{(_queue.Pending?.Prompt is null ? ", and the next prompt goes to them" : ", and they act on your prompt at once")}. " +
             "Finish answering the current prompt and tell the user you are handing over. Do not call handoff again."));
     }
 

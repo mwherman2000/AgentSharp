@@ -117,8 +117,10 @@ public class SystemPromptBuilder
         var sb = new StringBuilder();
         sb.AppendLine("\n# Handing the conversation to another persona");
         sb.AppendLine("The `handoff` tool passes this conversation, with its full history, to another persona. " +
-                      "The switch takes effect on the user's next prompt, so finish answering this one first and say " +
-                      "that you are handing over. Hand off when the user asks for a persona by name, or when your own " +
+                      "The switch takes effect when this turn ends, so finish answering this one first and say " +
+                      "that you are handing over. Give the optional `prompt` argument, written as if the user had asked it " +
+                      "and with all the context the new persona needs, when it should start work at once; leave it out " +
+                      "when it should wait for the user. Only one such prompt runs per user prompt. Hand off when the user asks for a persona by name, or when your own " +
                       "answer would be clearly worse than theirs; otherwise just answer. Do not hand off to yourself, " +
                       "and do not bounce between personas: a persona that takes over for a task keeps it until the " +
                       "task is done.");

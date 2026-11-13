@@ -101,13 +101,20 @@ public sealed class AgentSession
     /// <summary>
     /// Send one user message and run the agent until it produces a final answer
     /// (calling tools along the way). Streams unless <see cref="AgentFlags.SyncMode"/>
-    /// is set. Returns the assistant's text for the turn.
+    /// is set. Returns the assistant's text for the turn. If the model handed the conversation over with
+    /// the <c>handoff</c> tool's <c>prompt</c>, that prompt then runs as the new persona's first turn
+    /// (<see cref="PromptKind.Ini"/>) and its reply is returned.
     /// </summary>
-    public async Task<string> SendAsync(string message, CancellationToken ct = default, PromptKind kind = PromptKind.Std)
+    public Task<string> SendAsync(string message, CancellationToken ct = default, PromptKind kind = PromptKind.Std)
+        => SendAsync(message, ct, kind, allowInitialPrompt: true);
+
+    private async Task<string> SendAsync(string message, CancellationToken ct, PromptKind kind, bool allowInitialPrompt)
     {
+        string? initialPrompt = null;
+        string reply;
         try
         {
-            return await (AgentFlags.SyncMode
+            reply = await (AgentFlags.SyncMode
                 ? Loop.RunTurnNonStreamingAsync(message, ct, kind)
                 : Loop.RunTurnStreamingAsync(message, ct, kind));
         }
@@ -117,11 +124,25 @@ public sealed class AgentSession
             if (_handoff?.Take() is { } request)
             {
                 if (request.Persona == SystemPromptBuilder.ReturnTarget)
-                    Return(request.Reason);
+                    Return();
                 else
-                    Handoff(request.Persona, request.Reason);
+                    Handoff(request.Persona);
+                initialPrompt = request.Prompt;
             }
         }
+
+        if (initialPrompt is null)
+            return reply;
+
+        // The prompt the model queued runs now, as the new persona's first turn. Only one per user prompt: a
+        // prompt queued by that turn's own handoff is dropped (the handoff itself still applies), so personas
+        // cannot pass the conversation back and forth on their own.
+        if (!allowInitialPrompt)
+        {
+            Output.Warning("The model queued a prompt with a second handoff in a row; it was not run. Type your next prompt to continue.");
+            return reply;
+        }
+        return await SendAsync(initialPrompt, ct, PromptKind.Ini, allowInitialPrompt: false);
     }
 
     /// <summary>

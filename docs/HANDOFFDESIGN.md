@@ -13,7 +13,7 @@ Handoff passes a running conversation, with its full history, from one persona (
 
 | Item | Behavior |
 |---|---|
-| Tool | `handoff(persona, reason)`, risk level `ReadOnly` (no approval prompt) |
+| Tool | `handoff(persona, prompt?)`, risk level `ReadOnly` (no approval prompt) |
 | Targets | The personas whose file says `handoff: true`: `ray`, `donald`, `andy`, `lucy`, `connie`, `code`, `alchemist` today (`SystemPromptBuilder.HandoffPersonas`, read from the persona registry; a persona created with `create_digital` is a target by default) |
 | When it takes effect | After the current turn finishes, for the user's next prompt |
 | History | The same `ConversationHistory` instance continues; prompt numbers carry on |
@@ -119,11 +119,12 @@ So the tool only records a request in a `HandoffQueue`. `AgentSession.SendAsync`
 
 ```
 user prompt -> loop runs turn
-                 model calls handoff(donald, reason)
-                   HandoffTool: validate, queue.Request(donald, reason), return "queued"
+                 model calls handoff(donald, prompt)
+                   HandoffTool: validate, queue.Request(donald, prompt), return "queued"
                  model finishes its answer
              <- turn returns
-SendAsync finally: queue.Take() -> session.Handoff(donald, reason)
+SendAsync finally: queue.Take() -> session.Handoff(donald); then, if a prompt was queued,
+                SendAsync(prompt, PromptKind.Ini) runs it as the new persona's first turn (once per user prompt)
                      _superPrompt = donald, _handoffContext = "..."
                      Loop = CreateLoop(Loop.History)       // same history, new system prompt
 next user prompt -> new loop answers as Donald
@@ -134,7 +135,7 @@ next user prompt -> new loop answers as Donald
 | Component | File | Role |
 |---|---|---|
 | `HandoffTool` | `AgentSharpLib/Tools/Implementations/HandoffTool.cs` | The model-facing tool. Validates the target and queues the request. No parameterless constructor, so `DiscoverTools` skips it and `AgentBuilder` registers it. |
-| `HandoffQueue` | same file | Holds the pending `(persona, reason)` and the current persona's canonical name (set by the session, used to reject self-handoff). |
+| `HandoffQueue` | same file | Holds the pending `(persona, prompt)` and the current persona's canonical name (set by the session, used to reject self-handoff). |
 | `AgentSession.Handoff` | `AgentSharpLib/AgentSession.cs` | Validates, records who handed over and why, rebuilds the loop on the existing history, prints the console line. Public, so a host can call it directly. Unlike the tool, it accepts any persona. |
 | `AgentSession.SendAsync` | same file | Applies a pending request after the turn. |
 | `AgentSession.Reset` / `Restore` | same file | Clear the handoff context and any pending request: a fresh or loaded conversation was not handed over. |
@@ -147,20 +148,20 @@ next user prompt -> new loop answers as Donald
 
 Two optional sections are added, both before `# Memory` because `ConversationTranscript.ExtractRecalledMemory` expects memory to be last.
 
-**Persona catalog** (every persona that has the tool): when to hand off, and the other targets with a one-line role each. The current persona is omitted. The text tells the model to answer the current prompt first; to hand off when the user asks for a persona by name, or when its own answer would be clearly worse (otherwise just answer); and not to hand off to itself or bounce between personas. The tool description carries the same rule, plus: at most one call per turn, `return` only after the conversation was handed to you, and `reason` is one sentence on what the user needs. A test checks that the two texts agree.
+**Persona catalog** (every persona that has the tool): when to hand off, and the other targets with a one-line role each. The current persona is omitted. The text tells the model to answer the current prompt first; to hand off when the user asks for a persona by name, or when its own answer would be clearly worse (otherwise just answer); and not to hand off to itself or bounce between personas. The tool description carries the same rule, plus: at most one call per turn, `return` only after the conversation was handed to you, and `prompt` is an optional request, written as if the user had asked it, that the new persona answers at once. A test checks that the two texts agree.
 
-**Handoff received** (only after a handoff): who handed the conversation over, the reason, and a statement that earlier assistant turns were written by that persona or an earlier one, not by the new persona. The history is left untouched so the model API's message alternation and the prompt numbering are not disturbed. The context lives in the system prompt instead.
+**Handoff received** (only after a handoff): who handed the conversation over (and, for `/handoff` from a person, the reason), and a statement that earlier assistant turns were written by that persona or an earlier one, not by the new persona. The history is left untouched so the model API's message alternation and the prompt numbering are not disturbed. The context lives in the system prompt instead.
 
 ## Tool schema
 
 ```json
 {
   "persona": { "type": "string", "enum": ["ray", "donald", "andy", "lucy", "connie", "code", "return"] },
-  "reason":  { "type": "string" }
+  "prompt":  { "type": "string" }
 }
 ```
 
-Both are required. The reason is shown to the user in the console line and to the new persona in the handoff-received note.
+Only `persona` is required. A `prompt` runs as the new persona's first turn, recorded as a user-role prompt of kind `Ini` (`ini` in saved sessions, `I21` in transcripts, echoed to the console like other generated prompts and sent to the provider like a typed one). Only one such prompt runs per user prompt: if that turn itself hands off with a prompt, the handoff applies but the prompt is dropped, with a warning. It also works with `return`.
 
 ## Cost and risks
 

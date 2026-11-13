@@ -183,11 +183,13 @@ public enum PromptKind
     Hnd,
     /// <summary>An assistant-role record of what /status listed (T21 in transcripts). Never sent to a provider.</summary>
     Sts,
+    /// <summary>A prompt the model queued with the handoff tool, run as the new persona's first turn (I21 in transcripts). Sent to the provider like a typed prompt.</summary>
+    Ini,
 }
 
 public static class PromptKinds
 {
-    /// <summary>The value stored in a saved session: "std", "sys", "chk", "err", "cmp", "hnd" or "sts".</summary>
+    /// <summary>The value stored in a saved session: "std", "sys", "chk", "err", "cmp", "hnd", "sts" or "ini".</summary>
     public static string ToCode(this PromptKind kind) => kind switch
     {
         PromptKind.Sys => "sys",
@@ -196,6 +198,7 @@ public static class PromptKinds
         PromptKind.Cmp => "cmp",
         PromptKind.Hnd => "hnd",
         PromptKind.Sts => "sts",
+        PromptKind.Ini => "ini",
         _ => "std",
     };
 
@@ -208,6 +211,7 @@ public static class PromptKinds
         "cmp" => PromptKind.Cmp,
         "hnd" => PromptKind.Hnd,
         "sts" => PromptKind.Sts,
+        "ini" => PromptKind.Ini,
         _ => PromptKind.Std,
     };
 
@@ -218,7 +222,7 @@ public static class PromptKinds
     /// </summary>
     public static bool IsLocalRecord(this PromptKind kind) => kind is PromptKind.Cmp or PromptKind.Hnd or PromptKind.Sts;
 
-    /// <summary>The letter that prefixes the number in a transcript: Q, S, C, E, M, H or T.</summary>
+    /// <summary>The letter that prefixes the number in a transcript: Q, S, C, E, M, H, T or I.</summary>
     public static char ToLabel(this PromptKind kind) => kind switch
     {
         PromptKind.Sys => 'S',
@@ -227,6 +231,7 @@ public static class PromptKinds
         PromptKind.Cmp => 'M',
         PromptKind.Hnd => 'H',
         PromptKind.Sts => 'T',
+        PromptKind.Ini => 'I',
         _ => 'Q',
     };
 }

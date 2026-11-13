@@ -214,7 +214,7 @@ public class AgentBuilderTests
     public async Task HandoffTool_SwitchesPersonaAfterTheTurn_KeepingHistory()
     {
         var llm = new FakeStreamingLlmClient()
-            .Enqueue(new ToolUseStart("h1", "handoff"), new ToolInputDelta("""{"persona":"donald","reason":"needs a deal-maker"}"""), new ToolUseEnd(), new StreamDone("tool_use"))
+            .Enqueue(new ToolUseStart("h1", "handoff"), new ToolInputDelta("""{"persona":"donald"}"""), new ToolUseEnd(), new StreamDone("tool_use"))
             .Enqueue(Reply("Handing you to Donald."));
         var session = await Isolated(llm).WithSuperPrompt("andy").BuildAsync();
 
@@ -225,7 +225,73 @@ public class AgentBuilderTests
         Assert.Equal(PromptKind.Hnd, session.History.Messages[^1].Kind);
         Assert.Contains("Donald", session.SystemPrompt);
         Assert.Contains("handed over to you by andy", session.SystemPrompt);
-        Assert.Contains("Reason: needs a deal-maker. Assistant turns", session.SystemPrompt); // the reason ends its own sentence
+    }
+
+    [Fact]
+    public async Task HandoffTool_WithPrompt_RunsItAsTheNewPersonasFirstTurn()
+    {
+        var llm = new FakeStreamingLlmClient()
+            .Enqueue(new ToolUseStart("h1", "handoff"), new ToolInputDelta("""{"persona":"donald","prompt":"Negotiate this deal."}"""), new ToolUseEnd(), new StreamDone("tool_use"))
+            .Enqueue(Reply("Handing you to Donald."))
+            .Enqueue(Reply("Here is my opening offer."));
+        var session = await Isolated(llm).WithSuperPrompt("andy").BuildAsync();
+
+        var reply = await session.SendAsync("negotiate this");
+
+        Assert.Equal("Here is my opening offer.", reply);
+        Assert.Equal("donald", session.SuperPrompt);
+        Assert.Equal(3, llm.Requests.Count);
+        Assert.Contains("You are Donald", llm.Requests[2].SystemPrompt);
+        var prompt = session.History.Messages.Single(m => m.Kind == PromptKind.Ini);
+        Assert.Equal("Negotiate this deal.", prompt.GetText());
+        Assert.Equal("Here is my opening offer.", session.History.Messages[^1].GetText());
+    }
+
+    [Fact]
+    public async Task HandoffTool_WithoutPrompt_RunsNoFollowUpTurn()
+    {
+        var llm = new FakeStreamingLlmClient()
+            .Enqueue(new ToolUseStart("h1", "handoff"), new ToolInputDelta("""{"persona":"donald"}"""), new ToolUseEnd(), new StreamDone("tool_use"))
+            .Enqueue(Reply("Handing you to Donald."));
+        var session = await Isolated(llm).WithSuperPrompt("andy").BuildAsync();
+
+        await session.SendAsync("negotiate this");
+
+        Assert.Equal(2, llm.Requests.Count);
+        Assert.DoesNotContain(session.History.Messages, m => m.Kind == PromptKind.Ini);
+    }
+
+    [Fact]
+    public async Task HandoffTool_PromptQueuedByTheFollowUpTurn_IsDropped_ButTheHandoffApplies()
+    {
+        var llm = new FakeStreamingLlmClient()
+            .Enqueue(new ToolUseStart("h1", "handoff"), new ToolInputDelta("""{"persona":"donald","prompt":"Negotiate."}"""), new ToolUseEnd(), new StreamDone("tool_use"))
+            .Enqueue(Reply("Handing you to Donald."))
+            .Enqueue(new ToolUseStart("h2", "handoff"), new ToolInputDelta("""{"persona":"return","prompt":"Over to you again."}"""), new ToolUseEnd(), new StreamDone("tool_use"))
+            .Enqueue(Reply("Handing back."));
+        var session = await Isolated(llm).WithSuperPrompt("andy").BuildAsync();
+
+        await session.SendAsync("negotiate this");
+
+        Assert.Equal("andy", session.SuperPrompt);                                  // the return applied
+        Assert.Single(session.History.Messages, m => m.Kind == PromptKind.Ini);     // but its prompt did not run
+        Assert.Equal(4, llm.Requests.Count);
+    }
+
+    [Fact]
+    public async Task HandoffTool_ReturnWithPrompt_RunsItAsTheReturnedPersonasFirstTurn()
+    {
+        var llm = new FakeStreamingLlmClient()
+            .Enqueue(new ToolUseStart("h1", "handoff"), new ToolInputDelta("""{"persona":"return","prompt":"Ray found the risks; continue the plan."}"""), new ToolUseEnd(), new StreamDone("tool_use"))
+            .Enqueue(Reply("Handing back."))
+            .Enqueue(Reply("Continuing the plan."));
+        var session = await Isolated(llm).WithSuperPrompt("andy").BuildAsync();
+        session.Handoff("ray");
+
+        var reply = await session.SendAsync("that's all from you");
+
+        Assert.Equal("Continuing the plan.", reply);
+        Assert.Equal("andy", session.SuperPrompt);
     }
 
     [Fact]
@@ -234,7 +300,7 @@ public class AgentBuilderTests
         var session = await Isolated(new FakeStreamingLlmClient()).WithSuperPrompt("andy").BuildAsync();
         var tool = session.Tools.Get("handoff")!;
 
-        var result = await tool.ExecuteAsync(System.Text.Json.JsonDocument.Parse("""{"persona":"ray","reason":"r"}""").RootElement);
+        var result = await tool.ExecuteAsync(System.Text.Json.JsonDocument.Parse("""{"persona":"ray"}""").RootElement);
 
         Assert.False(result.IsError);
         Assert.Equal("andy", session.SuperPrompt); // applied only after the turn
@@ -249,7 +315,7 @@ public class AgentBuilderTests
         var session = await Isolated(new FakeStreamingLlmClient()).WithSuperPrompt("andy").BuildAsync();
         var tool = session.Tools.Get("handoff")!;
 
-        var result = await tool.ExecuteAsync(System.Text.Json.JsonDocument.Parse($$"""{"persona":"{{persona}}","reason":"r"}""").RootElement);
+        var result = await tool.ExecuteAsync(System.Text.Json.JsonDocument.Parse($$"""{"persona":"{{persona}}"}""").RootElement);
 
         Assert.True(result.IsError);
     }
@@ -446,7 +512,7 @@ public class AgentBuilderTests
     public async Task Code_IsAHandoffTarget_ListedForTheOthers_AndAcceptedByTheTool(string name)
     {
         var llm = new FakeStreamingLlmClient()
-            .Enqueue(new ToolUseStart("h1", "handoff"), new ToolInputDelta($$"""{"persona":"{{name}}","reason":"needs code written"}"""), new ToolUseEnd(), new StreamDone("tool_use"))
+            .Enqueue(new ToolUseStart("h1", "handoff"), new ToolInputDelta($$"""{"persona":"{{name}}"}"""), new ToolUseEnd(), new StreamDone("tool_use"))
             .Enqueue(Reply("Handing to Cody."));
         var session = await Isolated(llm).WithSuperPrompt("andy").BuildAsync();
         Assert.Contains("- code: coding assistant", session.SystemPrompt);
@@ -471,7 +537,7 @@ public class AgentBuilderTests
     public async Task HandoffTool_ReturnTarget_ReturnsAfterTheTurn()
     {
         var llm = new FakeStreamingLlmClient()
-            .Enqueue(new ToolUseStart("h1", "handoff"), new ToolInputDelta("""{"persona":"return","reason":"finished"}"""), new ToolUseEnd(), new StreamDone("tool_use"))
+            .Enqueue(new ToolUseStart("h1", "handoff"), new ToolInputDelta("""{"persona":"return"}"""), new ToolUseEnd(), new StreamDone("tool_use"))
             .Enqueue(Reply("Handing back."));
         var session = await Isolated(llm).WithSuperPrompt("andy").BuildAsync();
         session.Handoff("ray");
@@ -488,7 +554,7 @@ public class AgentBuilderTests
         var session = await Isolated(new FakeStreamingLlmClient()).WithSuperPrompt("andy").BuildAsync();
 
         var result = await session.Tools.Get("handoff")!.ExecuteAsync(
-            System.Text.Json.JsonDocument.Parse("""{"persona":"return","reason":"r"}""").RootElement);
+            System.Text.Json.JsonDocument.Parse("""{"persona":"return"}""").RootElement);
 
         Assert.True(result.IsError);
     }

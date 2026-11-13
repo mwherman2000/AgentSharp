@@ -98,7 +98,7 @@ internal static class TranscriptWriter
         return sb.ToString();
     }
 
-    /// <summary>"Q21" for a prompt the user typed, "S21" for a loop-generated one, "C21" for a /save or /load checkpoint.</summary>
+    /// <summary>"Q21" for a prompt the user typed, "S21" for a loop-generated one, "C21" for a /save or /load checkpoint, "I21" for a prompt the model queued with the handoff tool.</summary>
     private static string PromptLabel(IReadOnlyList<PromptKind>? kinds, int index, int firstNumber) =>
         (kinds is not null && index < kinds.Count ? kinds[index].ToLabel() : 'Q') + PromptNumber(kinds, index, firstNumber).ToString();
 

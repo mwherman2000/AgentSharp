@@ -89,7 +89,7 @@ public class AutoSaveTests : IDisposable
     public async Task HandoffByTheTool_SavesAConsistentHistory_NotOneEndingInAnUnansweredToolCall()
     {
         var llm = new FakeStreamingLlmClient()
-            .Enqueue(new ToolUseStart("h1", "handoff"), new ToolInputDelta("""{"persona":"donald","reason":"r"}"""), new ToolUseEnd(), new StreamDone("tool_use"))
+            .Enqueue(new ToolUseStart("h1", "handoff"), new ToolInputDelta("""{"persona":"donald"}"""), new ToolUseEnd(), new StreamDone("tool_use"))
             .Enqueue(Reply("Handing over."));
         var session = await BuildAsync(llm, "andy");
 
