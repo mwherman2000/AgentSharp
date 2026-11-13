@@ -100,9 +100,6 @@ public class ReplHost
         var historyCountBeforeTurn = _session.History.Count;
         try
         {
-            AnsiConsole.Write(new Rule($"[dim]Turn {_session.History.TurnCount + 1}[/]").RuleStyle("dim"));
-            AnsiConsole.WriteLine();
-
             await _session.SendAsync(input, _turnCts.Token, kind);
             return true;
         }

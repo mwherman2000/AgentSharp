@@ -114,6 +114,7 @@ public sealed class AgentSession
         string reply;
         try
         {
+            Output.TurnStart(History.TurnCount + 1);
             reply = await (AgentFlags.SyncMode
                 ? Loop.RunTurnNonStreamingAsync(message, ct, kind)
                 : Loop.RunTurnStreamingAsync(message, ct, kind));

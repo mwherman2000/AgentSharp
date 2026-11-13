@@ -46,6 +46,12 @@ public sealed class SpectreAgentOutput : IAgentOutput
         AnsiConsole.MarkupLine($"\n[bold {color}]{number} {kind.ToCode()}>[/] [{color}]{Markup.Escape(text)}[/]");
     }
 
+    public void TurnStart(int turn)
+    {
+        AnsiConsole.Write(new Rule($"[dim]Turn {turn}[/]").RuleStyle("dim"));
+        AnsiConsole.WriteLine();
+    }
+
     public void Handoff(string message) =>
         AnsiConsole.MarkupLine($"\n[magenta]{Markup.Escape(message)}[/]");
 

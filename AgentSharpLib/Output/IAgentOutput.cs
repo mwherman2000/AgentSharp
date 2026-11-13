@@ -47,6 +47,10 @@ public interface IAgentOutput
     /// prompt, in a different color; the default does nothing.</summary>
     void SystemPrompt(PromptKind kind, int number, string text) { }
 
+    /// <summary>A turn is about to start: <paramref name="turn"/> is its number. Called by the session, so a turn
+    /// the model queued with the handoff tool's prompt gets its header too, after the handoff line.</summary>
+    void TurnStart(int turn) { }
+
     /// <summary>The conversation was handed to another persona or returned: a line such as
     /// "Handoff: Andy Pando -> Ray Pando (reason). Handoff stack: andy > ray (current)". The default
     /// shows it as <see cref="Info"/>.</summary>
