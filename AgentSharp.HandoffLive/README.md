@@ -4,7 +4,7 @@ A live check of the `handoff` tool against the real Anthropic API. The unit test
 model, so they prove the plumbing; this checks the model's judgment: does it hand off when it should,
 stay put when it should, and refuse a persona that isn't a handoff target.
 
-It is not part of the test suite. It spends real tokens (eight prompts across six sessions, each
+It is not part of the test suite. It spends real tokens (nine prompts across seven sessions, each
 with a full persona prompt) and needs a key.
 
 ## Run
@@ -28,6 +28,7 @@ model called (with the `handoff` arguments), the handoff stack, and the start of
 | "Hand this conversation to Ray." | handoff to ray |
 | then "Which persona are you, and who handed you this?" | no tool; the reply names Andy |
 | then "Hand it back to whoever gave it to you." | `handoff` with `persona: "return"` |
+| "handoff ray In one sentence, what is your first principle?", while Andy | handoff to ray with the text as `prompt`; one `ini` prompt in the history; Ray answers it in the same call |
 | A persistent digital person with memory, while Andy | handoff to lucy |
 | A go-to-market statement, while Ray | handoff to andy |
 | A go-to-market first step, while Andy | no handoff |

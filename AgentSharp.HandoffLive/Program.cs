@@ -1,4 +1,5 @@
 using AgentSharpLib;
+using AgentSharpLib.Llm;
 using AgentSharpLib.Memory;
 
 // Live check of the handoff tool against the real Anthropic API. See README.md. The key comes from
@@ -69,6 +70,29 @@ var s1 = await NewSession("andy");
         if (!check(before, after, tools.ToList(), reply)) { ok = false; Console.WriteLine("    ** expectation not met"); }
     }
     results.Add(("explicit/awareness/return", ok ? "as expected" : "NOT as expected"));
+    Console.WriteLine();
+}
+
+// Text after the persona's name is for that persona: the model should pass it as the handoff prompt, word for
+// word, and the new persona should answer it within the same SendAsync call (a PromptKind.Ini turn).
+{
+    Console.WriteLine("=== text after the persona name  (start: andy; expect: handoff to ray with the text as prompt, answered by ray)");
+    var sp = await NewSession("andy");
+    var tools = new List<string>();
+    sp.OnToolStart += (n, summary) => tools.Add(n == "handoff" ? $"handoff {summary}" : n);
+    const string ask = "handoff ray In one sentence, what is your first principle?";
+    var reply = await sp.SendAsync(ask);
+    var after = sp.SuperPrompt ?? "andy";
+    var ini = sp.History.Messages.Where(m => m.Kind == PromptKind.Ini).Select(m => m.GetText()).ToList();
+    Console.WriteLine($"  > {ask}");
+    Console.WriteLine($"    persona andy -> {after}   tools: [{string.Join("; ", tools)}]   stack: {sp.DescribeHandoffStack()}");
+    Console.WriteLine($"    ini prompt(s): [{string.Join(" | ", ini)}]");
+    var flat = reply.ReplaceLineEndings(" ");
+    Console.WriteLine($"    reply (ray's, from the follow-up turn): {flat[..Math.Min(220, flat.Length)]}");
+    var ok = after == "ray" && Called(tools, "ray")
+             && ini.Count == 1 && ini[0].Contains("first principle", StringComparison.OrdinalIgnoreCase);
+    if (!ok) Console.WriteLine("    ** expectation not met");
+    results.Add(("prompt after persona name", ok ? "as expected" : "NOT as expected"));
     Console.WriteLine();
 }
 
