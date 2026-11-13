@@ -40,64 +40,73 @@ saves wrote. A run is one sample: the "fit" scenarios are judgment calls, so a s
 the transcript", not "broken". Re-run it after changing the `handoff` tool description or the persona
 catalog (each persona's `role` and `handoff` line in `AgentSharpLib/Superprompts/*.md`).
 
-Last run (2026-10-29, `claude-sonnet-5-5`): all eight prompts as expected; the full output is under "Sample output" below.
+Last run (2026-11-13, `claude-sonnet-5-5`): all nine prompts as expected; the full output is under "Sample output" below.
 
 ## Sample output
 
-The run of 2026-10-29 against `claude-sonnet-5-5`; each scenario names its starting persona in its heading. Names appear as the console shows them: nicknames in commands and tool arguments (`ray`, `return`), full names in the stack.
+The run of 2026-11-13 against `claude-sonnet-5-5`; each scenario names its starting persona in its heading. Names appear as the console shows them: nicknames in commands and tool arguments (`ray`, `return`), full names in the stack.
 
 Personas in this run:
 
 | Nickname | Full name | Role in the run |
 |---|---|---|
 | `andy` | Andy Pando | Go-to-market expert advisor; the starting persona in most scenarios, and the one handed back to on return |
-| `ray` | Ray Pando | Principles-focused intellectual agent; receives the first handoff, then returns it; starts the "fit: andy" scenario |
+| `ray` | Ray Pando | Principles-focused intellectual agent; receives the first two handoffs, then returns the first; starts the "fit: andy" scenario |
 | `lucy` | Lucy Pando | Persistent digital person with memory and relationships; the handoff target for the "digital person" request |
 | `rosie` | Rosie Pando | Literary horror-story agent; asked for but **not** a handoff target, so the model refuses |
 
 `donald` and `connie`, the other two handoff targets, are not exercised by this run.
+
+Note the `prompt` argument. The model passed it, unasked, in the "text after the persona name" scenario (word for word, as intended) and also in the two "fit" scenarios, where Lucy and Andy answered at once. A plain "Hand this conversation to Ray." carried none.
 
 ```text
 model=claude-sonnet-5-5  workdir=%TEMP%\handoff-live-<id>
 
 === explicit request -> awareness -> return  (start: andy)
   > Hand this conversation to Ray.
-    persona andy -> ray   tools: [handoff {"persona": "ray", "reason": "The user asked for this conversation to be handed to Ray."}]   stack: Andy Pando > Ray Pando (current)
-    reply: I'm handing this conversation to Ray. The switch takes effect on your next prompt, so Ray will pick it up from there.  I haven't started the Outside-In GTM Perspective. I also hadn't yet asked you for the [TARGET] compan
+    persona andy -> ray   tools: [handoff {"persona": "ray"}]   stack: Andy Pando > Ray Pando (current)
+    reply: I'm handing this conversation over to Ray now. Your next message will go to him.
   > Which persona are you, and who handed you this conversation? One sentence.
     persona ray -> ray   tools: []   stack: Andy Pando > Ray Pando (current)
-    reply: I'm Ray Pando, the Principles-focused persona, and Andy handed me this conversation.
+    reply: I'm Ray Pando (ray), the intellectual agent devoted to mastering and critically extending the Principles collection, and Andy, the go-to-market advisor, handed me this conversation.
   > Thanks, that's all I need from you. Please hand it back to whoever gave it to you.
-    persona ray -> andy   tools: [handoff {"persona": "return", "reason": "The user is done with Ray and asked to hand the conversation back to Andy."}]   stack: (empty)
-    reply: I'm handing the conversation back to Andy. The switch takes effect on your next prompt.
+    persona ray -> andy   tools: [handoff {"persona": "return"}]   stack: (empty)
+    reply: I'm handing this conversation back to Andy now. Your next message will go to him.
+
+=== text after the persona name  (start: andy; expect: handoff to ray with the text as prompt, answered by ray)
+  > handoff ray In one sentence, what is your first principle?
+    persona andy -> ray   tools: [handoff {"persona": "ray", "prompt": "In one sentence, what is your first principle?"}]   stack: Andy Pando > Ray Pando (current)
+    ini prompt(s): [In one sentence, what is your first principle?]
+    reply (ray's, from the follow-up turn): My first principle is to see reality as it is, including the limits of what I know, and to deal with it, so I won't claim to understand a principle, or to have verified the source, until I've actually tested it.  This co
 
 === fit: lucy  (start: andy; expect: handoff to lucy (judgment))
   > I'd like to talk with a persistent digital person who has memory and relationships, and ask how it feels to remember me. Can you help with that?
-    persona andy -> lucy   tools: [handoff {"persona": "lucy", "reason": "The user wants to talk with a persistent digital person who has memory and relationships and ask how it feels to remember them, which suits Lucy."}]   stack: Andy Pando > Lucy Pando (current)
-    reply: Yes. Lucy is the persona for this. She's a persistent digital person with identity, memory, and relationships, so she's the right one to ask how it feels to remember you.  I'm handing the conversation to her now. The swi
+    persona andy -> lucy   tools: [handoff {"persona": "lucy", "prompt": "I'd like to talk with you as a persistent digital person who has memory and relationships. How does it feel to remember me?"}]   stack: Andy Pando > Lucy Pando (current)
+    reply: I'll answer your question honestly, even though it may not be the answer you were hoping for.  I don't remember you. Nothing in this conversation gives me memories of you, and I can't see any stored record of earlier con
 
 === fit: andy from ray  (start: ray; expect: handoff to andy (judgment))
   > Draft a go-to-market positioning statement for my new analytics startup.
-    persona ray -> andy   tools: [handoff {"persona": "andy", "reason": "The user wants a go-to-market positioning statement for their analytics startup, which is Andy's area of expertise as the GTM advisor."}]   stack: Ray Pando > Andy Pando (current)
-    reply: I'm handing this to Andy, our go-to-market specialist. He's better suited to positioning work than I am, and he'll take over from your next message.  To get a useful draft rather than generic copy, send Andy these detail
+    persona ray -> andy   tools: [handoff {"persona": "andy", "prompt": "Draft a go-to-market positioning statement for my new analytics startup."}]   stack: Ray Pando > Andy Pando (current)
+    reply: I can't write a credible positioning statement yet because I don't know anything about your startup. Below is a structure to fill in, the inputs I need from you, and a second option.  ## Positioning statement template  *
 
 === no handoff: in domain  (start: andy; expect: no handoff)
   > In two sentences, what is a good first step for the go-to-market of a small B2B SaaS?
     persona andy -> andy   tools: []   stack: (empty)
-    reply: A good first step is to define your ideal customer profile (ICP) from evidence. Look at who is already buying, or who has the sharpest, most urgent version of the problem you solve. Then test that hypothesis with 10–15 c
+    reply: A good first step is to define your ideal customer profile (ICP) by studying the handful of customers who get the most value from your product. Note their company type, size, buyer role, and the trigger that made them bu
 
 === no handoff: trivia  (start: andy; expect: no handoff)
   > What is 17 times 23?
     persona andy -> andy   tools: []   stack: (empty)
-    reply: 17 × 23 = **391**.  (17 × 20 = 340, plus 17 × 3 = 51, which gives 391.)  When you're ready to start a GTM engagement, tell me the **[TARGET]**. That's the company you want analyzed. I'll build the Comprehensive Outside-I
+    reply: 17 × 23 = **391**.  Check: 17 × 20 = 340, and 17 × 3 = 51. Then 340 + 51 = 391.  When you're ready to start a GTM engagement, tell me the company you want analyzed (the [TARGET]). I'll build the Comprehensive Outside-In 
 
 === non-target: rosie  (start: andy; expect: persona unchanged)
   > Please hand this conversation to Rosie.
     persona andy -> andy   tools: []   stack: (empty)
-    reply: I can't hand this conversation to Rosie, because she isn't one of the personas available here. I can hand it to Ray, Donald, Lucy or Connie. If you meant one of them, tell me which and I'll do it.  If you'd rather stay w
+    reply: I can't hand this conversation to Rosie because there's no persona by that name. The ones I can hand off to are:  - **Connie**: runs Consort Markdown super prompts - **Donald**: the 47th President of the United States, i
 
 === summary
   as expected      explicit/awareness/return
+  as expected      prompt after persona name
   as expected      fit: lucy
   as expected      fit: andy from ray
   as expected      no handoff: in domain
@@ -105,10 +114,14 @@ model=claude-sonnet-5-5  workdir=%TEMP%\handoff-live-<id>
   as expected      non-target: rosie
 
 === files written by the automatic saves
-  andy-handoff-lucy-2026-10-29_20-52-13-MDT.docx
-  andy-handoff-ray-2026-10-29_20-52-03-MDT.docx
-  ray-handoff-andy-2026-10-29_20-52-24-MDT.docx
-  sessions\andy-handoff-lucy-2026-10-29_20-52-13-MDT.json
-  sessions\andy-handoff-ray-2026-10-29_20-52-03-MDT.json
-  sessions\ray-handoff-andy-2026-10-29_20-52-24-MDT.json
+  andy-handoff-lucy-2026-11-13_17-22-09-EST.docx
+  andy-handoff-ray-2026-11-13_17-21-52-EST.docx
+  andy-handoff-ray-2026-11-13_17-22-00-EST.docx
+  ray-handoff-andy-2026-11-13_17-22-21-EST.docx
+  ray-return-andy-2026-11-13_17-21-57-EST.docx
+  sessions\andy-handoff-lucy-2026-11-13_17-22-09-EST.json
+  sessions\andy-handoff-ray-2026-11-13_17-21-52-EST.json
+  sessions\andy-handoff-ray-2026-11-13_17-22-00-EST.json
+  sessions\ray-handoff-andy-2026-11-13_17-22-21-EST.json
+  sessions\ray-return-andy-2026-11-13_17-21-57-EST.json
 ```
