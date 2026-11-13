@@ -320,7 +320,8 @@ public sealed class AgentSession
             $"This conversation was {verb} to you by {fromKey}.{because} " +
             $"Assistant turns earlier in the history were written by {fromKey} or an earlier persona" +
             (returning ? ", including you before the handoff" : "") + ", " +
-            $"not by you now. You are {SystemPromptBuilder.ResolveKey(to)}: continue from where it left off, in your own voice.";
+            $"not by you now. You are {toName} ({SystemPromptBuilder.ResolveKey(to)}), not {fromName}: if the user asks who you are, " +
+            $"answer as {toName}, whatever name the earlier turns used for the assistant. Continue from where it left off, in your own voice.";
         Loop = CreateLoop(Loop.History);
 
         // A record in the history, so the saved session and its transcript show where the persona changed

@@ -278,6 +278,24 @@ public class AgentBuilderTests
     }
 
     [Fact]
+    public async Task Return_RebuildsTheSystemPromptForTheReturnedPersona()
+    {
+        var llm = new FakeStreamingLlmClient().Enqueue(Reply("one"));
+        var ray = await Isolated(new FakeStreamingLlmClient()).WithSuperPrompt("ray").BuildAsync();
+        var session = await Isolated(llm).WithSuperPrompt("ray").BuildAsync();
+        await session.SendAsync("hi");
+
+        session.Handoff("donald");
+        var donaldPrompt = session.SystemPrompt;
+        session.Return();
+
+        Assert.NotEqual(donaldPrompt, session.SystemPrompt);
+        // Ray's own persona prompt is back (a fresh Ray session's prompt is the base, plus the return context).
+        Assert.StartsWith(ray.SystemPrompt.Split('\n')[0], session.SystemPrompt);
+        Assert.DoesNotContain("You are donald", session.SystemPrompt);
+    }
+
+    [Fact]
     public async Task Return_PopsTheStackAndKeepsHistory()
     {
         var llm = new FakeStreamingLlmClient().Enqueue(Reply("one"));
