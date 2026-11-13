@@ -154,11 +154,11 @@ printf '/personas\n/handoff\n/return\n/handoff alchemist testing\n/handoff nosuc
 | `/personas` | 13 personas, `andy` first and `alchemist` last, each with its role; no `[user]` or `[project]` tags yet |
 | `/handoff` | `Usage: /handoff <persona> [reason]. Handoff stack: (empty)` |
 | `/return` | `Nothing to return to: this conversation has not been handed over.` |
-| `/handoff alchemist testing` | An auto-save line, then `Handoff: Lucy Pando -> Alchemist Pando (testing). Handoff stack: Lucy Pando > Alchemist Pando (current)`; the prompt becomes `Alchemist Pando>>` |
+| `/handoff alchemist testing` | An auto-save line, then `Handoff: Lucy Pando -> Pando Alchemist (testing). Handoff stack: Lucy Pando > Pando Alchemist (current)`; the prompt becomes `Pando Alchemist>>` |
 | `/handoff nosuch` | `Unknown --Superprompt 'nosuch'. Valid options: ...`; nothing changes |
-| `/return back` | An auto-save line, `Return: Alchemist Pando -> Lucy Pando (back)`, stack `(empty)` |
-| `/clear alchemist` | `(new conversation with Alchemist Pando)` |
-| `/clear nosuch` | The same "Unknown" message; the persona stays Alchemist Pando |
+| `/return back` | An auto-save line, `Return: Pando Alchemist -> Lucy Pando (back)`, stack `(empty)` |
+| `/clear alchemist` | `(new conversation with Pando Alchemist)` |
+| `/clear nosuch` | The same "Unknown" message; the persona stays Pando Alchemist |
 
 The handoff and return auto-saves write a `.docx` transcript into the current directory and a session file in `~/.agentsharp/lucy/sessions`. Delete both after the test (names start `lucy-handoff-` and `alchemist-return-`).
 
@@ -172,7 +172,7 @@ dotnet run --project AgentLucyApp -- --provider anthropic --model claude-sonnet-
 
 1. **Interview.** Type: `I want a persona called tess who recommends teas.` Expect questions about audience, voice and limits, not a tool call. Answer briefly, or say "go with sensible defaults".
 2. **Draft.** Expect a nickname, display name, role and the whole prompt in a code block. If it jumps to creating without showing the prompt, that is a bug in `alchemist.md` (the approval prompt in step 3 is the real guard).
-3. **Approve.** Say the draft is good. Expect `Alchemist Pando wants to run create_digital (Destructive):` with the nickname, scope, name, role, aliases, `Handoff target: yes`, and the whole prompt, each line starting `|`. The prompt offers only `a = allow, d = deny` (no `s` always allow).
+3. **Approve.** Say the draft is good. Expect `Pando Alchemist wants to run create_digital (Destructive):` with the nickname, scope, name, role, aliases, `Handoff target: yes`, and the whole prompt, each line starting `|`. The prompt offers only `a = allow, d = deny` (no `s` always allow).
 4. **Deny first.** Answer `n`. Expect the model to say the request was not approved. `~/.agentsharp/superprompts/tess.md` must not exist.
 5. **Approve.** Ask it to try again and answer `y`. Expect a result naming the file path and `/clear tess`. Check the file: header with `handoff: true` (the default), then the prompt.
 6. **Same session.** Run `/personas`. Expect `tess` listed with `[user]`. Run `/clear tess`. Expect `(new conversation with Tess Pando)`, and a reply in Tess's voice to a question.
