@@ -120,7 +120,9 @@ public class SystemPromptBuilder
                       "The switch takes effect when this turn ends, so finish answering this one first and say " +
                       "that you are handing over. Give the optional `prompt` argument, written as if the user had asked it " +
                       "and with all the context the new persona needs, when it should start work at once; leave it out " +
-                      "when it should wait for the user. Only one such prompt runs per user prompt. Hand off when the user asks for a persona by name, or when your own " +
+                      "when it should wait for the user. When the user writes \"handoff <persona> <text>\" or otherwise speaks to " +
+                      "another persona, the <text> is for that persona: pass it as `prompt`, word for word, and do not " +
+                      "answer it yourself; just say briefly that you are handing over. Only one such prompt runs per user prompt. Hand off when the user asks for a persona by name, or when your own " +
                       "answer would be clearly worse than theirs; otherwise just answer. Do not hand off to yourself, " +
                       "and do not bounce between personas: a persona that takes over for a task keeps it until the " +
                       "task is done.");

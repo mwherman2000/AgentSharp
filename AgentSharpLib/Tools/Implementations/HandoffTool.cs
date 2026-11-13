@@ -58,7 +58,9 @@ public sealed class HandoffTool : ToolBase
         "handed it to you. The switch takes effect when the current turn ends, so answer the current prompt " +
         "first and tell the user you are handing over; call this at most once per turn. " +
         "Pass prompt, written as if the user had asked it, to have the new persona act on it right away as its first turn " +
-        "(without it the new persona waits for the user's next prompt). " +
+        "(without it the new persona waits for the user's next prompt). When the user's message is \"handoff <persona> <text>\" " +
+        "or otherwise addresses another persona, the <text> is meant for that persona: pass it as prompt, word for word, " +
+        "and do not answer it yourself; just say briefly that you are handing over. " +
         "Use it when the user asks for a persona by name, or when another persona would clearly serve the " +
         "request better than you; otherwise just answer. " +
         $"The persona argument is one of {string.Join(", ", _catalog().HandoffKeys)}, or \"{SystemPromptBuilder.ReturnTarget}\" " +
@@ -96,7 +98,7 @@ public sealed class HandoffTool : ToolBase
                 @enum = _catalog().HandoffKeys.Append(SystemPromptBuilder.ReturnTarget).ToArray(),
                 description = "The persona to hand the conversation to, or \"return\" to give it back to the persona that handed it to you"
             },
-            prompt = new { type = "string", description = "Optional. A prompt, written as if the user had asked it, that the new persona answers immediately as its first turn: what the user needs and any context it must have. Omit it to leave the new persona waiting for the user" }
+            prompt = new { type = "string", description = "Optional. A prompt, written as if the user had asked it, that the new persona answers immediately as its first turn: what the user needs and any context it must have. When the user wrote \"handoff <persona> <text>\", this is <text> word for word. Omit it to leave the new persona waiting for the user" }
         },
         required = new[] { "persona" }
     });
@@ -116,7 +118,9 @@ public sealed class HandoffTool : ToolBase
             _queue.Request(SystemPromptBuilder.ReturnTarget, prompt);
             return Task.FromResult(ToolResult.Success(
                 $"Return to {_queue.ReturnTo} queued; it takes effect when this turn ends{(_queue.Pending?.Prompt is null ? ", and the next prompt goes to them" : ", and they act on your prompt at once")}. " +
-                "Finish answering the current prompt and tell the user you are handing back. Do not call handoff again."));
+                (_queue.Pending?.Prompt is null
+                    ? "Finish answering the current prompt and tell the user you are handing back. Do not call handoff again."
+                    : "Do not answer the prompt you passed yourself: tell the user briefly that you are handing back. Do not call handoff again.")));
         }
 
         string key;
@@ -137,7 +141,9 @@ public sealed class HandoffTool : ToolBase
         _queue.Request(key, prompt);
         return Task.FromResult(ToolResult.Success(
             $"Handoff to {key} queued; it takes effect when this turn ends{(_queue.Pending?.Prompt is null ? ", and the next prompt goes to them" : ", and they act on your prompt at once")}. " +
-            "Finish answering the current prompt and tell the user you are handing over. Do not call handoff again."));
+            (_queue.Pending?.Prompt is null
+                ? "Finish answering the current prompt and tell the user you are handing over. Do not call handoff again."
+                : "Do not answer the prompt you passed yourself: tell the user briefly that you are handing over. Do not call handoff again.")));
     }
 
     private string Unavailable(string persona) =>
