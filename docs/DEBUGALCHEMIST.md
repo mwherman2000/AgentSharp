@@ -6,7 +6,7 @@ How to find out why a persona is missing, not loading, not offered for handoff, 
 
 | Piece | Where | What it does |
 |---|---|---|
-| Built-in persona files | `AgentSharpLib/Superprompts/*.md`, embedded in the assembly | The 13 built-in personas, including `alchemist.md` |
+| Built-in persona files | `AgentSharpLib/Superprompts/*.md`, embedded in the assembly | The 21 built-in personas (13 originals, `alchemist.md` among them, plus `connor`, `devman`, `erica`, `erica2`, `keeper`, `maxine`, `pope7`, `robin` added 2026-11-16) |
 | User persona files | `~/.agentsharp/superprompts/*.md` | Add personas or replace built-in ones |
 | Project persona files | `.agentsharp/superprompts/*.md` under the working directory | Add personas only |
 | `PersonaFile` | `AgentSharpLib/Context/PersonaFile.cs` | Parses one file; every "file skipped" message comes from here |

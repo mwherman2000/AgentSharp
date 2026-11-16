@@ -118,7 +118,7 @@ dotnet run --project AgentSharpApp
 
 ## Personas (superprompts)
 
-Each persona is one Markdown file: a short header, then the prompt. The 13 built-in ones are in
+Each persona is one Markdown file: a short header, then the prompt. The 21 built-in ones are in
 `AgentSharpLib/Superprompts/` (andy, angie, connie, donald, fed, jeff, lucy, raquel, ray, jeff-ray,
 rosie, code, alchemist) and are compiled into the library. At startup the apps also read:
 

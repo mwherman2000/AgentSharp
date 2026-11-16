@@ -31,12 +31,13 @@ public class PersonaCatalogTests : IDisposable
     }
 
     [Fact]
-    public void BuiltIn_LoadsAllThirteenPersonas_WithoutWarnings_AndAndyIsTheDefault()
+    public void BuiltIn_LoadsAllTwentyOnePersonas_WithoutWarnings_AndAndyIsTheDefault()
     {
         var catalog = PersonaCatalog.BuiltIn;
 
         Assert.Empty(catalog.Warnings);
-        Assert.Equal(["andy", "angie", "connie", "donald", "fed", "jeff", "lucy", "raquel", "ray", "jeff-ray", "rosie", "code", "alchemist"], catalog.Keys);
+        Assert.Equal(["andy", "angie", "connie", "donald", "fed", "jeff", "lucy", "raquel", "ray", "jeff-ray", "rosie", "code", "alchemist",
+            "connor", "devman", "erica", "erica2", "keeper", "maxine", "pope7", "robin"], catalog.Keys);
         Assert.Equal("Andy Pando", catalog.Personas[0].Name);
         Assert.StartsWith("**You are Andy Pando", catalog.Personas[0].Prompt);
     }
@@ -49,7 +50,7 @@ public class PersonaCatalogTests : IDisposable
         Assert.Equal("connie", catalog.Find("Consort")!.Key);
         Assert.Equal("code", catalog.Find("cody")!.Key);
         Assert.Equal("jeff-ray", catalog.Find("RJ")!.Key);
-        Assert.Equal(["andy", "connie", "donald", "lucy", "ray", "code", "alchemist"], catalog.HandoffKeys);
+        Assert.Equal(["andy", "connie", "donald", "lucy", "ray", "code", "alchemist", "devman", "erica2", "keeper", "maxine", "pope7", "robin"], catalog.HandoffKeys);
     }
 
     [Fact]
@@ -218,10 +219,10 @@ public class PersonaCatalogTests : IDisposable
 
         var text = PersonaCatalog.Load(_user, _project).DescribeList();
 
-        Assert.StartsWith("15 (andy, angie,", text);
+        Assert.StartsWith("23 (andy, angie,", text);
         Assert.Contains("tutor [user]", text);
         Assert.Contains("scribe [project]", text);
-        Assert.Contains(", alchemist", text);
+        Assert.Contains(", robin", text);
         Assert.DoesNotContain("andy [", text);
     }
 

@@ -11,7 +11,7 @@
 
 ## 1. Where things stand
 
-There are thirteen personas. Seven are handoff targets: `ray`, `donald`, `andy`, `lucy`, `connie`, `code`, `alchemist`. Six are not: `angie`, `fed`, `jeff`, `raquel`, `jeff-ray`, `rosie`. The alchemist (section 5) is built.
+There were thirteen personas when this was written (eight more were added later). Seven of those are handoff targets: `ray`, `donald`, `andy`, `lucy`, `connie`, `code`, `alchemist`. Six are not: `angie`, `fed`, `jeff`, `raquel`, `jeff-ray`, `rosie`. The alchemist (section 5) is built.
 
 | Persona | Role |
 |---|---|
