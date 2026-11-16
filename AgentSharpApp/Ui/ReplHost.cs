@@ -154,6 +154,58 @@ public class ReplHost
         }
     }
 
+    /// <summary>/save: a checkpoint turn, then the session and its .docx transcript. <paramref name="argument"/> is
+    /// "[id] [--tools] [--no-thinking]"; with no id the name is "&lt;persona&gt;-saved-&lt;time&gt;". Also what /exit does.</summary>
+    private async Task<bool> SaveAsync(string? argument, CancellationToken ct)
+    {
+        // --tools / --no-thinking only shape the .docx transcript written with the
+        // save; they are stripped before the id reaches the session file.
+        var saveOptions = TranscriptOptions.Parse(argument ?? "", out var saveId, out var saveError);
+        if (saveOptions is null)
+        {
+            AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(saveError!)} Usage: /save [[id]] [[--tools]] [[--no-thinking]][/]");
+            return false;
+        }
+        // Saving under a name that is already taken replaces that session and its transcript for good, so
+        // ask first -- before the checkpoint turn, which would otherwise be spent on a save that is declined.
+        if (saveId.Length > 0 && SaveTargetsExist(saveId)
+            && !AnsiConsole.Confirm($"[yellow]'{Markup.Escape(saveId)}' already exists (the saved session and/or its .docx transcript). Overwrite?[/]", defaultValue: false))
+        {
+            AnsiConsole.MarkupLine("[yellow]Save cancelled; nothing was changed.[/]");
+            return false;
+        }
+        // Checkpoint first: a normal turn, so the marker and the agent's reply are part
+        // of the conversation (and the transcript) before it is written out.
+        var historyBeforeCheckpoint = _session.History.Count;
+        if (!await RunTurnAsync($"Checkpoint (/save) {LocalTime.Format(DateTimeOffset.Now, LocalTime.Seconds)}", ct, kind: PromptKind.Chk))
+        {
+            // A cancelled turn is rolled back, so this was a Ctrl+C: honour it. A failed one
+            // (e.g. the context is full) still left the marker in the history: save anyway.
+            if (_session.History.Count <= historyBeforeCheckpoint)
+            {
+                AnsiConsole.MarkupLine("[yellow]Checkpoint did not complete; session not saved.[/]");
+                return false;
+            }
+            AnsiConsole.MarkupLine("[yellow]Checkpoint failed; saving the session anyway.[/]");
+        }
+        // No name given: ray-saved-<date, 24-hour time, zone>. Named here, after the checkpoint turn, so it
+        // carries the persona in charge now (the turn may have handed the conversation over).
+        var sessionId = await _sessions.SaveAsync(_session.History, saveId.Length > 0 ? saveId : _session.SaveName("saved"), _session.HandoffState);
+        if (sessionId is not null)
+        {
+            // Both files are written before anything optional: the provider's token count is a nicety
+            // (bounded to a few seconds, and it cannot throw), so it can't hold up or break the save.
+            var savedTranscriptPath = WriteTranscript($"{sessionId}.docx", saveOptions);
+            await _session.Loop.RefreshTokenCountAsync(ct);
+            AnsiConsole.MarkupLine($"[green]Session saved:[/] {Markup.Escape(sessionId)} ({_session.History.Count} messages, {_session.History.QuestionCount} questions, {_session.Loop.DescribeTokenCount()})");
+            if (savedTranscriptPath is not null)
+                AnsiConsole.MarkupLine($"[green]Transcript written:[/] {savedTranscriptPath}");
+            return true;
+        }
+        AnsiConsole.MarkupLine($"[red]Error:[/] Could not save session '{Markup.Escape(argument ?? "")}'.");
+        return false;
+    }
+
     private async Task<bool> HandleCommandAsync(ParsedCommand command, CancellationToken ct)
     {
         switch (command.Type)
@@ -163,6 +215,15 @@ public class ReplHost
                 break;
 
             case CommandType.Exit:
+                // Quitting saves first, exactly as /save does (checkpoint turn, session, .docx transcript), under the
+                // default name. An empty conversation has nothing worth saving.
+                // If the save did not happen (Ctrl+C during the checkpoint, a write error) stay, so nothing is lost:
+                // /exit again to retry, or Ctrl+C at the prompt to quit without saving.
+                if (_session.History.Count > 0 && !await SaveAsync(null, ct))
+                {
+                    AnsiConsole.MarkupLine("[yellow]Not exiting: the session was not saved. Type /exit to try again, or press Ctrl+C at the prompt to quit without saving.[/]");
+                    break;
+                }
                 return false;
 
             case CommandType.History:
@@ -281,51 +342,7 @@ public class ReplHost
                 break;
 
             case CommandType.Save:
-                // --tools / --no-thinking only shape the .docx transcript written with the
-                // save; they are stripped before the id reaches the session file.
-                var saveOptions = TranscriptOptions.Parse(command.Argument ?? "", out var saveId, out var saveError);
-                if (saveOptions is null)
-                {
-                    AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(saveError!)} Usage: /save [[id]] [[--tools]] [[--no-thinking]][/]");
-                    break;
-                }
-                // Saving under a name that is already taken replaces that session and its transcript for good, so
-                // ask first -- before the checkpoint turn, which would otherwise be spent on a save that is declined.
-                if (saveId.Length > 0 && SaveTargetsExist(saveId)
-                    && !AnsiConsole.Confirm($"[yellow]'{Markup.Escape(saveId)}' already exists (the saved session and/or its .docx transcript). Overwrite?[/]", defaultValue: false))
-                {
-                    AnsiConsole.MarkupLine("[yellow]Save cancelled; nothing was changed.[/]");
-                    break;
-                }
-                // Checkpoint first: a normal turn, so the marker and the agent's reply are part
-                // of the conversation (and the transcript) before it is written out.
-                var historyBeforeCheckpoint = _session.History.Count;
-                if (!await RunTurnAsync($"Checkpoint (/save) {LocalTime.Format(DateTimeOffset.Now, LocalTime.Seconds)}", ct, kind: PromptKind.Chk))
-                {
-                    // A cancelled turn is rolled back, so this was a Ctrl+C: honour it. A failed one
-                    // (e.g. the context is full) still left the marker in the history: save anyway.
-                    if (_session.History.Count <= historyBeforeCheckpoint)
-                    {
-                        AnsiConsole.MarkupLine("[yellow]Checkpoint did not complete; session not saved.[/]");
-                        break;
-                    }
-                    AnsiConsole.MarkupLine("[yellow]Checkpoint failed; saving the session anyway.[/]");
-                }
-                // No name given: ray-saved-<date, 24-hour time, zone>. Named here, after the checkpoint turn, so it
-                // carries the persona in charge now (the turn may have handed the conversation over).
-                var sessionId = await _sessions.SaveAsync(_session.History, saveId.Length > 0 ? saveId : _session.SaveName("saved"), _session.HandoffState);
-                if (sessionId is not null)
-                {
-                    // Both files are written before anything optional: the provider's token count is a nicety
-                    // (bounded to a few seconds, and it cannot throw), so it can't hold up or break the save.
-                    var savedTranscriptPath = WriteTranscript($"{sessionId}.docx", saveOptions);
-                    await _session.Loop.RefreshTokenCountAsync(ct);
-                    AnsiConsole.MarkupLine($"[green]Session saved:[/] {Markup.Escape(sessionId)} ({_session.History.Count} messages, {_session.History.QuestionCount} questions, {_session.Loop.DescribeTokenCount()})");
-                    if (savedTranscriptPath is not null)
-                        AnsiConsole.MarkupLine($"[green]Transcript written:[/] {savedTranscriptPath}");
-                }
-                else
-                    AnsiConsole.MarkupLine($"[red]Error:[/] Could not save session '{Markup.Escape(command.Argument ?? "")}'.");
+                await SaveAsync(command.Argument, ct);
                 break;
 
             case CommandType.Load:
@@ -359,30 +376,10 @@ public class ReplHost
             case CommandType.Status:
                 // Every row is printed and also collected, so the same listing can be recorded in the history
                 // (and so in /save and the transcript) once it is complete.
-                var status = new System.Text.StringBuilder();
-                PrintStatusRow(status, "Provider", _session.Llm.ProviderName);
-                PrintStatusRow(status, "Model", _session.Llm.ModelId);
-                PrintStatusRow(status, "Superprompt", SystemPromptBuilder.ResolveAgentName(_session.SuperPrompt));
-                PrintStatusRow(status, "Superprompts", PersonaRegistry.Current.DescribeList(), "(/personas for roles)");
-                PrintStatusRow(status, "Handoff stack", _session.DescribeHandoffStack());
-                PrintStatusRow(status, "Sync mode", AgentFlags.SyncMode ? "on (SendAsync, non-streaming)" : "off (StreamAsync, default)");
-                PrintStatusRow(status, "Timeout (streaming)", FormatTimeout(_session.Llm.StreamingTimeout));
-                PrintStatusRow(status, "Timeout (non-streaming)", FormatTimeout(_session.Llm.NonStreamingTimeout));
-                PrintStatusRow(status, "Max tokens", _session.MaxTokens.ToString());
-                PrintStatusRow(status, "Max iterations", _session.MaxIterations.ToString());
-                var toolNames = string.Join(", ", _session.Tools.All.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal));
-                PrintStatusRow(status, "Tools", _session.Tools.All.Count.ToString(), $"({toolNames})");
-                PrintStatusRow(status, "Turns", _session.History.TurnCount.ToString());
-                PrintStatusRow(status, "Messages", _session.History.Count.ToString());
-                if (_session.Loop.EstimateContextTokens().Kind != TokenCountKind.Actual)
-                    await _session.Loop.RefreshTokenCountAsync(ct);
-                PrintStatusRow(status, "Context", _session.Loop.DescribeContextUsage());
-                PrintStatusRow(status, "Tokens", $"{_session.Loop.TotalInputTokens} in / {_session.Loop.TotalOutputTokens} out");
-                PrintStatusRow(status, "Cache", $"{_session.Loop.TotalCacheCreationTokens} written / {_session.Loop.TotalCacheReadTokens} read{FormatCacheHitRate()}");
-                PrintStatusRow(status, "Session", $"{SessionUsage.FormatElapsed(_session.Usage.Elapsed)} elapsed, {_session.Usage.TotalTokens:N0} tokens", "(all conversations and sub-agents)");
-                PrintStatusRow(status, "Directory", _session.Project.WorkingDirectory);
-                PrintStatusRow(status, "Git branch", _session.Project.GitBranch ?? "N/A");
-                _session.History.AddStatusRecord(status.ToString().TrimEnd());
+                var statusRows = await StatusReport.BuildAsync(_session, ct);
+                foreach (var row in statusRows)
+                    AnsiConsole.MarkupLine($"[bold]{row.Label}:[/] {Markup.Escape(row.Value)}{(row.Note is null ? "" : $" [dim]{Markup.Escape(row.Note)}[/]")}");
+                _session.History.AddStatusRecord(string.Join(Environment.NewLine, statusRows));
                 break;
 
             case CommandType.Model:
@@ -494,33 +491,6 @@ public class ReplHost
         $"{number} {SystemPromptBuilder.ResolveAgentName(superPrompt)}{new string('>', Math.Max(1, depth))}";
 
     /// <summary>Prints one /status row ("Label: value", the note dimmed) and adds the same text, without markup, to <paramref name="record"/>.</summary>
-    private static void PrintStatusRow(System.Text.StringBuilder record, string label, string value, string? note = null)
-    {
-        AnsiConsole.MarkupLine($"[bold]{label}:[/] {Markup.Escape(value)}{(note is null ? "" : $" [dim]{Markup.Escape(note)}[/]")}");
-        record.AppendLine($"{label}: {value}{(note is null ? "" : " " + note)}");
-    }
-
-    private string FormatCacheHitRate()
-    {
-        var effectiveInput = _session.Loop.TotalInputTokens + _session.Loop.TotalCacheCreationTokens + _session.Loop.TotalCacheReadTokens;
-        if (effectiveInput == 0) return "";
-        var hitRate = 100.0 * _session.Loop.TotalCacheReadTokens / effectiveInput;
-        return $" ({hitRate:F0}% hit rate)";
-    }
-
-    /// <summary>
-    /// Renders a timeout as a compact human-readable duration (e.g. "1m 40s", "1h",
-    /// "10h") instead of TimeSpan's verbose default ToString().
-    /// </summary>
-    private static string FormatTimeout(TimeSpan timeout)
-    {
-        if (timeout.TotalHours >= 1)
-            return timeout.Minutes == 0 ? $"{timeout.TotalHours:F0}h" : $"{(int)timeout.TotalHours}h {timeout.Minutes}m";
-        if (timeout.TotalMinutes >= 1)
-            return timeout.Seconds == 0 ? $"{timeout.Minutes}m" : $"{timeout.Minutes}m {timeout.Seconds}s";
-        return $"{timeout.TotalSeconds:F0}s";
-    }
-
     private static string TruncateForDisplay(string text, int maxLength = 500)
     {
         if (text.Length <= maxLength) return text;
@@ -617,7 +587,7 @@ public class ReplHost
             .AddRow("/model", "Show the current provider and model")
             .AddRow("/memory, /mem [[clear]]", "Show MEMORY.md, or delete it")
             .AddRow("/transcribe [[name]] [[--tools]] [[--no-thinking]]", "Write a Q&A transcript (<name>.md, or <name>.docx; without a name it is <persona>-transcription-<time>.docx); --tools adds tool calls and results, --no-thinking omits thoughts")
-            .AddRow("/exit, /quit, /q", "Quit")
+            .AddRow("/exit, /quit, /q", "Do a /save (checkpoint, session and .docx transcript), then quit")
             .AddRow("Ctrl+C", "Interrupt the agent mid-reply (at the prompt: quit)");
 
         var diagnostics = new Table()

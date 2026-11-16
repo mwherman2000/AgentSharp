@@ -97,10 +97,10 @@ dotnet run --project AgentSharpApp
 | Command | Description |
 |---|---|
 | `/help` | Show commands |
-| `/exit` | Exit the agent |
+| `/exit` | Do a `/save` (checkpoint turn, session and .docx transcript), then exit |
 | `/clear [persona]` | Start a new conversation, optionally as another persona |
 | `/personas` | List the personas with their roles; created ones are tagged `[user]` or `[project]` |
-| `/handoff <persona> [reason]` | Hand the conversation, with its history, to another persona |
+| `/handoff <persona> [prompt]` | Hand the conversation, with its history, to another persona, then submit the optional prompt to it |
 | `/return [reason]` | Hand it back to the persona that handed it over |
 | `/compact -N \| +N \| N` | Drop the oldest turns (`-N` drops N%, `+N` keeps N%); saves before and after |
 | `/save [id]` | Save session (with a `.docx` transcript) |

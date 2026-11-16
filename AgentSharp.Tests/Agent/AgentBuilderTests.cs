@@ -295,6 +295,21 @@ public class AgentBuilderTests
     }
 
     [Fact]
+    public async Task StatusReport_ListsTheSameRowsForEveryHost()
+    {
+        var session = await Isolated(new FakeStreamingLlmClient()).WithSuperPrompt("andy").BuildAsync();
+
+        var rows = await StatusReport.BuildAsync(session);
+
+        Assert.Equal(
+            ["Provider", "Model", "Superprompt", "Superprompts", "Handoff stack", "Sync mode", "Timeout (streaming)",
+             "Timeout (non-streaming)", "Max tokens", "Max iterations", "Tools", "Turns", "Messages", "Context", "Tokens",
+             "Cache", "Session", "Directory", "Git branch", "Memory"],
+            rows.Select(r => r.Label));
+        Assert.Equal("Handoff stack: (empty)", rows.Single(r => r.Label == "Handoff stack").ToString());
+    }
+
+    [Fact]
     public async Task HandoffTool_DoesNotSwitchMidTurn()
     {
         var session = await Isolated(new FakeStreamingLlmClient()).WithSuperPrompt("andy").BuildAsync();

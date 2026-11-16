@@ -22,6 +22,16 @@ internal sealed class ConsoleAgentOutput : IAgentOutput
     public void SystemPrompt(PromptKind kind, int number, string text) =>
         WriteLine($"{Environment.NewLine}{number} {kind.ToCode()}> {text}", kind == PromptKind.Chk ? ConsoleColor.Cyan : ConsoleColor.Yellow);
 
+    // A dim rule with the turn number, as the main app draws it ("──── Turn 3 ────").
+    public void TurnStart(int turn)
+    {
+        var label = $" Turn {turn} ";
+        var width = 100;
+        try { width = Math.Max(label.Length + 2, Console.WindowWidth - 1); } catch (IOException) { }   // no console (redirected)
+        var left = (width - label.Length) / 2;
+        WriteLine(new string('─', left) + label + new string('─', width - label.Length - left) + Environment.NewLine, ConsoleColor.DarkGray);
+    }
+
     public void Error(string message) => WriteLine($"{Environment.NewLine}Error: {message}", ConsoleColor.Red);
 
     public void TransientError(Exception exception) =>

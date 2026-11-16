@@ -128,6 +128,14 @@ while (running)
         switch (parts[0].ToLowerInvariant())
         {
             case "/exit" or "/quit" or "/q":
+                // Quitting saves first, exactly as /save does (checkpoint turn, session, .docx transcript).
+                // If the save did not happen (Ctrl+C during the checkpoint, a write error) stay, so nothing is lost:
+                // /exit again to retry, or Ctrl+C at the prompt to quit without saving.
+                if (lucy.History.Count > 0 && !await SaveAsync(null))
+                {
+                    Console.WriteLine("Not exiting: the session was not saved. Type /exit to try again, or press Ctrl+C at the prompt to quit without saving.");
+                    break;
+                }
                 running = false;
                 break;
             case "/help" or "/h" or "/?":
@@ -149,17 +157,17 @@ while (running)
                 Console.WriteLine(string.IsNullOrWhiteSpace(argument) ? "(new conversation)" : $"(new conversation with {agentName})");
                 break;
             case "/handoff":
-                // Hand this conversation, history and all, to another persona: /handoff <persona> [reason].
+                // Hand this conversation, history and all, to another persona: /handoff <persona> [prompt].
                 // Any persona is allowed here (the model's handoff tool is limited to the handoff targets).
                 var handoffParts = (argument ?? "").Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 if (handoffParts.Length == 0)
                 {
-                    Console.WriteLine($"Usage: /handoff <persona> [reason]. Handoff stack: {lucy.DescribeHandoffStack()}");
+                    Console.WriteLine($"Usage: /handoff <persona> [prompt]. Handoff stack: {lucy.DescribeHandoffStack()}");
                     break;
                 }
                 try
                 {
-                    lucy.Handoff(handoffParts[0], handoffParts.Length > 1 ? handoffParts[1] : null);
+                    lucy.Handoff(handoffParts[0]);
                 }
                 catch (ArgumentException ex)
                 {
@@ -167,6 +175,9 @@ while (running)
                     break;
                 }
                 agentName = SystemPromptBuilder.ResolveAgentName(lucy.SuperPrompt);
+                // Text after the persona is submitted as the next prompt, so the new persona answers it now.
+                if (handoffParts.Length > 1)
+                    await RunTurnAsync(handoffParts[1]);
                 break;
             case "/return":
                 // Hand the conversation back to the persona that handed it over: /return [reason].
@@ -213,7 +224,7 @@ while (running)
                 PrintSessions();
                 break;
             case "/status":
-                PrintStatus();
+                await PrintStatusAsync();
                 break;
             case "/model":
                 Console.WriteLine($"Current model: {lucy.Llm.ProviderName} / {lucy.Llm.ModelId}");
@@ -344,14 +355,14 @@ bool ConfirmOverwrite(string what)
 
 // Saves the conversation, plus a .docx transcript of it next to the project (same
 // as the main CLI's /save).
-async Task SaveAsync(string? id)
+async Task<bool> SaveAsync(string? id)
 {
     // --tools / --no-thinking only shape the .docx transcript written with the save;
     // they are stripped before the id reaches the session file.
     if (TranscriptOptions.Parse(id ?? "", out var saveId, out var saveError) is not { } saveOptions)
     {
         Console.WriteLine($"{saveError} Usage: /save [id] [--tools] [--no-thinking]");
-        return;
+        return false;
     }
     id = saveId.Length > 0 ? saveId : null;
     // Saving under a name that is already taken replaces that session and its transcript for good, so ask first --
@@ -362,7 +373,7 @@ async Task SaveAsync(string? id)
         if (!ConfirmOverwrite($"'{id}' (the saved session and/or its .docx transcript)"))
         {
             Console.WriteLine("Save cancelled; nothing was changed.");
-            return;
+            return false;
         }
     }
     // Checkpoint first: a normal turn, so the marker and the reply are part of the
@@ -375,7 +386,7 @@ async Task SaveAsync(string? id)
         if (lucy.History.Count <= historyBeforeCheckpoint)
         {
             Console.WriteLine("Checkpoint did not complete; session not saved.");
-            return;
+            return false;
         }
         Console.WriteLine("Checkpoint failed; saving the session anyway.");
     }
@@ -384,7 +395,7 @@ async Task SaveAsync(string? id)
     if (savedId is null)
     {
         Console.WriteLine($"Could not save session '{id}'.");
-        return;
+        return false;
     }
     // Both files are written before anything optional: the provider's token count is a nicety (bounded to a few
     // seconds, and it cannot throw), so it can't hold up or break the save.
@@ -393,6 +404,7 @@ async Task SaveAsync(string? id)
     Console.WriteLine($"Session saved: {savedId} ({lucy.History.Count} messages, {lucy.History.QuestionCount} questions, {lucy.Loop.DescribeTokenCount()})");
     if (savedPath is { } path)
         Console.WriteLine($"Transcript written: {path}");
+    return true;
 }
 
 async Task LoadAsync(string? id)
@@ -428,34 +440,14 @@ void PrintSessions()
         Console.WriteLine($"{s.Id,-24} {LocalTime.Format(s.CreatedAt, LocalTime.Minutes)} {s.QuestionCount,9}");
 }
 
-void PrintStatus()
+async Task PrintStatusAsync()
 {
-    var loop = lucy.Loop;
-    var tools = string.Join(", ", lucy.Tools.All.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal));
-    var effectiveInput = loop.TotalInputTokens + loop.TotalCacheCreationTokens + loop.TotalCacheReadTokens;
-    var hitRate = effectiveInput == 0 ? "" : $" ({100.0 * loop.TotalCacheReadTokens / effectiveInput:F0}% hit rate)";
-
-    var status = $"""
-        Agent:          {SystemPromptBuilder.ResolveAgentName(lucy.SuperPrompt)}
-        Superprompts:   {PersonaRegistry.Current.DescribeList()} (/personas for roles)
-        Handoff stack:  {lucy.DescribeHandoffStack()}
-        Provider:       {lucy.Llm.ProviderName}
-        Model:          {lucy.Llm.ModelId}
-        Max tokens:     {lucy.MaxTokens}
-        Max iterations: {lucy.MaxIterations}
-        Tools:          {lucy.Tools.All.Count} ({tools})
-        Messages:       {lucy.History.Count}
-        Context:        {loop.DescribeContextUsage()}
-        Tokens:         {loop.TotalInputTokens} in / {loop.TotalOutputTokens} out (this conversation)
-        Cache:          {loop.TotalCacheCreationTokens} written / {loop.TotalCacheReadTokens} read{hitRate}
-        Session:        {SessionUsage.FormatElapsed(lucy.Usage.Elapsed)} elapsed, {lucy.Usage.TotalTokens:N0} tokens (all conversations and sub-agents)
-        Directory:     {lucy.Project.WorkingDirectory}
-        Git branch:     {lucy.Project.GitBranch ?? "N/A"}
-        Memory:         {lucy.Memory?.FilePath ?? "off"}
-        """;
-    Console.WriteLine(status);
+    // The same rows as the main app (see StatusReport); only the drawing differs.
+    var rows = await StatusReport.BuildAsync(lucy);
+    foreach (var row in rows)
+        Console.WriteLine(row);
     // Recorded in the history too, so /save keeps it and the transcript shows it.
-    lucy.History.AddStatusRecord(status);
+    lucy.History.AddStatusRecord(string.Join(Environment.NewLine, rows));
 }
 
 // /memory shows MEMORY.md; /memory clear deletes it.
@@ -500,7 +492,7 @@ static void PrintHelp(string agentName)
           /help, /h, /?                     Show this help
           /clear, /cls [persona]            Start a new conversation with {agentName}, or with another persona (for example alchemist)
           /personas                         List the personas, including ones created with create_digital
-          /handoff <persona> [reason]       Hand this conversation, with its history, to another persona
+          /handoff <persona> [prompt]       Hand this conversation, with its history, to another persona, then submit the optional prompt to it
           /return [reason]                  Hand it back to the persona that handed it over (the stack is saved with /save)
           /compact -N | +N | N              Drop the oldest turns making up at least N% of the estimated tokens (-N), or keep the most recent turns making up at least N% (+N or N)
           /save [id] [--tools] [--no-thinking]
@@ -513,7 +505,7 @@ static void PrintHelp(string agentName)
           /transcribe [name] [--tools] [--no-thinking]
                                             Write a Q&A transcript (<name>.md, or <name>.docx);
                                             --tools adds tool calls and results, --no-thinking omits thoughts
-          /exit, /quit, /q                  Quit
+          /exit, /quit, /q                  Do a /save (checkpoint, session and .docx transcript), then quit
           Ctrl+C                            Interrupt {agentName} mid-reply (at the prompt: quit)
 
         Diagnostics:
