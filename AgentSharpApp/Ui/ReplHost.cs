@@ -527,7 +527,7 @@ public class ReplHost
 
     private void PrintWelcome()
     {
-        AnsiConsole.Write(new FigletText("AgentSharp").Color(Color.Blue));
+        AnsiConsole.Write(new FigletText("PandoAgency").Color(Color.Blue));
         AnsiConsole.MarkupLine($"[bold]AI Agent:[/] [green]{Markup.Escape(SystemPromptBuilder.ResolveAgentName(_session.SuperPrompt))}[/] - Built with patterns from Claude Code");
         AnsiConsole.MarkupLine($"[dim]Provider: {_session.Llm.ProviderName} | Model: {_session.Llm.ModelId} | Max tokens: {_session.MaxTokens} | Tools: {_session.Tools.All.Count}[/]");
         if (_session.Project.IsGitRepo)

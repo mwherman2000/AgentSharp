@@ -6,7 +6,7 @@ using AgentSharpApp.Ui;
 using Spectre.Console;
 
 // ============================================================================
-// AgentSharp - AI Coding Agent CLI
+// PandoAgency - AI Coding Agent CLI
 //
 // Built with architectural patterns from Claude Code:
 //   - The Agent Loop (think -> decide -> execute -> observe -> repeat)
@@ -31,7 +31,7 @@ internal class Program
 
         if (commandLine.ShowVersion)
         {
-            AnsiConsole.MarkupLine("[bold]AgentSharp[/] v0.1.0");
+            AnsiConsole.MarkupLine("[bold]PandoAgency[/] v0.1.0");
             return;
         }
 
@@ -121,7 +121,7 @@ internal class Program
 
         static void PrintUsage()
         {
-            AnsiConsole.MarkupLine("[bold]AgentSharp[/] - AI Coding Agent CLI");
+            AnsiConsole.MarkupLine("[bold]PandoAgency[/] - AI Coding Agent CLI");
             AnsiConsole.MarkupLine("Built with patterns from Claude Code\n");
             AnsiConsole.MarkupLine("[bold]USAGE:[/]");
             AnsiConsole.MarkupLine("  agentsharp                          Start interactive REPL");

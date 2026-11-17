@@ -20,7 +20,7 @@ namespace AgentSharpLib.Telemetry;
 /// </summary>
 public static class AgentTelemetry
 {
-    public const string SourceName = "AgentSharp";
+    public const string SourceName = "PandoAgency";
 
     /// <summary>Default OTLP/gRPC endpoint Jaeger (and most local collectors) listen on.
     /// This is where traces are sent -- the /jaeger default everywhere.</summary>

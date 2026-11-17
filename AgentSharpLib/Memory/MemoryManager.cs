@@ -71,7 +71,7 @@ public class MemoryManager
             if (!File.Exists(_memoryPath))
             {
                 await File.WriteAllTextAsync(_memoryPath,
-                    $"# Agent Memory\n\nPersistent memory for AgentSharp sessions.\n{formattedEntry}");
+                    $"# Agent Memory\n\nPersistent memory for PandoAgency sessions.\n{formattedEntry}");
             }
             else
             {

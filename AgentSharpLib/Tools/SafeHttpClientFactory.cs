@@ -22,7 +22,7 @@ internal static class SafeHttpClientFactory
     /// arbitrary sites behind bot-detection), but identifying the client is still
     /// correct HTTP hygiene and useful for the provider's own rate-limiting/support
     /// diagnostics.</summary>
-    internal const string UserAgent = "Mozilla/5.0 (compatible; AgentSharp/0.1; +https://github.com/mwherman2000/AgentSharp)";
+    internal const string UserAgent = "Mozilla/5.0 (compatible; PandoAgency/0.1)";
 
     /// <summary>
     /// Creates an HttpClient whose ConnectCallback validates the actual IP
