@@ -45,7 +45,7 @@ public static class CommandLineParser
     [
         ("/help", "Show commands"),
         ("/exit", "Exit the agent"),
-        ("/clear [persona]", "Start a new conversation, optionally as another persona"),
+        ("/clear [persona] [prompt]", "Start a new conversation, optionally as another persona and with a first prompt"),
         ("/personas", "List the personas, including ones created with create_digital"),
         ("/handoff <persona> [prompt]", "Hand the conversation, with its history, to another persona"),
         ("/return [reason]", "Hand it back to the persona that handed it over"),

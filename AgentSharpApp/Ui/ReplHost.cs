@@ -263,9 +263,10 @@ public class ReplHost
                 break;
 
             case CommandType.Clear:
+                var clearParts = (command.Argument ?? "").Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 try
                 {
-                    _session.Reset(string.IsNullOrWhiteSpace(command.Argument) ? null : command.Argument);
+                    _session.Reset(clearParts.Length == 0 ? null : clearParts[0]);
                 }
                 catch (ArgumentException ex)
                 {
@@ -275,8 +276,11 @@ public class ReplHost
                 AnsiConsole.Clear();
                 PrintWelcome();
                 AnsiConsole.MarkupLine("[green]Conversation cleared.[/]");
-                if (!string.IsNullOrWhiteSpace(command.Argument))
+                if (clearParts.Length > 0)
                     AnsiConsole.MarkupLine($"[green]Superprompt switched to:[/] {Markup.Escape(SystemPromptBuilder.ResolveAgentName(_session.SuperPrompt))}");
+                // Text after the persona is submitted as the first prompt of the new conversation.
+                if (clearParts.Length > 1)
+                    await RunTurnAsync(clearParts[1], ct);
                 break;
 
             case CommandType.Handoff:
@@ -576,7 +580,7 @@ public class ReplHost
             .AddColumn("Description")
             .AddRow("/help, /h, /?", "Show this help")
             .AddRow("/compact -N | +N | N", "Drop the oldest turns making up at least N% of the estimated tokens (-N), or keep only the most recent turns making up at least N% (+N or N). Saves the session first (with a .docx transcript) and again after, automatically, as <persona>-compact-before-<time> and -after-<time>")
-            .AddRow("/clear, /cls [[persona]]", $"Start a new conversation; optionally switch persona ({string.Join(", ", SystemPromptBuilder.AvailableSuperPrompts)})")
+            .AddRow("/clear, /cls [[persona]] [[prompt]]", $"Start a new conversation; optionally switch persona ({string.Join(", ", SystemPromptBuilder.AvailableSuperPrompts)})")
             .AddRow("/personas", "List the personas, including ones created with create_digital (the alchemist's tool)")
             .AddRow("/handoff <persona> [[prompt]]", "Hand the conversation, with its history, to another persona, then submit the optional prompt to it; shows the handoff stack")
             .AddRow("/return [[reason]]", "Hand the conversation back to the persona that handed it over (the same history continues); shows the handoff stack. The stack is saved with /save and restored by /load")

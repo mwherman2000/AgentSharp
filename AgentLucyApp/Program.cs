@@ -144,9 +144,10 @@ while (running)
             case "/clear" or "/cls":
                 // An optional persona name starts the new conversation as that persona, including one
                 // just made with create_digital (see /personas).
+                var clearParts = (argument ?? "").Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 try
                 {
-                    lucy.Reset(string.IsNullOrWhiteSpace(argument) ? null : argument);
+                    lucy.Reset(clearParts.Length == 0 ? null : clearParts[0]);
                 }
                 catch (ArgumentException ex)
                 {
@@ -154,7 +155,10 @@ while (running)
                     break;
                 }
                 agentName = SystemPromptBuilder.ResolveAgentName(lucy.SuperPrompt);
-                Console.WriteLine(string.IsNullOrWhiteSpace(argument) ? "(new conversation)" : $"(new conversation with {agentName})");
+                Console.WriteLine(clearParts.Length == 0 ? "(new conversation)" : $"(new conversation with {agentName})");
+                // Text after the persona is submitted as the first prompt of the new conversation.
+                if (clearParts.Length > 1)
+                    await RunTurnAsync(clearParts[1]);
                 break;
             case "/handoff":
                 // Hand this conversation, history and all, to another persona: /handoff <persona> [prompt].
@@ -490,7 +494,7 @@ static void PrintHelp(string agentName)
     Console.WriteLine($"""
         Commands:
           /help, /h, /?                     Show this help
-          /clear, /cls [persona]            Start a new conversation with {agentName}, or with another persona (for example alchemist)
+          /clear, /cls [persona] [prompt]   Start a new conversation with {agentName}, or with another persona (for example alchemist)
           /personas                         List the personas, including ones created with create_digital
           /handoff <persona> [prompt]       Hand this conversation, with its history, to another persona, then submit the optional prompt to it
           /return [reason]                  Hand it back to the persona that handed it over (the stack is saved with /save)
