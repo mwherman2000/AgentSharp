@@ -158,7 +158,10 @@ while (running)
                 Console.WriteLine(clearParts.Length == 0 ? "(new conversation)" : $"(new conversation with {agentName})");
                 // Text after the persona is submitted as the first prompt of the new conversation.
                 if (clearParts.Length > 1)
+                {
+                    Console.WriteLine($"> {clearParts[1]}");
                     await RunTurnAsync(clearParts[1]);
+                }
                 break;
             case "/handoff":
                 // Hand this conversation, history and all, to another persona: /handoff <persona> [prompt].

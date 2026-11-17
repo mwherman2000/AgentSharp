@@ -280,7 +280,10 @@ public class ReplHost
                     AnsiConsole.MarkupLine($"[green]Superprompt switched to:[/] {Markup.Escape(SystemPromptBuilder.ResolveAgentName(_session.SuperPrompt))}");
                 // Text after the persona is submitted as the first prompt of the new conversation.
                 if (clearParts.Length > 1)
+                {
+                    AnsiConsole.MarkupLine($"[bold]>[/] {Markup.Escape(clearParts[1])}");
                     await RunTurnAsync(clearParts[1], ct);
+                }
                 break;
 
             case CommandType.Handoff:
