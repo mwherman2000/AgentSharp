@@ -154,6 +154,10 @@ public class ReplHost
         }
     }
 
+    // The history object and message count as of the last successful save; /exit skips its save if unchanged.
+    private object? _lastSavedHistory;
+    private int _lastSavedCount = -1;
+
     /// <summary>/save: a checkpoint turn, then the session and its .docx transcript. <paramref name="argument"/> is
     /// "[id] [--tools] [--no-thinking]"; with no id the name is "&lt;persona&gt;-saved-&lt;time&gt;". Also what /exit does.</summary>
     private async Task<bool> SaveAsync(string? argument, CancellationToken ct)
@@ -200,6 +204,8 @@ public class ReplHost
             AnsiConsole.MarkupLine($"[green]Session saved:[/] {Markup.Escape(sessionId)} ({_session.History.Count} messages, {_session.History.QuestionCount} questions, {_session.Loop.DescribeTokenCount()})");
             if (savedTranscriptPath is not null)
                 AnsiConsole.MarkupLine($"[green]Transcript written:[/] {savedTranscriptPath}");
+            _lastSavedHistory = _session.History;
+            _lastSavedCount = _session.History.Count;
             return true;
         }
         AnsiConsole.MarkupLine($"[red]Error:[/] Could not save session '{Markup.Escape(argument ?? "")}'.");
@@ -219,7 +225,10 @@ public class ReplHost
                 // default name. An empty conversation has nothing worth saving.
                 // If the save did not happen (Ctrl+C during the checkpoint, a write error) stay, so nothing is lost:
                 // /exit again to retry, or Ctrl+C at the prompt to quit without saving.
-                if (_session.History.Count > 0 && !await SaveAsync(null, ct))
+                // Skipped when a /save just ran and nothing has been added since.
+                if (_session.History.Count > 0
+                    && !(ReferenceEquals(_lastSavedHistory, _session.History) && _lastSavedCount == _session.History.Count)
+                    && !await SaveAsync(null, ct))
                 {
                     AnsiConsole.MarkupLine("[yellow]Not exiting: the session was not saved. Type /exit to try again, or press Ctrl+C at the prompt to quit without saving.[/]");
                     break;

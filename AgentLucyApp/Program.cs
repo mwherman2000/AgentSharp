@@ -98,6 +98,8 @@ if (commandLine.Prompt is { } oneShotPrompt)
 }
 
 var running = true;
+object? lastSavedHistory = null; // history object and message count at the last successful /save; /exit skips its save if unchanged
+var lastSavedCount = -1;
 while (running)
 {
     // Past 95% the warning precedes every prompt, not just the turn that crossed it.
@@ -131,7 +133,8 @@ while (running)
                 // Quitting saves first, exactly as /save does (checkpoint turn, session, .docx transcript).
                 // If the save did not happen (Ctrl+C during the checkpoint, a write error) stay, so nothing is lost:
                 // /exit again to retry, or Ctrl+C at the prompt to quit without saving.
-                if (lucy.History.Count > 0 && !await SaveAsync(null))
+                // Skipped when a /save just ran and nothing has been added since.
+                if (lucy.History.Count > 0 && !(ReferenceEquals(lastSavedHistory, lucy.History) && lastSavedCount == lucy.History.Count) && !await SaveAsync(null))
                 {
                     Console.WriteLine("Not exiting: the session was not saved. Type /exit to try again, or press Ctrl+C at the prompt to quit without saving.");
                     break;
@@ -411,6 +414,8 @@ async Task<bool> SaveAsync(string? id)
     Console.WriteLine($"Session saved: {savedId} ({lucy.History.Count} messages, {lucy.History.QuestionCount} questions, {lucy.Loop.DescribeTokenCount()})");
     if (savedPath is { } path)
         Console.WriteLine($"Transcript written: {path}");
+    lastSavedHistory = lucy.History;
+    lastSavedCount = lucy.History.Count;
     return true;
 }
 
